@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.campaia.app/v1/campaign-brief.schema.json",
+  "title": "CampaignBrief",
+  "description": "Entrada canônica do usuário. Independente de provedor de anúncios e de provedor de IA.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "brief_id",
+    "tenant_id",
+    "created_by",
+    "created_at",
+    "objective",
+    "budget",
+    "schedule",
+    "requested_channels",
+    "locale"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "brief_id": { "type": "string", "format": "uuid" },
+    "tenant_id": { "type": "string", "format": "uuid" },
+    "business_unit_id": { "type": ["string", "null"], "format": "uuid" },
+    "brand_profile_id": { "type": ["string", "null"], "format": "uuid" },
+    "created_by": { "type": "string", "format": "uuid" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "objective": {
+      "type": "string",
+      "description": "Objetivo primario. Determina mensuracao e conjunto de capacidades exigidas.",
+      "enum": ["MESSAGES", "LEADS", "ONLINE_SALES", "STORE_VISITS", "TRAFFIC", "AWARENESS"]
+    },
+    "offer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description"],
+      "properties": {
+        "description": { "type": "string", "maxLength": 2000 },
+        "price_from": { "type": ["number", "null"], "minimum": 0 },
+        "currency": { "type": ["string", "null"], "pattern": "^[A-Z]{3}$" },
+        "differentiators": { "type": "array", "items": { "type": "string" }, "maxItems": 10 },
+        "restrictions": {
+          "type": "array",
+          "description": "Restricoes declaradas pelo cliente. Entram no Policy Engine, nunca apenas no prompt.",
+          "items": { "type": "string" },
+          "maxItems": 30
+        }
+      }
+    },
+    "audience_hint": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Indicacao do usuario. NAO e segmentacao final: a segmentacao real e validada por capacidade e politica.",
+      "properties": {
+        "age_min": { "type": ["integer", "null"], "minimum": 18, "maximum": 99 },
+        "age_max": { "type": ["integer", "null"], "minimum": 18, "maximum": 99 },
+        "interests_text": { "type": "array", "items": { "type": "string" }, "maxItems": 20 },
+        "exclusions_text": { "type": "array", "items": { "type": "string" }, "maxItems": 20 },
+        "uses_customer_list": {
+          "type": "boolean",
+          "default": false,
+          "description": "Se true, exige base legal registrada e aprovacao humana obrigatoria."
+        }
+      }
+    },
+    "geo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["country"],
+      "properties": {
+        "country": { "type": "string", "pattern": "^[A-Z]{2}$" },
+        "regions": { "type": "array", "items": { "type": "string" }, "maxItems": 50 },
+        "radius_km": { "type": ["number", "null"], "minimum": 1, "maximum": 500 },
+        "center_reference": { "type": ["string", "null"] }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["currency", "total_amount", "daily_cap"],
+      "properties": {
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "total_amount": { "type": "number", "exclusiveMinimum": 0 },
+        "daily_cap": { "type": "number", "exclusiveMinimum": 0 },
+        "hard_stop": {
+          "type": "boolean",
+          "default": true,
+          "description": "Se true, atingir o limite pausa a campanha em vez de apenas alertar."
+        }
+      }
+    },
+    "schedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start_date"],
+      "properties": {
+        "start_date": { "type": "string", "format": "date" },
+        "end_date": { "type": ["string", "null"], "format": "date" },
+        "timezone": { "type": "string", "default": "America/Sao_Paulo" }
+      }
+    },
+    "requested_channels": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "enum": ["GOOGLE_ADS", "META_FACEBOOK", "META_INSTAGRAM", "WHATSAPP"] }
+    },
+    "available_assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["asset_id", "kind"],
+        "properties": {
+          "asset_id": { "type": "string", "format": "uuid" },
+          "kind": { "type": "string", "enum": ["IMAGE", "VIDEO", "LOGO", "TEXT"] }
+        }
+      }
+    },
+    "locale": { "type": "string", "pattern": "^[a-z]{2}-[A-Z]{2}$" },
+    "free_text": {
+      "type": ["string", "null"],
+      "maxLength": 5000,
+      "description": "Briefing conversacional. Nunca contem credencial; sanitizado antes de qualquer envio a provedor de IA."
+    }
+  }
+}

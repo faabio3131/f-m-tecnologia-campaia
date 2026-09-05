@@ -1,0 +1,750 @@
+openapi: 3.1.0
+info:
+  title: CAMPAIA — Mobile BFF API
+  version: 1.0.0-draft
+  description: |
+    Contrato entre o aplicativo mobile CAMPAIA e o backend. PROPOSTA, sujeita ao Gate G1.
+
+    Invariantes que este contrato materializa:
+      1. `tenant_id` NUNCA vem do cliente. E derivado do token de autenticacao. Nenhum endpoint
+         aceita tenant_id no corpo ou na query.
+      2. Nenhum endpoint devolve segredo, token de provedor ou credencial, em nenhuma circunstancia.
+      3. Toda operacao com efeito externo exige o header `Idempotency-Key`.
+      4. Operacoes sensiveis exigem `X-Step-Up-Token` (reautenticacao recente).
+      5. Publicar, alterar verba e mudar autonomia exigem uma aprovacao humana ja registrada.
+         O BFF nao aprova nada: ele encaminha decisao tomada por humano identificado.
+      6. Estado externo devolvido e sempre o ultimo estado reconciliado, com `last_synced_at`.
+         O produto nunca afirma publicacao sem ID externo confirmado.
+  contact:
+    name: CAMPAIA — Engenharia
+servers:
+  - url: https://api.campaia.app/v1
+    description: Producao (NAO PROVISIONADO — exige autorizacao do Diretor)
+  - url: https://api.staging.campaia.app/v1
+    description: Homologacao (NAO PROVISIONADO)
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Conta
+  - name: Marca
+  - name: Conexoes
+  - name: Campanhas
+  - name: Governanca
+  - name: Metricas
+
+paths:
+  /me:
+    get:
+      tags: [Conta]
+      summary: Perfil, tenant, unidade e permissoes efetivas do usuario autenticado
+      operationId: getMe
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /brand-profiles:
+    get:
+      tags: [Marca]
+      summary: Lista Brand Kits do tenant
+      operationId: listBrandProfiles
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BrandProfile' }
+    post:
+      tags: [Marca]
+      summary: Cria Brand Kit
+      operationId: createBrandProfile
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BrandProfileInput' }
+      responses:
+        '201':
+          description: Criado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandProfile' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /connections:
+    get:
+      tags: [Conexoes]
+      summary: Contas externas conectadas
+      description: Nunca retorna token, refresh token ou qualquer segredo.
+      operationId: listConnections
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Connection' }
+
+  /connections/oauth/start:
+    post:
+      tags: [Conexoes]
+      summary: Inicia fluxo OAuth para um provedor
+      description: |
+        Devolve a URL de autorizacao oficial do provedor. O app apenas abre essa URL.
+        O callback e recebido pelo backend; o token nunca transita pelo aplicativo.
+      operationId: startOAuth
+      parameters:
+        - $ref: '#/components/parameters/StepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider]
+              properties:
+                provider: { $ref: '#/components/schemas/Provider' }
+      responses:
+        '200':
+          description: URL de autorizacao
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [authorization_url, state]
+                properties:
+                  authorization_url: { type: string, format: uri }
+                  state: { type: string }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+
+  /connections/{connectionId}:
+    delete:
+      tags: [Conexoes]
+      summary: Revoga a conexao e o segredo associado
+      operationId: revokeConnection
+      parameters:
+        - $ref: '#/components/parameters/ConnectionId'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204': { description: Revogada }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+
+  /connections/{connectionId}/capabilities:
+    get:
+      tags: [Conexoes]
+      summary: Capacidades comprovadas para esta conta, pais e versao de API
+      description: |
+        Fonte da verdade para a interface. O app so oferece acao com `supported = true`.
+        Capacidade sem `verified_at` recente e tratada como indisponivel.
+      operationId: getCapabilities
+      parameters:
+        - $ref: '#/components/parameters/ConnectionId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Capability' }
+
+  /briefs:
+    post:
+      tags: [Campanhas]
+      summary: Submete briefing e cria campanha em DRAFT
+      operationId: submitBrief
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        description: Conforme campaign-brief.schema.json, sem tenant_id (derivado do token).
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '202':
+          description: Aceito; geracao de estrategia em andamento
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Campaign' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /campaigns:
+    get:
+      tags: [Campanhas]
+      summary: Lista campanhas do tenant
+      operationId: listCampaigns
+      parameters:
+        - name: state
+          in: query
+          schema: { $ref: '#/components/schemas/CampaignState' }
+        - name: cursor
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Campaign' }
+                  next_cursor: { type: [string, 'null'] }
+
+  /campaigns/{campaignId}:
+    get:
+      tags: [Campanhas]
+      summary: Detalhe da campanha, com estado reconciliado
+      operationId: getCampaign
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Campaign' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /campaigns/{campaignId}/plan:
+    get:
+      tags: [Campanhas]
+      summary: Ultima versao do plano proposto
+      description: Conforme campaign-plan.schema.json. Inclui proveniencia da IA e justificativa.
+      operationId: getCampaignPlan
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: object }
+
+  /campaigns/{campaignId}/plan/regenerate:
+    post:
+      tags: [Campanhas]
+      summary: Solicita nova versao do plano com ajustes do usuario
+      operationId: regeneratePlan
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                adjustments: { type: string, maxLength: 2000 }
+      responses:
+        '202': { description: Geracao iniciada }
+        '409': { $ref: '#/components/responses/InvalidState' }
+
+  /campaigns/{campaignId}/validate:
+    post:
+      tags: [Campanhas]
+      summary: Valida plano contra politica, orcamento e capacidades
+      description: |
+        Nao produz efeito externo. Emite `policy_decision_id` quando aprovavel.
+        Este e o unico caminho para obter autorizacao de publicacao.
+      operationId: validateCampaign
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+      responses:
+        '200':
+          description: Resultado da validacao
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyDecision' }
+        '409': { $ref: '#/components/responses/InvalidState' }
+
+  /campaigns/{campaignId}/publish:
+    post:
+      tags: [Campanhas]
+      summary: Publica nas contas autorizadas
+      description: |
+        Exige `policy_decision_id` valido e nao expirado, aprovacao humana registrada e
+        `Idempotency-Key`. Responde 202: publicacao e assincrona e so vira ACTIVE apos
+        reconciliacao com ID externo confirmado por canal.
+      operationId: publishCampaign
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/StepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [policy_decision_id, approval_id]
+              properties:
+                policy_decision_id: { type: string, format: uuid }
+                approval_id: { type: string, format: uuid }
+      responses:
+        '202':
+          description: Publicacao iniciada (Saga aberta)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Campaign' }
+        '403': { $ref: '#/components/responses/ApprovalRequired' }
+        '409': { $ref: '#/components/responses/InvalidState' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /campaigns/{campaignId}/pause:
+    post:
+      tags: [Campanhas]
+      summary: Pausa a campanha em todos os canais
+      operationId: pauseCampaign
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202': { description: Pausa solicitada }
+
+  /campaigns/{campaignId}/budget:
+    patch:
+      tags: [Governanca]
+      summary: Altera orcamento
+      description: |
+        Aumento relevante exige aprovacao humana e step-up. Variacao percentual acima do
+        limite configurado e recusada com 403, nao "ajustada automaticamente".
+      operationId: updateBudget
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/StepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [daily_cap, approval_id]
+              properties:
+                daily_cap: { type: number, exclusiveMinimum: 0 }
+                total_amount: { type: number, exclusiveMinimum: 0 }
+                approval_id: { type: string, format: uuid }
+      responses:
+        '202': { description: Alteracao aceita }
+        '403': { $ref: '#/components/responses/ApprovalRequired' }
+
+  /approvals:
+    get:
+      tags: [Governanca]
+      summary: Aprovacoes pendentes do usuario
+      operationId: listApprovals
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ApprovalRequest' }
+
+  /approvals/{approvalId}/decision:
+    post:
+      tags: [Governanca]
+      summary: Aprova, rejeita ou pede ajuste
+      description: |
+        Registra ator, momento, versao do plano e justificativa na trilha imutavel.
+        Aprovacao dupla, quando exigida pela politica, so se completa com dois atores distintos.
+      operationId: decideApproval
+      parameters:
+        - name: approvalId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/StepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [APPROVE, REJECT, REQUEST_CHANGES] }
+                reason: { type: string, maxLength: 1000 }
+      responses:
+        '200':
+          description: Decisao registrada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalRequest' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '409':
+          description: Decisao ja registrada ou aprovador nao elegivel
+
+  /autonomy:
+    get:
+      tags: [Governanca]
+      summary: Nivel de autonomia vigente e limites
+      operationId: getAutonomy
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AutonomySettings' }
+    put:
+      tags: [Governanca]
+      summary: Altera nivel de autonomia
+      description: Sempre exige aprovacao humana e step-up, em qualquer nivel atual.
+      operationId: setAutonomy
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/StepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [level, approval_id]
+              properties:
+                level: { type: integer, minimum: 0, maximum: 3 }
+                approval_id: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Alterado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AutonomySettings' }
+        '403': { $ref: '#/components/responses/ApprovalRequired' }
+
+  /kill-switch:
+    post:
+      tags: [Governanca]
+      summary: Aciona parada de emergencia
+      description: |
+        Escopos: CAMPAIGN, ACCOUNT, TENANT, PLATFORM, GLOBAL.
+        E o unico caminho que dispensa fila normal de decisao, porque so REDUZ efeito.
+        Nunca pode ampliar efeito. Ainda assim gera evento e auditoria.
+      operationId: activateKillSwitch
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scope, reason]
+              properties:
+                scope: { type: string, enum: [CAMPAIGN, ACCOUNT, TENANT, PLATFORM, GLOBAL] }
+                target_id: { type: [string, 'null'], format: uuid }
+                reason: { type: string, maxLength: 500 }
+      responses:
+        '202': { description: Acionado; pausa propagando }
+
+  /campaigns/{campaignId}/insights:
+    get:
+      tags: [Metricas]
+      summary: Metricas reconciliadas da campanha
+      operationId: getInsights
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsightSeries' }
+
+  /audit-events:
+    get:
+      tags: [Governanca]
+      summary: Trilha de auditoria do tenant
+      operationId: listAuditEvents
+      parameters:
+        - name: campaign_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: cursor
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditEvent' }
+                  next_cursor: { type: [string, 'null'] }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token de sessao. O `tenant_id` e derivado dele e nunca aceito do cliente.
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 16, maxLength: 128 }
+      description: Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original.
+    StepUpToken:
+      name: X-Step-Up-Token
+      in: header
+      required: true
+      schema: { type: string }
+      description: Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao.
+    CampaignId:
+      name: campaignId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ConnectionId:
+      name: connectionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Unauthorized:
+      description: Nao autenticado
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Nao encontrado neste tenant
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ValidationError:
+      description: Payload invalido segundo o schema canonico
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    InvalidState:
+      description: Transicao de estado nao permitida pela maquina de estados
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    StepUpRequired:
+      description: Reautenticacao necessaria
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ApprovalRequired:
+      description: Aprovacao humana ausente, invalida ou expirada
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Provider:
+      type: string
+      enum: [GOOGLE_ADS, META, WHATSAPP]
+
+    Channel:
+      type: string
+      enum: [GOOGLE_ADS, META_FACEBOOK, META_INSTAGRAM, WHATSAPP]
+
+    CampaignState:
+      type: string
+      enum: [DRAFT, STRATEGY_READY, ASSETS_READY, VALIDATED, AWAITING_APPROVAL, APPROVED, PUBLISHING, ACTIVE, OPTIMIZING, PAUSED, COMPLETED, FAILED]
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: |
+            Taxonomia canonica. Codigos de provedor NUNCA vazam para o cliente.
+          enum: [UNAUTHENTICATED, PERMISSION_DENIED, STEP_UP_REQUIRED, APPROVAL_REQUIRED,
+                 VALIDATION_FAILED, INVALID_STATE, CAPABILITY_UNSUPPORTED, BUDGET_LIMIT,
+                 RATE_LIMITED, QUOTA_EXHAUSTED, POLICY_VIOLATION, KILL_SWITCH_ACTIVE,
+                 NOT_FOUND, TRANSIENT, UNKNOWN]
+        message: { type: string, description: Texto compreensivel por usuario nao tecnico. }
+        details: { type: [object, 'null'] }
+        assisted_flow_url:
+          type: [string, 'null']
+          format: uri
+          description: Quando a API do provedor nao permite a acao, aponta o portal oficial. Nunca simular sucesso.
+
+    Me:
+      type: object
+      properties:
+        user_id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        business_unit_id: { type: [string, 'null'], format: uuid }
+        roles: { type: array, items: { type: string } }
+        permissions: { type: array, items: { type: string } }
+        mfa_enabled: { type: boolean }
+
+    BrandProfileInput:
+      type: object
+      required: [name, tone]
+      properties:
+        name: { type: string, maxLength: 120 }
+        tone: { type: string, maxLength: 200 }
+        colors: { type: array, items: { type: string } }
+        differentiators: { type: array, items: { type: string } }
+        restrictions:
+          type: array
+          items: { type: string }
+          description: Alimenta o Policy Engine deterministico, nao apenas o prompt.
+
+    BrandProfile:
+      allOf:
+        - $ref: '#/components/schemas/BrandProfileInput'
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            created_at: { type: string, format: date-time }
+
+    Connection:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        provider: { $ref: '#/components/schemas/Provider' }
+        external_account_id: { type: string }
+        display_name: { type: string }
+        status: { type: string, enum: [ACTIVE, EXPIRED, REVOKED, NEEDS_REAUTH] }
+        api_version: { type: string }
+        last_synced_at: { type: [string, 'null'], format: date-time }
+
+    Capability:
+      type: object
+      properties:
+        capability_key: { type: string }
+        supported: { type: boolean }
+        requires_approval: { type: boolean }
+        evidence_url: { type: [string, 'null'], format: uri }
+        verified_at: { type: string, format: date-time }
+        notes: { type: [string, 'null'] }
+
+    Campaign:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        state: { $ref: '#/components/schemas/CampaignState' }
+        objective: { type: string }
+        channels:
+          type: array
+          items: { $ref: '#/components/schemas/Channel' }
+        external_resources:
+          type: array
+          description: Vazio ate a reconciliacao confirmar. Estado ACTIVE exige ao menos um ID externo.
+          items:
+            type: object
+            properties:
+              channel: { $ref: '#/components/schemas/Channel' }
+              external_resource_id: { type: string }
+              sync_status: { type: string, enum: [PENDING, CONFIRMED, DIVERGENT] }
+              last_synced_at: { type: [string, 'null'], format: date-time }
+        budget:
+          type: object
+          properties:
+            currency: { type: string }
+            total_amount: { type: number }
+            daily_cap: { type: number }
+            spent_to_date: { type: number }
+        created_at: { type: string, format: date-time }
+
+    PolicyDecision:
+      type: object
+      properties:
+        policy_decision_id: { type: [string, 'null'], format: uuid }
+        outcome: { type: string, enum: [APPROVABLE, BLOCKED, NEEDS_CHANGES] }
+        expires_at: { type: [string, 'null'], format: date-time }
+        requires_human_approval: { type: boolean }
+        requires_dual_approval: { type: boolean }
+        findings:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              severity: { type: string, enum: [INFO, WARNING, BLOCKING] }
+              explanation: { type: string }
+
+    ApprovalRequest:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        campaign_id: { type: string, format: uuid }
+        reason: { type: string, description: Gatilho que exigiu aprovacao humana. }
+        plan_version: { type: integer }
+        status: { type: string, enum: [PENDING, APPROVED, REJECTED, CHANGES_REQUESTED, EXPIRED] }
+        requires_dual_approval: { type: boolean }
+        decided_by: { type: array, items: { type: string, format: uuid } }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+
+    AutonomySettings:
+      type: object
+      properties:
+        level: { type: integer, minimum: 0, maximum: 3 }
+        level_label: { type: string, enum: [ASSISTENTE, APROVADO, LIMITADO, OPERACIONAL] }
+        always_require_human:
+          type: array
+          description: Gatilhos que exigem humano em QUALQUER nivel.
+          items: { type: string }
+        max_budget_change_pct: { type: number }
+        updated_at: { type: string, format: date-time }
+
+    InsightSeries:
+      type: object
+      properties:
+        campaign_id: { type: string, format: uuid }
+        last_synced_at: { type: [string, 'null'], format: date-time }
+        points:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              channel: { $ref: '#/components/schemas/Channel' }
+              impressions: { type: integer }
+              clicks: { type: integer }
+              spend: { type: number }
+              conversions: { type: integer }
+              cpa: { type: [number, 'null'] }
+
+    AuditEvent:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        occurred_at: { type: string, format: date-time }
+        actor_kind: { type: string, enum: [USER, SYSTEM, AI, EXTERNAL_PROVIDER] }
+        actor_id: { type: [string, 'null'], format: uuid }
+        action: { type: string }
+        target: { type: string }
+        policy_decision_id: { type: [string, 'null'], format: uuid }
+        evidence: { type: [object, 'null'] }

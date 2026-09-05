@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.campaia.app/v1/event-envelope.schema.json",
+  "title": "EventEnvelope",
+  "description": "Envelope obrigatorio de todo evento interno da CAMPAIA. O payload varia; o envelope nao.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "event_type", "event_version", "tenant_id", "occurred_at", "actor", "correlation_id", "payload"],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid", "description": "Chave de deduplicacao no consumidor." },
+    "event_type": { "type": "string", "pattern": "^[A-Z][A-Za-z]+$" },
+    "event_version": { "type": "integer", "minimum": 1 },
+    "tenant_id": { "type": "string", "format": "uuid", "description": "Obrigatorio. Consumidor deve recusar evento sem tenant." },
+    "business_unit_id": { "type": ["string", "null"], "format": "uuid" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["USER", "SYSTEM", "AI", "EXTERNAL_PROVIDER"] },
+        "user_id": { "type": ["string", "null"], "format": "uuid" },
+        "ai_run_id": { "type": ["string", "null"], "format": "uuid" },
+        "provider": { "type": ["string", "null"] }
+      }
+    },
+    "correlation_id": { "type": "string", "format": "uuid", "description": "Amarra briefing, plano, aprovacao, publicacao e reconciliacao." },
+    "causation_id": { "type": ["string", "null"], "format": "uuid" },
+    "policy_decision_id": {
+      "type": ["string", "null"],
+      "format": "uuid",
+      "description": "Obrigatorio em qualquer evento que preceda efeito externo."
+    },
+    "payload": { "type": "object" }
+  }
+}

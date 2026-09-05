@@ -1,0 +1,322 @@
+# CAMPAIA — PAINEL DE EXECUÇÃO
+
+**Atualizado em:** 04/09/2026 (B7 — DDL e migrations do Postgres — construído sob autorização do Diretor, verificado de fato contra um Postgres 16 real descoberto nesta sandbox, corrigindo uma ressalva anterior de que a verificação seria apenas estática; B8 segue pendente)
+**Regra:** este painel é a fonte de verdade da execução. Ao retomar qualquer sessão, reconstruir o estado a
+partir de arquivos, código e testes reais — nunca apenas da memória da conversa (Ordem Mestra, item 18).
+
+> **VERSÃO VIGENTE.** Substitui `01_PAINEL_EXECUCAO_v14_VIGENTE.md` (e as anteriores v1-v13) no Drive. Se as
+> versões antigas ainda existirem na pasta, ignorá-las e apagá-las.
+
+---
+
+## PONTO DE RETOMADA
+
+1. Ler este painel.
+2. Restaurar `backend/` a partir do Drive (pasta CAMPAIA) — 5 subpastas: `campaia_core/`, `tests/`, `api/`, `tests_api/`, `db/` (novo no B7, DDL do Postgres).
+3. Rodar `cd backend && python3 -m unittest discover -s tests` (sem `-t .` — `tests/` não tem `__init__.py`) → esperado: **263 aprovados** (domínio; 237 preexistentes + 26 novos do B5: `test_pacing.py` e `test_optimizer.py`).
+4. Rodar `cd backend && python3 -m unittest discover -s tests_api -t .` → esperado: **80 aprovados** (72 da camada HTTP/persistência + 8 da correção da P-19; B5 não tocou `api/`).
+5. Persistência é opcional: `create_app()` (sem argumento) continua 100% em memória; `create_app(db_path="...")` liga a um arquivo SQLite real. Ver `api/db.py` e `docs/evidence/EVIDENCIA_PERSISTENCIA_20260828.md`.
+6. Catálogo de eventos formalizado como AsyncAPI 3.0 em `contracts/events.asyncapi.yaml` (24 eventos — contagem corrigida de uma caracterização anterior incorreta de 22). Verificar com `python3 contracts/validate_events_asyncapi.py`. Ver `docs/evidence/EVIDENCIA_B9_ASYNCAPI_20260829.md`.
+7. Catálogo de 21 mensagens de erro em linguagem de usuário publicado em `docs/09_CATALOGO_ERROS_USUARIO.md` (v1.1.0) — os 3 códigos do Connector Hub que faltavam mapeamento (`AUTH_EXPIRED`, `VALIDATION_REJECTED`, `PARTIAL_FAILURE`) foram corrigidos em código em `api/errors.py` (`STATUS_BY_CODE`), sob autorização do Diretor ("pode corrigir não vamos deixar nenhum erro para trás"). P-19 **FECHADA** — ver `docs/evidence/EVIDENCIA_P19_FIX_20260904.md`.
+8. B5 (motor de otimização e pacing) **CONCLUÍDO** (04/09) — `campaia_core/pacing.py` e `campaia_core/optimizer.py`, camada de sugestão apenas (F8.1); nenhuma execução automática (F8.2 permanece fora de escopo, confirmado pelo Diretor). Ver `docs/evidence/EVIDENCIA_B5_OTIMIZACAO_PACING_20260904.md`.
+9. B7 (DDL e migrations do Postgres) **CONCLUÍDO** (04/09) — `backend/db/001_initial_schema.sql` (7 tabelas já persistidas hoje via `api/db.py`, RLS por tenant, CHECK nos enums do contrato, FK real `approvals→campaigns`) e `backend/db/verify_ddl_postgres.sh`, verificados de fato contra um Postgres 16 real descoberto nesta sandbox (não apenas sintaxe). Ver `docs/evidence/EVIDENCIA_B7_DDL_POSTGRES_20260904.md`.
+10. Próxima decisão em aberto — ver "Situação atual". Não presumir qual bloco vem a seguir sem confirmar com o Diretor.
+
+Se qualquer suíte não passar, corrigir antes de qualquer coisa nova.
+
+---
+
+## Situação atual
+
+| Campo | Valor |
+|---|---|
+| **Fase atual** | Fase 3 em execução; camada BFF/API conforme ao contrato literal, com persistência real opcional (SQLite); DDL do Postgres construído e verificado contra um servidor real (B7); catálogo de eventos formalizado como contrato AsyncAPI 3.0; catálogo de erros em linguagem de usuário publicado e com cobertura 100% do Connector Hub; motor de otimização e pacing (B5) construído como camada de sugestão apenas; tudo genuinamente salvo no Drive |
+| **Última tarefa concluída** | B7 — DDL e migrations do Postgres: `backend/db/001_initial_schema.sql` cobrindo exatamente as 7 tabelas já persistidas hoje via `api/db.py` (`brand_profiles`, `connections`, `campaigns`, `approvals`, `audit_events`, `idempotency`, `tenant_autonomy`), com colunas reais nos campos filtrados/consultados, JSONB nos campos aninhados complexos, `CHECK` nos enums do contrato, foreign key real `approvals.campaign_id→campaigns.campaign_id`, Row Level Security por tenant em todas as tabelas e `business_unit_id` sempre nullable (D-03 permanece em aberto, sem bloquear o schema); `backend/db/verify_ddl_postgres.sh` prova tudo isso de fato contra um servidor Postgres 16 real descoberto nesta sandbox — não apenas sintaxe — incluindo o caso crítico de isolamento (sem `app.tenant_id` definido, zero linhas visíveis, falha fechado) |
+| **Status** | Núcleo de domínio determinístico **VALIDADO** (263/263, inalterado pelo B7); camada BFF/API **VALIDADA** com persistência real opcional e P-19 corrigida (80/80, inalterada pelo B7); DDL do Postgres (B7) **CONSTRUÍDO E VERIFICADO CONTRA SERVIDOR REAL** (RLS, CHECK, FK e chave composta testados com casos válidos e inválidos, 2 execuções reprodutíveis); catálogo de eventos **FORMALIZADO** em AsyncAPI 3.0 (24 eventos); catálogo de erros de usuário **PUBLICADO E COMPLETO** (21 códigos cobertos, 10/10 valores de `ConnectorErrorCode` mapeados); motor de otimização e pacing (B5) **CONSTRUÍDO** — camada de sugestão apenas |
+| **Última evidência** | `docs/evidence/EVIDENCIA_B7_DDL_POSTGRES_20260904.md` — autorização do Diretor ("sim concordo" + duas confirmações de escopo), pesquisa prévia que confirmou que `docs/06_MODELO_DADOS.md` nunca foi escrito e que a maioria dos módulos de domínio nunca foi persistida, descoberta e uso de um Postgres 16 real nesta sandbox (corrigindo a ressalva dada ao Diretor de que a verificação seria só estática), verificação real com casos válidos e inválidos, zero regressão (343 testes inalterados), 3 uploads via `textContent` com verificação por download+diff completo (não apenas tamanho) |
+| **Bloqueios** | D-03, D-05, D-06, D-08, D-09 |
+| **Próxima ação** | Recomendação do engenheiro sênior (eu): **B8** (especificação das telas do app) segue bloqueado por D-03 (segmento/MVP), ainda em aberto — não recomendo avançar nele sem essa decisão. Com B5 e B7 concluídos, recomendo antecipar o **C1** (repositório Git + CI), que exige repositório e ~30 minutos no PC, ou, sem PC, revisar com o Diretor se alguma das decisões em aberto (D-03, D-05, D-06, D-08, D-09) pode ser resolvida agora para destravar os blocos que dependem delas. Aguardando decisão do Diretor — ver seção "Blocos ainda construíveis sem PC" |
+| **Gate para avançar** | Gate Arquitetural (G1) |
+
+---
+
+## Decisões registradas
+
+| ID | Decisão | Resultado | ADR |
+|---|---|---|---|
+| — | Nome do produto | **CAMPAIA** | ADR-0001 **APROVADA** |
+| D-02 | Relação com o Kordena | **Independente, com integração futura opcional via API pública** | ADR-0002 **APROVADA** |
+| D-04 | Ordem de canais | **Google → Meta → conjunto → WhatsApp** | ADR-0007 **APROVADA** |
+| D-07 | Ambiente de desenvolvimento | Construir em Python puro sem PC; PC com VS Code fica para o fim (Bloco C) | `10_PLANO_AQUI_VS_PC.md` |
+| — | Credenciais e configurabilidade | Modos PLATFORM e BYO; travas não desativáveis | ADR-0013 PROPOSTA |
+| — | Autorização | RBAC (6 papéis) + ABAC (tenant, unidade, valor, idade da autenticação) | ADR-0014 PROPOSTA |
+| — | Política de salvamento | Um bloco só está concluído quando está salvo. Sem acumular para o fim do dia | Decisão do Diretor, 26/08 |
+| — | Correção de painel + priorização BFF/API | Diretor: *"sim siga sua sugestão eu aprovo"* | Decisão do Diretor, 27/08 — `docs/evidence/GAP_ANALISE_BACKEND_CAMPAIA_20260827.md` |
+| — | Fechar a lacuna P-12 (testes de IA/agentes/PII) | Diretor: *"fechar a lacuna"* | Decisão do Diretor, 27/08 — `docs/evidence/EVIDENCIA_P12_20260827.md` |
+| — | Conferir a API contra o contrato literal (recomendação de engenharia B) | Diretor: *"faça assim segundo a sua recomendação B"* | Decisão do Diretor, 28/08 — `docs/evidence/EVIDENCIA_P14_20260828.md` |
+| — | Corrigir todas as divergências encontradas na conferência | Diretor: *"corrigir tudo"* | Decisão do Diretor, 28/08 — `docs/evidence/EVIDENCIA_P14_20260828.md` |
+| — | Corrigir a imprecisão de `connector-hub-e-eventos.md` antes de qualquer avanço, depois seguir para persistência e para os blocos pendentes | Diretor: *"fazer essa correção primeiro antes de avançar e não deixar nada para tras, e depois na sequencia as opções 1 e a 2 pode executar dessa forma"* | Decisão do Diretor, 28/08 — `docs/evidence/EVIDENCIA_P15_20260828.md` |
+| — | Achado de processo comunicado ao Diretor de forma transparente assim que descoberto (código da P-14 nunca salvo no Drive), com remediação iniciada imediatamente, sem aguardar resposta | Comunicação enviada ao Diretor, 28/08 — `docs/evidence/EVIDENCIA_REMEDIACAO_P14_20260828.md` | — |
+| — | Persistência real (opção 1) construída sobre a base corrigida, não sobre uma restauração do Drive; verificada independentemente antes de aceitar o trabalho do agente delegado | Execução conforme a sequência autorizada pelo Diretor, 28/08 — `docs/evidence/EVIDENCIA_PERSISTENCIA_20260828.md` | — |
+| — | Instrução de processo: como engenheiro sênior, sempre apresentar as opções com uma recomendação claramente marcada, em vez de um menu neutro | Diretor: *"vc é o eng senior sempre de as opções com a marcação de recomendo na melhor entre as opções"* | Decisão de processo do Diretor, 28/08 |
+| — | Recomendação de engenharia para "opção 2": priorizar B9 (AsyncAPI) sobre B5/B7/B8/B10 — B7 não verificável sem credenciais reais; B8/B10 dependem de D-03/D-05 em aberto; B5 tem o maior escopo e menor base já verificada; B9 formaliza um catálogo já corrigido e verificado (P-15) | Recomendação apresentada e executada sob a autorização "pode executar dessa forma" do Diretor, 28-29/08 — `docs/evidence/EVIDENCIA_B9_ASYNCAPI_20260829.md` | — |
+| — | Recomendação de engenharia para o bloco seguinte a B9: priorizar B10 (catálogo de erros em linguagem de usuário) sobre B5/B7/B8 — B7 não verificável sem credenciais reais; B8 depende de D-03 em aberto; B5 tem o maior escopo restante; B10 é documentação sobre uma taxonomia de erro já estável no código | Diretor: *"b10"*, 03/09 — `docs/evidence/EVIDENCIA_B10_CATALOGO_ERROS_20260903.md` | — |
+| — | Corrigir o gap da P-19 (3 códigos do Connector Hub sem mapeamento HTTP), sem deixar nenhuma inconsistência entre código e documentação | Diretor: *"pode corrigir não vamos deixar nenhum erro para trás"*, 04/09 — `docs/evidence/EVIDENCIA_P19_FIX_20260904.md` | — |
+| — | Construir B5 (motor de otimização e pacing), seguindo a recomendação apresentada ao final do fechamento da P-19 | Diretor: *"siga sua recomendação"*, 04/09 — `docs/evidence/EVIDENCIA_B5_OTIMIZACAO_PACING_20260904.md` | — |
+| — | Escopo do B5: motor que apenas calcula e sugere otimizações (F8.1); execução automática (F8.2) permanece fora de escopo do MVP — decisão tomada mediante pergunta explícita, após a pesquisa de documentação revelar a distinção F8.1/F8.2 já registrada na Fase 0 de produto | Diretor: *"Motor que só sugere/calcula (Recomendado)"*, 04/09 — `docs/evidence/EVIDENCIA_B5_OTIMIZACAO_PACING_20260904.md` | — |
+| — | Construir B7 (DDL e migrations do Postgres), seguindo a recomendação apresentada ao final do fechamento do B5, com a ressalva (que se mostrou incorreta — ver Seção 5 da evidência) de que a verificação seria apenas estática | Diretor: *"sim concordo"*, 04/09 — `docs/evidence/EVIDENCIA_B7_DDL_POSTGRES_20260904.md` | — |
+| — | Escopo do B7 (parte 1): DDL cobrindo apenas as entidades já persistidas hoje via `api/db.py` (7 tabelas), não um modelo de dados especulativo para módulos que hoje só existem em memória | Diretor: *"DDL apenas do que já é persistido (Recomendado)"*, 04/09 — `docs/evidence/EVIDENCIA_B7_DDL_POSTGRES_20260904.md` | — |
+| — | Escopo do B7 (parte 2): multi-tenancy construída para o caso simples (tenant_id obrigatório + RLS em toda tabela), com `business_unit_id` nullable e extensível, sem aguardar a resolução da D-03 | Diretor: *"Construir para o caso simples, deixando extensível (Recomendado)"*, 04/09 — `docs/evidence/EVIDENCIA_B7_DDL_POSTGRES_20260904.md` | — |
+| D-03, D-05, D-06, D-08, D-09 | Segmento, objetivo do MVP, modelo comercial de IA, nuvem, LGPD | **Em aberto** | — |
+
+---
+
+## Estados por fase
+
+Estados permitidos: `NÃO INICIADA`, `EM ANÁLISE`, `EM EXECUÇÃO`, `EM CORREÇÃO`, `BLOQUEADA`,
+`IMPLEMENTADA — AGUARDANDO TESTES`, `EM VALIDAÇÃO`, `AGUARDANDO DEPENDÊNCIA EXTERNA`, `VALIDADA`, `CONCLUÍDA`.
+
+| Fase | Escopo | Status | Gate de saída |
+|---|---|---|---|
+| 0 | Reconhecimento | **CONCLUÍDA** | — |
+| 1 | Plano Mestre, ADRs, contratos, threat model, capability matrix | **EM VALIDAÇÃO** — contrato do BFF conferido campo a campo; catálogo de eventos agora formalizado em AsyncAPI 3.0 (ver Fase 3) | G1 Arquitetural |
+| 2 | Fundação: projeto, auth, banco, segredos, CI | **BLOQUEADA** (Bloco C: PC); persistência da camada API agora real (SQLite opcional) — o que resta bloqueado por PC é infraestrutura de projeto/CI, não mais o armazenamento em si | G2 Segurança |
+| 3 | Núcleo de campanhas + camada HTTP | **EM EXECUÇÃO** — 19 módulos de domínio (263 testes, incluindo `pacing.py`/`optimizer.py` do B5) + camada BFF/API sobre Starlette conforme ao contrato literal, com persistência real opcional (SQLite) e P-19 corrigida (80 testes), DDL do Postgres construído e verificado contra servidor real (B7, `backend/db/`), catálogo de eventos formalizado em AsyncAPI 3.0 (24 eventos), catálogo de erros de usuário publicado e completo (21 códigos, 10/10 valores de conector mapeados) e motor de otimização/pacing (B5) como camada de sugestão apenas, tudo efetivamente salvo no Drive | G6 parcial |
+| 4 | IA: gateway multimodelo, agentes, evals | **EM EXECUÇÃO** — código testado (88 testes, P-12 fechada 27/08, inalterado); apenas evals seguem pendentes | G3 IA |
+| 5 | Google Ads | NÃO INICIADA | G4 Integração |
+| 6 | Meta (Facebook + Instagram) | NÃO INICIADA | G4 Integração |
+| 7 | WhatsApp Business | NÃO INICIADA | G4 Integração |
+| 8 | Aplicativo mobile completo | NÃO INICIADA (agora tem uma API real e conforme ao contrato para consumir, ainda que sem persistência) | G5 Mobile |
+| 9 | Analytics e otimização | NÃO INICIADA — `GET /insights` da API devolve lista vazia, honestamente, sem inventar dado; formato do ponto agora bate com o contrato | G6 Financeiro |
+| 10 | Segurança e robustez | NÃO INICIADA | G2 final |
+| 11 | Homologação | NÃO INICIADA | G7 Final |
+| 12 | Produção | NÃO INICIADA | Autorização expressa do Diretor |
+
+---
+
+## Código construído (`backend/campaia_core/` — B5 novo nesta sessão)
+
+| Módulo | Responsabilidade | Testes confirmados no Drive |
+|---|---|---|
+| `errors.py` | Taxonomia canônica de erros | — |
+| `states.py` | Máquina de estados com guardas | 8 (dentro de `test_invariantes.py`) |
+| `autonomy.py` | Níveis 0–3 e gatilhos de aprovação | (dentro de `test_invariantes.py`) |
+| `budget.py` | Reservas de verba e tetos | (dentro de `test_invariantes.py`) |
+| `policy.py` | Policy Engine e emissão de autorização | (dentro de `test_invariantes.py`) |
+| `infra.py` | Idempotência e Capability Registry | (dentro de `test_invariantes.py`) |
+| `connectors.py` | Contrato dos adaptadores (3 de 14 operações canônicas) + `SecretRef` | (dentro de `test_saga.py`) |
+| `simulator.py` | Provider Simulator com falhas programáveis | (dentro de `test_saga.py`) |
+| `saga.py` | Publicação multicanal e compensação | `test_saga.py` — 24 testes |
+| `permissions.py` | RBAC (6 papéis) + ABAC, segregação de funções | `test_permissions.py` — 32 testes |
+| `webhooks.py` | Assinatura HMAC, replay, dedupe | (dentro de `test_webhooks_outbox.py`) |
+| `outbox.py` | Outbox/Inbox, dual write | `test_webhooks_outbox.py` — 23 testes |
+| `reconciliation.py` | **B3** — reconciliador de divergência | `test_reconciliation.py` — 26 testes |
+| `ai_gateway.py` | Seleção de provedor, custo, schema, fallback, circuit breaker, trava de credencial | `test_ai_gateway.py` — 42 testes |
+| `ai_simulator.py` | Provedor de IA simulado com falhas programáveis | `test_ai_simulator.py` — 13 testes |
+| `sanitizer.py` | Pseudonimização de PII (CPF, CNPJ, e-mail, telefone, cartão, CEP) | `test_sanitizer.py` — 19 testes |
+| `agents.py` | 6 agentes como funções puras; nunca inventa contexto faltante | `test_agents.py` — 14 testes |
+| `pacing.py` | **B5 (novo, 04/09)** — cálculo de ritmo de gasto vs. período orçamentário, com sugestão de teto diário ajustado | `test_pacing.py` — 14 testes |
+| `optimizer.py` | **B5 (novo, 04/09)** — 4 regras de sugestão (F8.1); nunca executa, apenas emite `Recommendation` imutável com `ActionKind` que exige aprovação humana via `autonomy.py` | `test_optimizer.py` — 12 testes |
+
+**Total domínio: 263 aprovados** (237 preexistentes + 26 novos do B5).
+
+## Código construído (`backend/api/` e `backend/tests_api/`)
+
+| Arquivo | Papel | Alterado nesta sessão? |
+|---|---|---|
+| `api/main.py` | App Starlette, montagem de rotas, `create_app(db_path=...)` | Não |
+| `api/deps.py` | Autenticação por token fixo (fixture local, não é credencial real), step-up, idempotência | Não |
+| `api/state.py` | Estado da aplicação, `AppState(db_path=...)` | Não |
+| `api/repositories.py` | Repositórios (memória ou SQLite via `_attach_persistence`/`_wrap_loaded`) | Não |
+| `api/db.py` | Persistência SQLite opcional (stdlib apenas) | Não |
+| `api/errors.py` | Taxonomia de erro canônica | **Sim (04/09)** — P-19: 3 entradas novas em `STATUS_BY_CODE` (`AUTH_EXPIRED`, `VALIDATION_REJECTED`, `PARTIAL_FAILURE`); 3500→4509 bytes |
+| `api/models.py` | Schemas Pydantic | Não |
+| `api/helpers.py` | Serializers | Não |
+| `api/routes_*.py` (9 arquivos) | Rotas HTTP | Não |
+| `tests_api/*.py` (5 arquivos, 72 testes) | Testes da camada HTTP + persistência | Não |
+| `tests_api/test_errors_p19.py` | **Novo (04/09)** — 8 testes provando a correção da P-19 de ponta a ponta via `from_domain_error()` | Novo nesta sessão |
+
+**Total camada HTTP: 80 aprovados** (72 preexistentes + 8 novos da P-19). Construída sobre Starlette, não FastAPI —
+`pypi.org` está fora da lista de permissão de rede do sandbox onde foi construída; ver
+`docs/evidence/EVIDENCIA_BFF_API_20260827.md` para o desvio completo.
+
+## Código construído (`backend/db/` — B7 novo nesta sessão)
+
+| Arquivo | Papel | Verificação |
+|---|---|---|
+| `db/001_initial_schema.sql` | DDL do Postgres (migration única) para as 7 tabelas já persistidas hoje via `api/db.py`, com RLS por tenant, `CHECK` nos enums do contrato, FK real `approvals→campaigns`, chave composta em `idempotency`, `business_unit_id` sempre nullable (D-03 em aberto) | Aplicado e testado contra Postgres 16 real (não apenas sintaxe) |
+| `db/verify_ddl_postgres.sh` | Script reproduzível que cria banco/papel de teste próprios, aplica a migration e prova com queries reais: schema aplica sem erro, RLS isola tenants (inclusive o caso "sem contexto = zero linhas", falha fechado), `CHECK` rejeita/aceita corretamente, FK rejeita referência inexistente, chave composta de `idempotency` rejeita duplicata | Executado com sucesso 2x seguidas (reprodutibilidade), zero rastro deixado no servidor após cada execução |
+
+Não altera nenhum módulo de `campaia_core/` ou `api/` — é puramente SQL + shell novos. Ver
+`docs/evidence/EVIDENCIA_B7_DDL_POSTGRES_20260904.md` para a transcrição completa da verificação real.
+
+## Contratos (`contracts/` — B9 fechado nesta sessão)
+
+| Arquivo | Papel | Novo/alterado nesta sessão? |
+|---|---|---|
+| `contracts/event-envelope.schema.json` | Envelope canônico de eventos (JSON Schema draft 2020-12) | Não — apenas lido e reproduzido |
+| `contracts/campaign-brief.schema.json`, `campaign-plan.schema.json`, `ai-gateway.schema.json` | Schemas de payload referenciados pela descrição do AsyncAPI | Não — apenas lidos para contexto |
+| `contracts/connector-hub-e-eventos.md` | Fonte de verdade do catálogo de 24 eventos (Seção 2) | Não — apenas lido; usado para extrair o catálogo programaticamente |
+| `contracts/events.asyncapi.yaml` | **Novo** — especificação AsyncAPI 3.0 formalizando os 24 eventos (24 `channels`/`operations`/`components.messages`), todos referenciando o `EventEnvelope` | Novo nesta sessão (B9) |
+| `contracts/validate_events_asyncapi.py` | **Novo** — script de verificação reproduzível (sintaxe YAML, cobertura 1:1, integridade de `$ref`, fidelidade do schema, exemplo validável) | Novo nesta sessão (B9) |
+
+---
+
+## Blocos ainda construíveis sem PC
+
+| # | Item | Estado |
+|---|---|---|
+| — | Camada BFF/API (HTTP) | **CONCLUÍDA** (27/08) |
+| — | Testes automatizados para `ai_gateway.py`, `ai_simulator.py`, `sanitizer.py`, `agents.py` (P-12) | **CONCLUÍDA** (27/08) |
+| — | Conferência campo a campo entre `api/` e o YAML literal + correção de todas as divergências (P-14) | **CONCLUÍDA** (28/08) |
+| — | Persistência real (banco de dados) para os Stores hoje em memória | **CONCLUÍDA** (28/08) — SQLite opcional via `api/db.py`, 8 novos testes |
+| B3 | Reconciliador de divergência | **CONCLUÍDO** (confirmado 27/08, 26 testes) |
+| B9 | AsyncAPI do catálogo de eventos | **CONCLUÍDO** (29/08) — `contracts/events.asyncapi.yaml`, 24 eventos, ver evidência |
+| B10 | Catálogo de erros em linguagem de usuário | **CONCLUÍDO** (03/09) — `docs/09_CATALOGO_ERROS_USUARIO.md`, atualizado para v1.1.0 em 04/09 após a correção da P-19, 21 códigos cobertos, ver evidência |
+| — | Correção da P-19 (gap de mapeamento HTTP no Connector Hub) | **CONCLUÍDA** (04/09) — `api/errors.py`, 3 entradas novas + 8 testes, ver evidência |
+| B5 | Motor de otimização e pacing | **CONCLUÍDO** nesta sessão (04/09) — `pacing.py` + `optimizer.py`, camada de sugestão apenas (F8.1); F8.2 fora de escopo por confirmação do Diretor; 26 testes; ver evidência |
+| B7 | DDL e migrations do Postgres | **CONCLUÍDO** nesta sessão (04/09) — `db/001_initial_schema.sql` + `db/verify_ddl_postgres.sh`, verificado de fato contra um Postgres 16 real descoberto nesta sandbox (não apenas sintaxe); ver evidência |
+| B8 | Especificação das telas do app | Pendente — depende de D-03 (segmento/MVP) em aberto |
+
+**Recomendação de engenharia pendente de decisão:** com B5 e B7 concluídos, **B8** segue bloqueado por D-03, ainda
+em aberto — não recomendo avançar nele sem essa decisão do Diretor. Recomendo **C1** (repositório Git + CI), que
+exige repositório e ~30 minutos no PC, ou, alternativamente, revisar com o Diretor se alguma das decisões em
+aberto (D-03, D-05, D-06, D-08, D-09) pode ser resolvida agora para destravar os blocos que dependem delas.
+
+---
+
+## Artefatos de documentação e contratos
+
+| Artefato | Arquivo | Status |
+|---|---|---|
+| Diagnóstico inicial | `docs/00_DIAGNOSTICO_INICIAL.md` | CONCLUÍDO |
+| Plano Mestre | `docs/02_PLANO_MESTRE.md` | CONCLUÍDO (v0.1) |
+| ADRs | `docs/03_ADR_INICIAIS.md` | 3 aprovadas, 5 propostas (inclui ADR-0014) |
+| Decisões do Diretor | `docs/04_DECISOES_DO_DIRETOR.md` | 4 resolvidas, 5 abertas |
+| Arquitetura Mestra V2 | `docs/05_ARQUITETURA_V2.md` | PROPOSTA |
+| Modelo lógico de dados | `docs/06_MODELO_DADOS.md` | PROPOSTA (v0.1) |
+| Threat model | `docs/07_THREAT_MODEL.md` | **PARCIAL** (T-02 coberta por código) |
+| Capability Matrix | `docs/08_CAPABILITY_MATRIX.md` | **PARCIAL** v0.2 |
+| ADR-0013 credenciais | `docs/09_ADR_0013_...md` | PROPOSTA |
+| Plano aqui vs PC | `docs/10_PLANO_AQUI_VS_PC.md` | Vivo |
+| Contratos JSON Schema (4) | `contracts/*.schema.json` | Sintaxe validada |
+| OpenAPI do BFF | `contracts/bff-openapi.yaml` | Rascunho (`1.0.0-draft`); implementação em `backend/api/` conferida campo a campo (P-14) |
+| Connector Hub + eventos | `contracts/connector-hub-e-eventos.md` | PROPOSTA — corrigida em 28/08 (P-15); catálogo de eventos (Seção 2) agora também formalizado como AsyncAPI 3.0 (B9, 29/08) |
+| **Catálogo de eventos AsyncAPI** | `contracts/events.asyncapi.yaml` | **CONCLUÍDO** (29/08) — 24 eventos, verificado por script próprio |
+| **Catálogo de erros em linguagem de usuário** | `docs/09_CATALOGO_ERROS_USUARIO.md` | **CONCLUÍDO** (03/09, atualizado para v1.1.0 em 04/09) — 21 códigos cobertos, 10/10 valores de `ConnectorErrorCode` mapeados |
+| Análise de lacunas reais do backend | `docs/evidence/GAP_ANALISE_BACKEND_CAMPAIA_20260827.md` | CONCLUÍDO |
+| Evidência da camada BFF/API | `docs/evidence/EVIDENCIA_BFF_API_20260827.md` | CONCLUÍDO |
+| Evidência do fechamento da P-12 | `docs/evidence/EVIDENCIA_P12_20260827.md` | CONCLUÍDO |
+| Evidência do fechamento da P-14 | `docs/evidence/EVIDENCIA_P14_20260828.md` | CONCLUÍDO |
+| Evidência do fechamento da P-15 | `docs/evidence/EVIDENCIA_P15_20260828.md` | CONCLUÍDO |
+| Evidência do achado e remediação: código da P-14 nunca salvo no Drive (P-16) | `docs/evidence/EVIDENCIA_REMEDIACAO_P14_20260828.md` | CONCLUÍDO |
+| Evidência do fechamento da persistência real (opção 1 do Diretor) | `docs/evidence/EVIDENCIA_PERSISTENCIA_20260828.md` | CONCLUÍDO |
+| Evidência do fechamento do B9 (AsyncAPI) | `docs/evidence/EVIDENCIA_B9_ASYNCAPI_20260829.md` | CONCLUÍDO |
+| Evidência do fechamento do B10 (catálogo de erros) | `docs/evidence/EVIDENCIA_B10_CATALOGO_ERROS_20260903.md` | CONCLUÍDO |
+| Evidência do fechamento da P-19 (gap de mapeamento HTTP no Connector Hub) | `docs/evidence/EVIDENCIA_P19_FIX_20260904.md` | CONCLUÍDO |
+| Evidência do fechamento do B5 (motor de otimização e pacing) | `docs/evidence/EVIDENCIA_B5_OTIMIZACAO_PACING_20260904.md` | CONCLUÍDO |
+| Evidência do fechamento do B7 (DDL e migrations do Postgres) | `docs/evidence/EVIDENCIA_B7_DDL_POSTGRES_20260904.md` | CONCLUÍDO |
+
+---
+
+## Pendências técnicas abertas
+
+| ID | Pendência | Efeito se confirmada |
+|---|---|---|
+| P-04 | Marca CAMPAIA: INPI, domínio, lojas | Bloqueia identidade visual e submissão às lojas |
+| P-08 | Meta: Advantage+ Shopping/App não criáveis pela Marketing API desde a v25.0 (fonte secundária) | Remove tipos de campanha do conjunto oferecível |
+| P-09 | WhatsApp: mudanças de preço em 01/08/2026 e 01/10/2026 | Preço vira dado versionado com data de vigência |
+| P-10 | Documentação da Meta que exige login | Confirmação definitiva exige acesso autenticado |
+| P-12 | ~~`ai_gateway.py`, `ai_simulator.py`, `sanitizer.py`, `agents.py` sem teste automatizado confirmado no Drive~~ | **FECHADA em 27/08** — 88 testes reais, `docs/evidence/EVIDENCIA_P12_20260827.md` |
+| P-13 | Camada BFF/API construída sobre Starlette, não FastAPI (bloqueio de rede a `pypi.org` no sandbox) | Se FastAPI for exigido especificamente (ex.: docs OpenAPI automáticas), precisa de ambiente com acesso a índice de pacotes Python |
+| P-14 | ~~Implementação da API seguiu paráfrase do contrato, não o YAML de `bff-openapi.yaml` linha a linha~~ | **FECHADA em 28/08** — 17 divergências encontradas e corrigidas, `docs/evidence/EVIDENCIA_P14_20260828.md` |
+| P-15 | ~~`contracts/connector-hub-e-eventos.md` descrevia a interface do conector no presente, como se já implementada para 3 plataformas reais~~ | **FECHADA em 28/08** — corrigido para contrato-alvo + nota de status real, `docs/evidence/EVIDENCIA_P15_20260828.md` |
+| P-16 | ~~O código corrigido da P-14 nunca foi de fato enviado ao Google Drive~~ | **FECHADA em 28/08** — 11+3 arquivos reenviados e byte a byte verificados; contagem de domínio corrigida (233→237); `docs/evidence/EVIDENCIA_REMEDIACAO_P14_20260828.md` |
+| P-17 | ~~Catálogo de eventos caracterizado como tendo "22 eventos" em registros anteriores deste projeto (inclusive resumos de sessão); a tabela-fonte real (`connector-hub-e-eventos.md`, Seção 2) tem 23 linhas, uma das quais agrupa 2 eventos distintos, totalizando 24~~ | **FECHADA em 29/08**, descoberta durante a extração programática do catálogo para o B9 (AsyncAPI); nenhum evento foi adicionado/removido — apenas a contagem foi corrigida; `docs/evidence/EVIDENCIA_B9_ASYNCAPI_20260829.md` |
+| P-18 | Tentativa de instalar `@asyncapi/cli` (npm) e de baixar o meta-schema JSON oficial do AsyncAPI 3.0 (GitHub raw) para validação de referência — ambas bloqueadas por `403 Forbidden` da política de rede do sandbox | Verificação do B9 feita por script de validação próprio (sintaxe YAML real, cobertura 1:1, integridade de `$ref`, fidelidade de schema, exemplo validável), não pela ferramenta de referência oficial; documentado com transparência em `docs/evidence/EVIDENCIA_B9_ASYNCAPI_20260829.md`. Não bloqueia o fechamento do bloco, mas fica registrado como limitação de ambiente |
+| P-19 | ~~3 dos 10 códigos de `ConnectorErrorCode` (`campaia_core/connectors.py`) — `AUTH_EXPIRED`, `VALIDATION_REJECTED`, `PARTIAL_FAILURE` — não têm entrada em `STATUS_BY_CODE` (`api/errors.py`); achado durante o B10, confirmado que `VALIDATION_REJECTED` já é levantado por código real em `saga.py:191`~~ | **FECHADA em 04/09** — sob autorização do Diretor ("pode corrigir não vamos deixar nenhum erro para trás"): 3 entradas adicionadas a `STATUS_BY_CODE` (`AUTH_EXPIRED`→401, `VALIDATION_REJECTED`→422, `PARTIAL_FAILURE`→207), com racional documentado; 8 novos testes provam a correção via `from_domain_error()`; 237+80=317 testes, zero regressão; catálogo B10 atualizado para v1.1.0 em sincronia; `docs/evidence/EVIDENCIA_P19_FIX_20260904.md`. Anomalia não relacionada, documentada e não corrigida: discrepância de 1 byte em `api/routes_approvals.py` (metadado do Drive vs. conteúdo real), root-caused como externa a este trabalho |
+| P-20 | ~~Upload do documento de evidência do B5 divergiu em 1 byte do original local (13344 vs. 13343); root-cause por download/diff programático revelou uma corrupção real de conteúdo (um "à" virou "a"), causada por um erro de transcrição meu ao reproduzir a string base64 na chamada da ferramenta de upload — não um comportamento do Drive~~ | **FECHADA em 04/09** — arquivo local corrigido, recodificado e reenviado; a versão corrigida foi verificada por download/diff byte a byte completo (não apenas contagem de tamanho) antes de ser aceita como correta; versão com erro trashada no Drive; `docs/evidence/EVIDENCIA_B5_OTIMIZACAO_PACING_20260904.md`. Reforça a disciplina já em vigor no projeto: contagem de bytes sozinha não basta — divergência de tamanho exige investigação por diff de conteúdo, nunca apenas reenvio |
+
+---
+
+## Dependências externas
+
+| Dependência | Necessária para | Estado |
+|---|---|---|
+| Google Cloud project + OAuth client | Fase 5 | Não iniciada |
+| Developer token Google Ads (Test → Explorer → Basic) | Fase 5 | Não iniciada — Basic: alvo de ~5 dias úteis |
+| Meta App + Business portfolio + verificação | Fase 6 | Não iniciada |
+| Meta: permissões + Marketing API Access Tier | Fase 6 produção | Exige ≥500 chamadas em 15 dias com erro <15% |
+| WhatsApp Business Account + número + templates | Fase 7 | Não iniciada |
+| Chaves OpenAI e Gemini | Fase 4 | Depende de D-06 |
+| Nuvem + orçamento de infraestrutura | Fase 2 | Depende de D-08 |
+| Apple Developer + Google Play | Fase 12 | Não iniciada |
+
+Nenhum item acima foi solicitado, obtido ou simulado.
+
+**Caminho crítico:** o tier da Meta exige histórico real de chamadas com erro baixo. A qualidade do adaptador
+Meta é pré-requisito da aprovação, não refinamento posterior.
+
+---
+
+## Registro de blocos executados
+
+| Data | Bloco | Fase | Resultado | Evidência |
+|---|---|---|---|---|
+| 25/08/2026 | Reconhecimento + Plano Mestre inicial | 0 → 1 | Diagnóstico, painel, plano, 6 ADRs, 7 decisões abertas | `docs/` |
+| 25/08/2026 | Decisões D-02/D-04 + camada de arquitetura | 1 | Arquitetura V2, contratos, modelo de dados, threat model | `docs/`, `contracts/` |
+| 25/08/2026 | OpenAPI do BFF + Capability Matrix v0.2 | 1 | ADR-0007 aprovada; API contratada e checada | checagens C1–C3 |
+| 25/08/2026 | ADR-0013 + núcleo determinístico | 3 | 6 módulos; 40 testes | saída do unittest |
+| 25/08/2026 | Provider Simulator + Saga multicanal | 3 | 9 módulos; 64 testes; D-07 resolvida | `10_PLANO_AQUI_VS_PC.md` |
+| 25/08/2026 | Cópia para o Google Drive | — | 29 arquivos, tamanhos conferidos byte a byte | Pasta CAMPAIA |
+| 26/08/2026 | B6 — permissões RBAC/ABAC | 3 | `permissions.py` + 32 testes; ADR-0014 | 96/96 aprovados |
+| 26/08/2026 | B4 — webhooks, outbox e inbox | 3 | `webhooks.py`, `outbox.py` + 27 testes; T-02 coberta | 123/123 aprovados |
+| 26/08/2026 | B2 — AI Gateway com provedor simulado | 3 → 4 | `ai_gateway.py`, `ai_simulator.py` + 31 testes | — |
+| 26/08/2026 | B1 — agentes + sanitizador de PII | 4 | `sanitizer.py`, `agents.py` + 31 testes | — |
+| 26/08/2026 | Sincronização com o Drive | — | 4 módulos + painel; política de salvamento por bloco adotada | Pasta CAMPAIA |
+| 27/08/2026 | Auditoria de código: confirmação do B3 e mapeamento de lacunas reais | 3/4 | `reconciliation.py` confirmado completo (26 testes) | `docs/evidence/GAP_ANALISE_BACKEND_CAMPAIA_20260827.md` |
+| 27/08/2026 | Decisão do Diretor: painel corrigido + BFF/API priorizado | — | Diretor: "sim siga sua sugestão eu aprovo" | `docs/evidence/GAP_ANALISE_BACKEND_CAMPAIA_20260827.md` |
+| 27/08/2026 | Camada BFF/API construída e testada (Starlette) | 1 → 3 | 19 arquivos novos; 42 testes próprios; 145 testes de domínio confirmados inalterados | `docs/evidence/EVIDENCIA_BFF_API_20260827.md` |
+| 27/08/2026 | Fechamento da P-12: testes de `ai_gateway`, `ai_simulator`, `sanitizer`, `agents` | 4 | 4 arquivos de teste novos; 88 testes; 233 testes de domínio no total | `docs/evidence/EVIDENCIA_P12_20260827.md` |
+| 28/08/2026 | Decisão do Diretor: conferir API contra contrato literal | — | Diretor: "faça assim segundo a sua recomendação B" | `docs/evidence/EVIDENCIA_P14_20260828.md` |
+| 28/08/2026 | Conferência campo a campo `api/` vs. YAML literal (P-14) | 3 | 15 divergências confirmadas por leitura direta do código e do YAML decodificado | `docs/evidence/EVIDENCIA_P14_20260828.md` |
+| 28/08/2026 | Decisão do Diretor: corrigir tudo | — | Diretor: "corrigir tudo" | `docs/evidence/EVIDENCIA_P14_20260828.md` |
+| 28/08/2026 | Correção das 15 divergências + 2 encontradas na reverificação independente | 3 | 64 testes de API (era 42); 233 testes de domínio confirmados inalterados | `docs/evidence/EVIDENCIA_P14_20260828.md` |
+| 28/08/2026 | Decisão do Diretor: corrigir a P-15 antes de avançar, depois seguir para persistência e blocos pendentes | — | Diretor: "fazer essa correção primeiro antes de avançar e não deixar nada para tras, e depois na sequencia as opções 1 e a 2 pode executar dessa forma" | `docs/evidence/EVIDENCIA_P15_20260828.md` |
+| 28/08/2026 | Fechamento da P-15: correção da documentação do Connector Hub | 1 | Achado real identificado (tempo presente na frase de abertura) e corrigido; nenhuma alteração de código | `docs/evidence/EVIDENCIA_P15_20260828.md` |
+| 28/08/2026 | Início da opção 1 do Diretor (persistência real) via agente delegado; reverificação independente do resultado | 2/3 | Reverificação direta revelou que a base restaurada era pré-P-14 | — |
+| 28/08/2026 | Achado P-16: código da P-14 nunca havia sido salvo no Drive | — | Prova forense por metadados de data do Drive; comunicado ao Diretor de forma transparente e imediata | `docs/evidence/EVIDENCIA_REMEDIACAO_P14_20260828.md` |
+| 28/08/2026 | Remediação da P-16: reenvio dos 11+3 arquivos genuinamente corrigidos ao Drive | 3 | Todos byte a byte verificados; contagem de domínio corrigida de 233 para 237 | `docs/evidence/EVIDENCIA_REMEDIACAO_P14_20260828.md` |
+| 28/08/2026 | Persistência real (opção 1) — segunda tentativa, sobre a base local já corrigida | 2/3 | Novo `api/db.py` integrado; nenhum arquivo de rota alterado; 8 novos testes; verificação independente completa | `docs/evidence/EVIDENCIA_PERSISTENCIA_20260828.md` |
+| 28/08/2026 | Upload da persistência ao Drive, imediatamente após a verificação | 3 | `main.py`, `state.py`, `repositories.py` substituídos + `db.py`/`test_persistence.py` novos; baseline 237+72=309 testes | `docs/evidence/EVIDENCIA_PERSISTENCIA_20260828.md` |
+| 28/08/2026 | Instrução de processo do Diretor: sempre apresentar recomendação marcada entre as opções | Diretor: "vc é o eng senior sempre de as opções com a marcação de recomendo na melhor entre as opções" | — |
+| 28-29/08/2026 | Recomendação de engenharia: priorizar B9 (AsyncAPI) entre B5/B7/B8/B9/B10; pesquisa dos artefatos de contrato existentes | — | Download e decodificação de `event-envelope.schema.json`, `campaign-brief.schema.json`, `campaign-plan.schema.json`, `ai-gateway.schema.json`, `connector-hub-e-eventos.md` | `contracts_ref/` (local) |
+| 29/08/2026 | Construção do AsyncAPI 3.0 (`contracts/events.asyncapi.yaml`); descoberta e correção da contagem 22→24 (P-17) durante extração programática do catálogo | 1/3 | 24 canais/operações/mensagens; envelope reproduzido campo a campo; tentativas de validação via AsyncAPI CLI e meta-schema oficial bloqueadas por política de rede (P-18) | `docs/evidence/EVIDENCIA_B9_ASYNCAPI_20260829.md` |
+| 29/08/2026 | Verificação independente do B9 via script próprio; upload ao Drive; reconciliação de uma discrepância real de bytes (3 bytes) entre Drive e disco, investigada com `diff` antes de fechar | 3 | `events.asyncapi.yaml` (25480 bytes) e `validate_events_asyncapi.py` (7287 bytes) confirmados byte a byte; script reexecutado do zero após correção, `ALL CHECKS PASSED` | `docs/evidence/EVIDENCIA_B9_ASYNCAPI_20260829.md` |
+| 03/09/2026 | Decisão do Diretor: aprovar B10 como próximo bloco | — | Diretor: "b10" | — |
+| 03/09/2026 | Pesquisa da taxonomia real de erros: leitura direta de `campaia_core/errors.py`, `api/errors.py`, `campaia_core/connectors.py`, `campaia_core/permissions.py` no Drive | 3 | Confirmação de 18 códigos ativos, 8 erros de domínio, 3 `DenialCode`; descoberta do gap de 3 códigos de `ConnectorErrorCode` (P-19), com `VALIDATION_REJECTED` confirmado via `grep` como levantado de fato em `saga.py:191` | `docs/evidence/EVIDENCIA_B10_CATALOGO_ERROS_20260903.md` |
+| 03/09/2026 | Construção e verificação independente de `docs/09_CATALOGO_ERROS_USUARIO.md` | 3 | 18 mensagens de erro em português; script Python confirmou 18/18 de cobertura exata e o gap de 3 códigos, sem diferença em relação ao documento | `docs/evidence/EVIDENCIA_B10_CATALOGO_ERROS_20260903.md` |
+| 03/09/2026 | Upload ao Drive; detecção e correção de um erro real de transcrição (3 bytes a mais na 1ª tentativa, causado por um erro de digitação meu no parâmetro de upload, não no arquivo local) via verificação byte a byte | 3 | 1ª tentativa (`fileId 1w1O...`) trashada; upload final via `base64Content` bateu exatamente 12603=12603 | `docs/evidence/EVIDENCIA_B10_CATALOGO_ERROS_20260903.md` |
+| 04/09/2026 | Decisão do Diretor: corrigir a P-19, sem deixar nenhuma inconsistência entre código e documentação | — | Diretor: "pode corrigir não vamos deixar nenhum erro para trás" | `docs/evidence/EVIDENCIA_P19_FIX_20260904.md` |
+| 04/09/2026 | Restauração local dos 48 arquivos do backend a partir do Drive via agente delegado; reverificação independente do relatório do agente | 2/3 | Agente inicialmente interrompido por rate limit relatou de forma confusa; cobrado por relatório preciso, revelou que 10 de 48 arquivos ainda estavam byte-incorretos apesar de "prontos" reportado antes; corrigidos via decodificação programática | `docs/evidence/EVIDENCIA_P19_FIX_20260904.md` |
+| 04/09/2026 | Confirmação independente da linha de base (execução direta, não apenas relato do agente) | — | 237 (domínio) + 72 (API/persistência) = 309 testes, 100% aprovados, antes de qualquer alteração | `docs/evidence/EVIDENCIA_P19_FIX_20260904.md` |
+| 04/09/2026 | Correção da P-19 em `api/errors.py` (3 entradas em `STATUS_BY_CODE`) + 8 novos testes em `tests_api/test_errors_p19.py` provando a correção via `from_domain_error()` | 3 | 237+80=317 testes, 100% aprovados, zero regressão; anomalia de 1 byte em `routes_approvals.py` investigada e documentada como externa, não corrigida (fora do escopo) | `docs/evidence/EVIDENCIA_P19_FIX_20260904.md` |
+| 04/09/2026 | Atualização do catálogo B10 (`docs/09_CATALOGO_ERROS_USUARIO.md`) para v1.1.0, refletindo a correção da P-19 em vez de descrevê-la como pendente | 3 | 12603→14668 bytes | `docs/evidence/EVIDENCIA_P19_FIX_20260904.md` |
+| 04/09/2026 | Upload dos 3 artefatos ao Drive (`api/errors.py`, `tests_api/test_errors_p19.py`, catálogo v1.1.0), todos byte-verificados na primeira tentativa | 3 | 4509=4509, 3718=3718, 14668=14668 | `docs/evidence/EVIDENCIA_P19_FIX_20260904.md` |
+| 04/09/2026 | Decisão do Diretor: construir B5, seguindo a recomendação apresentada ao final do fechamento da P-19 | — | Diretor: "siga sua recomendação" | `docs/evidence/EVIDENCIA_B5_OTIMIZACAO_PACING_20260904.md` |
+| 04/09/2026 | Pesquisa de escopo antes de escrever código: descoberta de uma árvore de documentação de produto até então não consultada (`campaia/docs/product/`), revelando a distinção F8.1 (sugerir) vs. F8.2 (executar automaticamente, fora de escopo do MVP) já registrada na Fase 0 | — | `FUNCTIONAL_REQUIREMENTS.md`, `CAMPAIA_PRODUCT_CHARTER.md`, `OUT_OF_SCOPE.md` | `docs/evidence/EVIDENCIA_B5_OTIMIZACAO_PACING_20260904.md` |
+| 04/09/2026 | Pergunta explícita ao Diretor sobre o escopo do B5, em vez de decisão unilateral, dado que um motor autoexecutável contrariaria uma decisão de escopo já registrada | — | Diretor: "Motor que só sugere/calcula (Recomendado)" | `docs/evidence/EVIDENCIA_B5_OTIMIZACAO_PACING_20260904.md` |
+| 04/09/2026 | Construção de `pacing.py` e `optimizer.py`, após confirmar (leitura completa de `autonomy.py`, `policy.py`, `states.py`, `budget.py`) que não havia sobreposição com código existente | 3 | 2 módulos novos (7854 + 6927 bytes); 26 novos testes (14 pacing + 12 optimizer), incluindo prova real via `evaluate_autonomy()` de que nenhuma sugestão se autoexecuta | `docs/evidence/EVIDENCIA_B5_OTIMIZACAO_PACING_20260904.md` |
+| 04/09/2026 | Re-execução completa da suíte (não apenas confiar no relato da sessão anterior) | — | 263 (domínio) + 80 (API/persistência) = 343 testes, 100% aprovados, zero regressão | `docs/evidence/EVIDENCIA_B5_OTIMIZACAO_PACING_20260904.md` |
+| 04/09/2026 | Upload dos 4 artefatos do B5 ao Drive, todos byte-verificados | 3 | `pacing.py` 7854=7854, `optimizer.py` 6927=6927, `test_pacing.py` 5561=5561, `test_optimizer.py` 7888=7888 | `docs/evidence/EVIDENCIA_B5_OTIMIZACAO_PACING_20260904.md` |
+| 04/09/2026 | Achado de processo, comunicado com transparência: 1ª tentativa de upload do documento de evidência do B5 divergiu em 1 byte (13344 local vs. 13343 no Drive); investigação por download/diff programático revelou uma corrupção real de conteúdo — um "à" (acento grave, crase) virou "a" — causada por um erro de transcrição meu ao reproduzir a string base64 na chamada da ferramenta, não um comportamento do Drive | — | Readback e diff byte a byte via Python confirmaram a causa exata antes de qualquer correção | `docs/evidence/EVIDENCIA_B5_OTIMIZACAO_PACING_20260904.md` |
+| 04/09/2026 | Remediação: arquivo local corrigido, nova codificação, upload da versão corrigida verificado por download/diff completo (não apenas contagem de bytes) batendo exatamente; versão com erro trashada no Drive | 3 | Versão final 13349=13349, conteúdo idêntico byte a byte ao original local confirmado por diff | `docs/evidence/EVIDENCIA_B5_OTIMIZACAO_PACING_20260904.md` |
+| 04/09/2026 | Decisão do Diretor: construir B7 (DDL e migrations do Postgres), aceitando a ressalva de verificação limitada dada ao final do fechamento do B5 | — | Diretor: "sim concordo" | `docs/evidence/EVIDENCIA_B7_DDL_POSTGRES_20260904.md` |
+| 04/09/2026 | Pesquisa de escopo delegada antes de escrever qualquer DDL: leitura completa de `campaia_core/`, `api/db.py`, `api/repositories.py`; busca por artefatos Postgres já existentes (nenhum encontrado); leitura de `campaia/docs/product/` e `TENANT_ISOLATION.md` | — | Achado: `docs/06_MODELO_DADOS.md` nunca foi de fato escrito; maioria dos módulos de domínio nunca foi persistida; saídas do B5 são cálculos puros, não geram tabela; D-03 segue condicionando o formato de multi-tenancy | `docs/evidence/EVIDENCIA_B7_DDL_POSTGRES_20260904.md` |
+| 04/09/2026 | Duas perguntas explícitas ao Diretor sobre o escopo do B7 (DDL completo vs. só do persistido; pausar por D-03 vs. construir extensível), em vez de decisão unilateral, dada a ambiguidade real de escopo encontrada na pesquisa | — | Diretor: "DDL apenas do que já é persistido (Recomendado)" + "Construir para o caso simples, deixando extensível (Recomendado)" | `docs/evidence/EVIDENCIA_B7_DDL_POSTGRES_20260904.md` |
+| 04/09/2026 | Construção de `db/001_initial_schema.sql` (7 tabelas, RLS, CHECK, FK, chave composta) e `db/verify_ddl_postgres.sh` | 3 | 2 arquivos novos; nenhuma alteração em `campaia_core/` ou `api/` | `docs/evidence/EVIDENCIA_B7_DDL_POSTGRES_20260904.md` |
+| 04/09/2026 | Verificação de disponibilidade de Postgres real nesta sandbox por investigação direta (`which pg_ctlcluster`, `pg_lsclusters`), em vez de aceitar como definitiva a própria ressalva dada ao Diretor antes de começar o bloco | — | Descoberta: Postgres 16 genuinamente instalado (`postgresql-16`, cluster `main`, porta 5432); iniciado via `service postgresql start`; achado comunicado ao Diretor com a mesma transparência de qualquer outro, como correção de uma ressalva própria, não como problema | `docs/evidence/EVIDENCIA_B7_DDL_POSTGRES_20260904.md` |
+| 04/09/2026 | Execução real do script de verificação contra o Postgres real: schema aplica sem erro, RLS isola tenant-a/tenant-b e nega acesso sem contexto (falha fechado), CHECK e FK rejeitam valores inválidos, chave composta de idempotency rejeita duplicata | 3 | `ALL CHECKS PASSED`; bug próprio encontrado e corrigido antes de aceitar o resultado (`psql -tAc` com múltiplas instruções retornava `"SET\n1"` em vez de `"1"`, corrigido com `| tail -n1`); script reexecutado 2x seguidas para reprodutibilidade, zero rastro deixado no servidor | `docs/evidence/EVIDENCIA_B7_DDL_POSTGRES_20260904.md` |
+| 04/09/2026 | Re-execução completa da suíte Python (B7 é puramente SQL/shell, sem alteração de código Python) | — | 263 (domínio) + 80 (API/persistência) = 343 testes, 100% aprovados, zero regressão | `docs/evidence/EVIDENCIA_B7_DDL_POSTGRES_20260904.md` |
+| 04/09/2026 | Correção de uma ressalva desatualizada no próprio comentário de cabeçalho de `001_initial_schema.sql` ("não há Postgres real disponível aqui", escrita antes da descoberta) antes do upload; reverificação completa (2 execuções adicionais do script) após a edição puramente textual, para não aceitar "é só um comentário" como dispensa de reverificação | 3 | Tamanho do arquivo mudou de 15402 para 15577 bytes; `ALL CHECKS PASSED` confirmado novamente | `docs/evidence/EVIDENCIA_B7_DDL_POSTGRES_20260904.md` |
+| 04/09/2026 | Criação da pasta `backend/db/` no Drive (não existia; irmã de `campaia_core/`, `api/`, `tests/`, `tests_api/`) e upload dos 2 artefatos de código + do documento de evidência, todos via `textContent` (não `base64Content`), cada um verificado por download completo + diff byte a byte (não apenas tamanho) | 3 | `001_initial_schema.sql` 15577=15577, `verify_ddl_postgres.sh` 5961=5961, evidência final 14494=14494 — todos com diff de conteúdo confirmando match exato | `docs/evidence/EVIDENCIA_B7_DDL_POSTGRES_20260904.md` |
