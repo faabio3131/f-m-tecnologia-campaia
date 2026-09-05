@@ -187,8 +187,18 @@ class PublishRequest(ApiModel):
 
 
 class BudgetPatchRequest(ApiModel):
+    # Achado 18: contract names this field `daily_cap` (bff-openapi.yaml updateBudget
+    # requestBody, required: [daily_cap, approval_id]), not `new_daily_cap`. A client
+    # sending the contract's literal `daily_cap` was previously rejected outright --
+    # `extra="forbid"` refused the unknown field and `new_daily_cap` was still missing.
+    # Fixed by aliasing `new_daily_cap` to `daily_cap` and setting `populate_by_name=True`,
+    # so both spellings validate: the contract's `daily_cap` and the attribute name
+    # `new_daily_cap` already used by existing callers/tests. `extra="forbid"` (inherited
+    # from ApiModel) still rejects anything else.
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
     approval_id: str
-    new_daily_cap: Decimal
+    new_daily_cap: Decimal = Field(alias="daily_cap")
 
 
 class KillSwitchRequest(ApiModel):
