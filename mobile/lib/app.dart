@@ -9,6 +9,7 @@ library;
 import 'package:flutter/material.dart';
 
 import 'core/navigation/app_routes.dart';
+import 'features/new_campaign/screens/new_campaign_flow_screen.dart';
 import 'features/onboarding/screens/onboarding_flow_screen.dart';
 
 class CampaiaApp extends StatelessWidget {
@@ -22,6 +23,7 @@ class CampaiaApp extends StatelessWidget {
       initialRoute: AppRoutes.onboarding,
       routes: {
         AppRoutes.onboarding: (context) => const OnboardingFlowScreen(),
+        AppRoutes.newCampaign: (context) => const NewCampaignFlowScreen(),
       },
     );
   }
