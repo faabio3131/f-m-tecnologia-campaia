@@ -1,6 +1,6 @@
 # ADR-0018 — Autenticação e sessão Web
 
-**Status:** PROPOSTA · **Data:** 19/09/2026 · **Aprovador proposto:** Fábio Aluizio da Silva
+**Status:** APROVADA · **Data da proposta:** 19/09/2026 · **Data da aprovação:** 19/09/2026 · **Aprovador:** Fábio Aluizio da Silva
 
 ## Contexto
 
@@ -38,7 +38,11 @@ Hoje não existe autenticação real: `api/deps.py` usa um token fixo de teste, 
 
 ## Decisão
 
-Registrada como **PROPOSTA** — não aprovada.
+**APROVADA** pelo Diretor Fábio Aluizio da Silva, autorização atual e explícita de 19/09/2026: autenticação Web via **provedor de identidade OAuth/OIDC gerenciado**, sessão server-side (cookies `HttpOnly`/`Secure`/`SameSite`), proteção CSRF, tenant ativo derivado exclusivamente de sessão validada no servidor — nunca de header não confiável, nunca JWT em `localStorage`.
+
+A mesma autorização confirma explicitamente: fixture/token de teste **impossível de habilitar** em preview, staging ou produção (fail-closed por construção, ver `docs/web/06_ROADMAP_WORK_PACKAGES.md` WP-02).
+
+O **provedor específico de identidade continua pendente** de decisão no WP-02, após comparação de custo, segurança e portabilidade — esta ADR aprova a estratégia (OIDC + sessão server-side), não o vendor.
 
 ## Consequências
 
@@ -61,4 +65,4 @@ Se o provedor de identidade escolhido no Work Package de implementação não su
 
 ## Pendências
 
-Escolha do provedor específico (Work Package); aprovação humana explícita antes do Gate 3 (Autenticação).
+Estratégia aprovada, sem pendência de aprovação. Pendência real remanescente: **escolha do provedor específico de identidade**, a resolver no WP-02 (Work Package), comparando custo, segurança e portabilidade — WP-02 permanece não iniciado nesta execução.

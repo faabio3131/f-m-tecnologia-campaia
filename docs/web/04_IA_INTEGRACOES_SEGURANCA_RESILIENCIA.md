@@ -1,6 +1,6 @@
 # CampaIA — Ponto Zero Web · 04. IA, Integrações, Autonomia, Segurança, Resiliência, Observabilidade
 
-**Status:** TARGET PROPOSTO — não aprovado.
+**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019, 19/09/2026) — implementação (WP-01 em diante) ainda não iniciada.
 
 ---
 

@@ -1,6 +1,6 @@
 # ADR-0019 — Implantação TARGET sobre a infraestrutura já decidida
 
-**Status:** PROPOSTA · **Data:** 19/09/2026 · **Aprovador proposto:** Fábio Aluizio da Silva
+**Status:** APROVADA · **Data da proposta:** 19/09/2026 · **Data da aprovação:** 19/09/2026 · **Aprovador:** Fábio Aluizio da Silva
 
 ## Contexto
 
@@ -36,7 +36,9 @@
 
 ## Decisão
 
-Registrada como **PROPOSTA** — não aprovada.
+**APROVADA** pelo Diretor Fábio Aluizio da Silva, autorização atual e explícita de 19/09/2026: implantação TARGET do frontend Web e do BFF como serviços containerizados e gerenciados sobre Google Cloud, região `southamerica-east1` (D-08, já aprovada — não reaberta por esta ADR).
+
+O **serviço de container específico continua pendente** para decisão no Work Package de CI/CD. Nenhum serviço foi contratado, nenhuma nuvem foi configurada nesta execução.
 
 ## Consequências
 
@@ -69,4 +71,4 @@ Se o Work Package de CI/CD encontrar custo ou limitação técnica real e compro
 
 Cloud Workflows vs. Temporal **não é mais pendência de D-08** — resolvida pela ADR-0010 (Cloud Workflows, aprovada), conforme registrado no painel de execução.
 
-Aprovação humana explícita desta ADR (implantação TARGET sobre a base já decidida) antes do Gate 6 (Sandbox) em diante.
+Decisão arquitetural aprovada — sem pendência de aprovação para esta ADR. Segue exigido, antes do Gate 6 (Sandbox) em diante: resolver as `PENDÊNCIAS QUE CONTINUAM REAIS` acima (orçamento, residência de dados, serviço de container, dimensionamento).

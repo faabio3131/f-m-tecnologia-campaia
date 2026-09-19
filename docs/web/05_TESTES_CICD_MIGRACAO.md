@@ -1,6 +1,6 @@
 # CampaIA — Ponto Zero Web · 05. Testes, Gates, CI/CD/Implantação TARGET, Migração e Preservação
 
-**Status:** TARGET PROPOSTO — não aprovado.
+**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019, 19/09/2026) — implementação (WP-01 em diante) ainda não iniciada.
 
 ---
 

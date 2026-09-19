@@ -1,6 +1,6 @@
 # ADR-0017 — Framework de frontend Web
 
-**Status:** PROPOSTA · **Data:** 19/09/2026 · **Aprovador proposto:** Fábio Aluizio da Silva
+**Status:** APROVADA · **Data da proposta:** 19/09/2026 · **Data da aprovação:** 19/09/2026 · **Aprovador:** Fábio Aluizio da Silva
 
 ## Contexto
 
@@ -43,7 +43,9 @@ Nenhum frontend Web existe hoje em nenhum dos dois repositórios do CampaIA (con
 
 ## Decisão
 
-Registrada como **PROPOSTA** — não aprovada. Aguarda decisão humana explícita antes de qualquer scaffold.
+**APROVADA** pelo Diretor Fábio Aluizio da Silva, autorização atual e explícita de 19/09/2026: Next.js/React é o framework de frontend Web do CampaIA — uma única base para área pública (SSR) e dashboard autenticado (CSR).
+
+**Esta aprovação autoriza a decisão arquitetural, não a implementação.** O WP-01 (scaffold) permanece **não iniciado** nesta execução, por instrução explícita da mesma autorização — fica autorizado para uma execução futura, dedicada a implementação.
 
 ## Consequências
 
@@ -66,4 +68,4 @@ Se, durante o scaffold (Gate 2), surgir incompatibilidade real e comprovada com 
 
 ## Pendências
 
-Aprovação humana explícita antes do Gate 2 (Scaffold Web).
+Nenhuma pendência de aprovação — decisão arquitetural aprovada. Pendência de **execução**: WP-01 (scaffold Web) ainda não iniciado, aguardando um Prompt Mestre de implementação dedicado (Gate 2).

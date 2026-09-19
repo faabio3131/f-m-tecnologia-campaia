@@ -1,6 +1,6 @@
 # ADR-0016 — Precedência da Lei Web First sobre a declaração de natureza mobile do Product Charter
 
-**Status:** PROPOSTA · **Data:** 19/09/2026 · **Aprovador proposto:** Fábio Aluizio da Silva
+**Status:** APROVADA · **Data da proposta:** 19/09/2026 · **Data da aprovação:** 19/09/2026 · **Aprovador:** Fábio Aluizio da Silva
 
 ## Contexto
 
@@ -22,15 +22,13 @@ Em 13/09/2026 (v1.0) e 17/09/2026 (v2.0), `docs/nova-fm/00-DOCUMENTO-MESTRE-NOVA
 | **B — Registrar a divergência e propor a precedência formal da Lei Web First sobre a frase específica de natureza (esta ADR), deixando a atualização literal do Charter para decisão humana** | Resolve a divergência de autoridade sem executar uma decisão de produto não solicitada | Exige que o Diretor formalize a atualização do Charter depois | Alta |
 | C — Reescrever o Charter agora, unilateralmente | Documentação fica imediatamente consistente | Decisão de produto tomada sem autorização humana explícita — proibido pelo prompt mestre e pelo Documento Mestre §56 (coordenação não é usurpação) | Baixa (mudança de produto já publicada) |
 
-## Decisão proposta
+## Decisão
 
-**Recomendação: Opção B**, ainda não aprovada.
+**Opção B — APROVADA** pelo Diretor Fábio Aluizio da Silva, autorização atual e explícita registrada em 19/09/2026 ("PROMPT MESTRE — APROVAÇÃO ARQUITETURAL E MERGE CONTROLADO").
 
-Uma distinção importa aqui: a Lei Web First **já é obrigatória** por autoridade institucional vigente (`docs/nova-fm/00-DOCUMENTO-MESTRE-NOVA-FM-TECNOLOGIA.md` v2.0, hierarquicamente superior a documento de produto, conforme `CLAUDE.md`) — isso não depende desta ADR nem de nenhuma aprovação adicional. **O que esta ADR propõe, e que permanece pendente de aprovação humana, é especificamente o tratamento formal da divergência**: registrar que a frase "Natureza: Aplicativo mobile SaaS independente" do Product Charter e o tratamento de Web como "Fase 12" do NFR estão, a partir de agora, superados por essa norma já vigente — e deixar a correção literal desses dois documentos, se aprovada, para decisão humana explícita, em vez de reescrevê-los automaticamente nesta missão.
+A Lei Web First **já era obrigatória** por autoridade institucional vigente desde sua adoção (`docs/nova-fm/00-DOCUMENTO-MESTRE-NOVA-FM-TECNOLOGIA.md` v2.0) — isso nunca dependeu desta ADR. O que esta ADR formaliza, agora com aprovação humana explícita, é o tratamento da divergência: a frase "Natureza: Aplicativo mobile SaaS independente" do Product Charter e o tratamento de Web como "Fase 12" do NFR estavam superados por essa norma já vigente, e essa divergência está **reconciliada nesta mesma aprovação** — não apenas registrada.
 
-Se aprovada, esta ADR passa a valer como registro formal dessa precedência para toda decisão arquitetural futura do CampaIA; o restante do Charter e do NFR (público-alvo, canais, autonomia, guardrails) permanece válido e é reaproveitado neste Ponto Zero Web (ver `docs/web/02_PONTO_ZERO_WEB_E_REQUISITOS.md` §1.2) independentemente da aprovação desta ADR específica.
-
-A atualização literal do texto do Charter/NFR **não é executada por esta ADR em nenhuma hipótese** — fica registrada como pendência para decisão humana explícita, conforme o prompt mestre desta missão proíbe alteração de documentos de produto fora de escopo.
+**Atualização literal executada** (autorizada explicitamente pelo Diretor, item 5 da autorização de 19/09/2026): `docs/product/CAMPAIA_PRODUCT_CHARTER.md` §1 e `docs/product/NON_FUNCTIONAL_REQUIREMENTS.md` §8 foram atualizados nesta mesma execução — natureza do produto passa a "Produto Web SaaS independente", mobile explicitamente marcado como quarentena arquitetural e cliente complementar futuro, "Fase 12"/"Web Dashboard" removidos do framing de compatibilidade. Público-alvo, canais, autonomia governada e guardrails financeiros do Charter permanecem integralmente preservados, sem redesenho de produto.
 
 ## Razão
 
@@ -44,8 +42,8 @@ Fica mais fácil: toda decisão arquitetural deste Ponto Zero Web tem base clara
 
 | Risco | Mitigação |
 |---|---|
-| Alguém ler o Charter isoladamente e concluir que o CampaIA é mobile-first | Esta ADR e o Ponto Zero Web tornam a precedência explícita e rastreável |
-| Atualização do Charter nunca acontecer | Registrado como pendência explícita em `docs/web/07_CERTIFICACAO_PONTO_ZERO_WEB.md` §Decisões pendentes |
+| Alguém ler o Charter isoladamente e concluir que o CampaIA é mobile-first | **Mitigado**: `CAMPAIA_PRODUCT_CHARTER.md` §1 atualizado nesta aprovação, declara Web como natureza e linha principal |
+| Atualização do Charter nunca acontecer | **Resolvido**: atualização literal executada nesta mesma aprovação (19/09/2026) |
 
 ## Reversibilidade
 
@@ -53,8 +51,8 @@ Alta — nenhuma alteração de código ou de documento de produto foi executada
 
 ## Gatilho de revisão
 
-Quando o Diretor decidir formalmente o texto atualizado do Charter/NFR, esta ADR deve ser marcada como superseded pela atualização formal.
+Nenhum pendente — a atualização formal do Charter/NFR já ocorreu nesta mesma aprovação. Revisão futura só se necessária por nova decisão de produto.
 
 ## Pendências
 
-Atualização literal de `CAMPAIA_PRODUCT_CHARTER.md` §1 e `NON_FUNCTIONAL_REQUIREMENTS.md` §8 — decisão humana, fora do escopo desta missão.
+Nenhuma pendência desta ADR específica. Pendências reais do System Design Web mais amplo (provedor de identidade, serviço de container, orçamento e residência de dados de D-08) permanecem registradas em `docs/web/07_CERTIFICACAO_PONTO_ZERO_WEB.md`, sem relação com esta ADR.

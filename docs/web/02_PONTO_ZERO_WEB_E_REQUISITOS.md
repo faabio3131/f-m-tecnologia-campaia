@@ -1,6 +1,6 @@
 # CampaIA — Ponto Zero Web · 02. Definição do Ponto Zero Web e Requisitos
 
-**Status:** TARGET PROPOSTO — não aprovado. Subordinado a `01_CURRENT_E_MATRIZ_CURRENT_TARGET.md`.
+**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019, 19/09/2026) — implementação (WP-01 em diante) ainda não iniciada. Subordinado a `01_CURRENT_E_MATRIZ_CURRENT_TARGET.md`.
 
 ---
 
@@ -25,12 +25,12 @@ Nada no domínio ou na API precisa ser substituído — nenhuma peça testada e 
 ### 1.5 O que permanece em quarentena
 `mobile/` — Flutter, integralmente, sem evolução, sem promoção, sem validação forçada nesta missão. Ver `docs/evidence/MOBILE_QUARENTENA_ARQUITETURAL_20260919.md`.
 
-### 1.6 O que depende de decisão humana
-- Atualização formal do Product Charter e NFR à luz da Lei Web First (§1.2).
-- Framework de frontend (ADR-0017, PROPOSTA).
-- Estratégia de sessão/autenticação Web (ADR-0018, PROPOSTA).
-- Destino final do `mobile/` (após este System Design).
-- Hospedagem/implantação alvo (ADR-0019, PROPOSTA).
+### 1.6 Decisões arquiteturais aprovadas (19/09/2026) e o que ainda depende de decisão humana
+- Atualização formal do Product Charter e NFR à luz da Lei Web First (§1.2) — **executada** em 19/09/2026, referenciando ADR-0016 aprovada.
+- Framework de frontend (ADR-0017, **APROVADA** — decisão arquitetural; WP-01/scaffold ainda não iniciado).
+- Estratégia de sessão/autenticação Web (ADR-0018, **APROVADA** — estratégia OIDC/sessão server-side; provedor específico pendente no WP-02).
+- Destino final do `mobile/` (após este System Design) — ainda `PENDÊNCIA`.
+- Hospedagem/implantação alvo (ADR-0019, **APROVADA** — Google Cloud/`southamerica-east1` sobre D-08; serviço de container específico pendente no Work Package de CI/CD).
 
 ### 1.7 O que depende de terceiros
 Homologação Google Ads, Meta Marketing API (tier de acesso exige histórico real de chamadas com erro baixo, confirmado no painel v18/v19), WhatsApp Business Platform.

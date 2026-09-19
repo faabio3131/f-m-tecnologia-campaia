@@ -1,6 +1,8 @@
 # CampaIA — Ponto Zero Web · 07. Certificação, pendências e riscos
 
-**Estado máximo declarado:** `SYSTEM DESIGN WEB CORRIGIDO E CERTIFICADO — PR DRAFT PRONTA PARA REVISÃO E DECISÃO HUMANA`
+**Estado máximo declarado:** `SYSTEM DESIGN WEB APROVADO, DOCUMENTAÇÃO RECONCILIADA — AGUARDANDO CI E MERGE CONTROLADO`
+
+**Autorização humana registrada (19/09/2026)**: o Diretor Fábio Aluizio da Silva aprovou explicitamente as ADRs 0016–0019, autorizou a reconciliação literal do Product Charter/NFR, e condicionou a transição da PR de Draft para Ready e o merge controlado à validação completa e ao CI verde no HEAD final. Ver §4 para o estado atualizado de cada ADR.
 
 Este documento registra eventos de validação em ordem cronológica, cada um com o SHA real em que ocorreu. Ele **não declara um "HEAD final" de si mesmo** — seria uma referência autorrecursiva impossível, já que o commit que inclui esta versão do arquivo ainda não existe no momento em que ela é escrita. O HEAD real após esta correção é reportado no relatório final da missão (fora deste arquivo) e no painel de execução (`backend/01_PAINEL_EXECUCAO_v20_VIGENTE.md`, seção "Última evidência").
 
@@ -16,9 +18,11 @@ Este documento registra eventos de validação em ordem cronológica, cada um co
 | **CI do GitHub Actions no HEAD `0160182`** | run **#11** (`35446255809`) | **`completed` / `success`** — 267 testes de domínio + 81 de API + AsyncAPI 24/24, executados pelo runner do GitHub, não apenas localmente |
 | Correção de referências de ADR/WP-01/D-08/ADR-0016 (2 commits: `ad1fe73`, `4ae62a5`) | `4ae62a5a073245770402957a1eb261568e42e416` | Documental — corrige referências de ADR, remove token fixo do WP-01, incorpora leitura integral de 7 módulos + fonte D-08, ajusta linguagem da ADR-0016, reconcilia ADR-0019 |
 | **CI do GitHub Actions no HEAD `4ae62a5`** | run **#12** (`35447359152`) | **`completed` / `success`**, confirmado diretamente via `mcp__github__actions_list` — 267 testes de domínio + 81 de API + AsyncAPI 24/24 |
-| Esta correção (task atual: contradição D-08, cronologia deste documento, WP-02 fail-closed, painel, descrição da PR) | *(commit novo, ainda sem SHA no momento em que este texto é escrito)* | Puramente documental — nenhum código de `backend/`, `contracts/` ou `mobile/` tocado |
+| Segunda correção documental (contradição D-08, cronologia deste documento, WP-02 fail-closed, painel, descrição da PR) | `30903fac49b0726383de133a718d1ab54fc4199a` | Puramente documental — nenhum código de `backend/`, `contracts/` ou `mobile/` tocado |
+| **CI do GitHub Actions no HEAD `30903fa`** | run **#13** (`35467414236`) | **`completed` / `success`**, confirmado diretamente via `mcp__github__actions_list` — 267 testes de domínio + 81 de API + AsyncAPI 24/24 |
+| Aprovação arquitetural e reconciliação (esta execução): ADR-0016–0019 → `APROVADA`, Product Charter/NFR atualizados literalmente | *(commit novo, ainda sem SHA no momento em que este texto é escrito)* | Puramente documental — nenhum código de `backend/`, `contracts/` ou `mobile/` tocado; altera apenas `docs/` (4 ADRs, Charter, NFR, doc 00, este documento) e o painel de execução |
 
-**`4ae62a5` é o último HEAD funcional/documental integralmente validado antes desta correção** — validação local de runtime real (SHA `a4a36ec`) **e** CI real do GitHub (run #12) ambos confirmados sobre a mesma linha de commits que leva a `4ae62a5`. Esta correção em curso não repete código nem contratos; é exclusivamente documental, mas ainda assim exige um **novo CI no novo HEAD** antes de ser considerada certificada — reexecutado e confirmado antes do fechamento (ver relatório final da missão para o SHA e o resultado reais, que este arquivo não pode antecipar sem se tornar autorreferencial).
+**`30903fa` é o último HEAD funcional/documental integralmente validado antes desta execução** — CI real do GitHub (run #13) confirmado sobre a mesma linha de commits que leva a `30903fa`. Esta execução em curso não repete código nem contratos; é exclusivamente documental (aprovação de ADRs + reconciliação de Charter/NFR), mas ainda assim exige um **novo CI no novo HEAD** antes de ser considerada certificada para merge — reexecutado e confirmado antes do fechamento (ver relatório final da missão para o SHA e o resultado reais, que este arquivo não pode antecipar sem se tornar autorreferencial).
 
 ---
 
@@ -45,7 +49,7 @@ Este documento registra eventos de validação em ordem cronológica, cada um co
 | `mobile/` | Intocado |
 | ADRs em `PROPOSTA` | Todas as 4 (0016–0019) — nenhuma `APROVADA` |
 
-A matriz acima é um retrato do momento de criação da PR (`0160182`). A correção seguinte (referências de ADR/WP-01/D-08/ADR-0016) levou o HEAD a `4ae62a5`, com CI run #12 confirmado `completed`/`success` (ver §1). Esta correção atual (contradição D-08, cronologia deste documento, WP-02 fail-closed, painel, descrição da PR) adiciona commits sobre `4ae62a5`; a matriz de escopo/secrets/CI será reconfirmada no HEAD resultante e reportada no relatório da missão.
+A matriz acima é um retrato do momento de criação da PR (`0160182`). A correção seguinte (referências de ADR/WP-01/D-08/ADR-0016) levou o HEAD a `4ae62a5`, com CI run #12 confirmado `completed`/`success` (ver §1). A segunda correção documental (contradição D-08, cronologia deste documento, WP-02 fail-closed, painel, descrição da PR) levou o HEAD a `30903fa`, com CI run #13 confirmado `completed`/`success` (ver §1) — neste HEAD, as 4 ADRs ainda estavam em `PROPOSTA`. Esta execução (aprovação arquitetural e reconciliação de Charter/NFR) adiciona commits sobre `30903fa`; a matriz de escopo/secrets/CI será reconfirmada no HEAD resultante e reportada no relatório da missão.
 
 ---
 
@@ -55,17 +59,17 @@ A matriz acima é um retrato do momento de criação da PR (`0160182`). A corre�
 |---|---|
 | Repositório canônico é `faabio3131/f-m-tecnologia-campaia` | `DECISÃO EXISTENTE` (ADR-0015, reconciliação anterior) |
 | Lei Web First aplicável a todo novo software comercial | `DECISÃO EXISTENTE` (Documento Mestre v2.0) — já vigente independentemente de qualquer ADR desta missão |
-| Tratamento formal da divergência entre a Lei Web First e a frase de natureza mobile do Charter | `RECOMENDAÇÃO PROPOSTA`, não decisão — ADR-0016, linguagem corrigida nesta correção para não parecer aprovada |
-| Framework de frontend (Next.js/React) | `RECOMENDAÇÃO PROPOSTA` — ADR-0017 |
-| Estratégia de autenticação/sessão Web | `RECOMENDAÇÃO PROPOSTA` — ADR-0018 |
-| Implantação sobre Google Cloud, `southamerica-east1` (D-08) | `DECISÃO EXISTENTE` (D-08, 27/08/2026, lida integralmente nesta correção) reconfirmada como restrição; formalização da implantação Web é `RECOMENDAÇÃO PROPOSTA` — ADR-0019 |
-| Cloud Workflows (vs. Temporal) | `DECISÃO EXISTENTE` (ADR-0010, já aprovada, citada no painel) — **não é mais pendência**, corrigido nesta versão |
-| Preservação do backend Starlette (não migrar para FastAPI agora) | `RECOMENDAÇÃO`, não decisão formal — sem ADR própria, corrigido nesta correção para não citar uma ADR errada |
-| Destino final do `mobile/` | `PENDÊNCIA` — decisão humana após aprovação deste System Design |
-| Atualização literal do Product Charter/NFR | `PENDÊNCIA` — decisão humana, fora do escopo de execução desta missão |
-| Provedor específico de identidade (ADR-0018) | `PENDÊNCIA` — Work Package |
-| Serviço de container específico na nuvem (ADR-0019) | `PENDÊNCIA` — Work Package |
-| Orçamento mensal exato e confirmação jurídica de residência de dados (D-08) | `PENDÊNCIA` real, herdada da fonte primária — nunca resolvida, confirmado por leitura integral nesta correção |
+| Tratamento formal da divergência entre a Lei Web First e a frase de natureza mobile do Charter | `DECISÃO APROVADA` — ADR-0016, aprovada 19/09/2026 pelo Diretor Fábio Aluizio da Silva; reconciliação literal do Charter/NFR executada nesta mesma autorização |
+| Framework de frontend (Next.js/React) | `DECISÃO APROVADA` — ADR-0017, aprovada 19/09/2026; aprova a decisão arquitetural, não a implementação (WP-01 segue não iniciado) |
+| Estratégia de autenticação/sessão Web | `DECISÃO APROVADA` — ADR-0018, aprovada 19/09/2026 (OIDC + sessão server-side); provedor específico continua pendente (WP-02) |
+| Implantação sobre Google Cloud, `southamerica-east1` (D-08) | `DECISÃO EXISTENTE` (D-08, 27/08/2026) reconfirmada como restrição; formalização da implantação Web é `DECISÃO APROVADA` — ADR-0019, aprovada 19/09/2026 (serviço de container específico segue pendente) |
+| Cloud Workflows (vs. Temporal) | `DECISÃO EXISTENTE` (ADR-0010, já aprovada, citada no painel) — não é pendência |
+| Preservação do backend Starlette (não migrar para FastAPI agora) | `RECOMENDAÇÃO`, não decisão formal — sem ADR própria |
+| Destino final do `mobile/` | `PENDÊNCIA` — decisão humana futura; quarentena arquitetural mantida sem alteração nesta execução |
+| Atualização literal do Product Charter/NFR | **Executada** nesta execução (frase de natureza do Charter e §8 da NFR reconciliados com a Lei Web First, referenciando ADR-0016 aprovada) — deixa de ser `PENDÊNCIA` |
+| Provedor específico de identidade (ADR-0018) | `PENDÊNCIA` — Work Package (WP-02, não iniciado) |
+| Serviço de container específico na nuvem (ADR-0019) | `PENDÊNCIA` — Work Package (CI/CD, não iniciado) |
+| Orçamento mensal exato e confirmação jurídica de residência de dados (D-08) | `PENDÊNCIA` real, herdada da fonte primária — nunca resolvida |
 
 ---
 
@@ -73,7 +77,7 @@ A matriz acima é um retrato do momento de criação da PR (`0160182`). A corre�
 
 | Risco | Origem | Mitigação proposta |
 |---|---|---|
-| Documentação de produto (Charter/NFR) permanece com frase desatualizada até correção humana | ADR-0016 | Pendência explícita, rastreável; linguagem da ADR corrigida para não sugerir aprovação automática |
+| Documentação de produto (Charter/NFR) permanecia com frase desatualizada | ADR-0016 | **Mitigado nesta execução** — ADR-0016 aprovada; Charter/NFR reconciliados literalmente com a Lei Web First |
 | Módulos de outbox/webhooks não têm persistência confirmada além de memória de processo | Leitura integral desta correção | Registrado como pendência real para Work Package de integração; não promovido a prontidão de produção |
 | Nenhum adaptador real de provider existe — todo o bloco de integrações depende de terceiros (homologação, sandbox) | `04_IA_INTEGRACOES_SEGURANCA_RESILIENCIA.md` §2 | Tratado como gate futuro, não bloqueia o Ponto Zero Web em si |
 | Autenticação real ainda não existe — é a maior superfície de risco de segurança do roadmap | ADR-0018, WP-02 | Gate 3 exige revisão de FM Security Engineer antes de prosseguir; WP-01 corrigido nesta versão para não usar token algum no frontend |
@@ -103,8 +107,8 @@ A matriz acima é um retrato do momento de criação da PR (`0160182`). A corre�
 | Documentado | Sim |
 | Arquitetura produzida | Sim |
 | Arquitetura revisada (tecnicamente, por esta correção) | Sim — CI real confirmado (`completed`/`success`), referências de ADR corrigidas, CURRENT ampliado por leitura integral de 7 módulos + fonte D-08 |
-| Arquitetura aprovada | **Não** — nenhuma ADR foi marcada `APROVADA`; aguarda decisão humana |
-| Pronto para implementação | **Parcial** — WP-01 (corrigido: mock de contrato, sem token) está pronto; WP-02 a WP-05 dependem das ADRs correspondentes |
+| Arquitetura aprovada | **Sim** — ADR-0016, 0017, 0018 e 0019 aprovadas em 19/09/2026 pelo Diretor Fábio Aluizio da Silva, condicionadas a validação completa e CI verde antes de merge (ver §1) |
+| Pronto para implementação | **Parcial** — WP-01 (corrigido: mock de contrato, sem token) está pronto para uma execução futura dedicada; nenhum Work Package foi iniciado nesta execução, por instrução explícita da mesma autorização que aprovou as ADRs |
 | Frontend implementado | **Não** |
 | Integrado | **Não** |
 | Homologado | **Não** |
@@ -113,6 +117,6 @@ A matriz acima é um retrato do momento de criação da PR (`0160182`). A corre�
 
 ## Veredito
 
-**`SYSTEM DESIGN WEB CORRIGIDO E CERTIFICADO — PR DRAFT PRONTA PARA REVISÃO E DECISÃO HUMANA`**
+**`SYSTEM DESIGN WEB APROVADO, DOCUMENTAÇÃO RECONCILIADA — AGUARDANDO CI E MERGE CONTROLADO`**
 
-Condicionado à confirmação do novo CI no HEAD resultante desta correção (ver relatório final da missão).
+As 4 ADRs (0016–0019) estão `APROVADA` e o Product Charter/NFR foram reconciliados literalmente com a Lei Web First, ambos por autorização humana atual e explícita do Diretor Fábio Aluizio da Silva (19/09/2026). Este documento, no momento em que é escrito, **não pode declarar o merge como certificado** — o commit desta execução ainda não tem SHA, o novo CI ainda não foi executado, e a PR ainda não foi transicionada de Draft para Ready nem submetida a merge. O veredito `SYSTEM DESIGN WEB APROVADO, DOCUMENTAÇÃO RECONCILIADA E MERGE CERTIFICADO — WP-01 AINDA NÃO INICIADO` só pode ser afirmado no relatório final da missão, e somente se o CI no novo HEAD e o merge em si forem ambos diretamente confirmados — nunca antecipados aqui.
