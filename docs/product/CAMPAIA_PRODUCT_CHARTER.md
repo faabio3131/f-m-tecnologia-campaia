@@ -8,11 +8,20 @@
 
 ---
 
+> **Nota de reconciliação (19/09/2026, ADR-0016 APROVADA):** a declaração de natureza deste documento foi
+> atualizada para refletir a Lei Web First (`docs/nova-fm/00-DOCUMENTO-MESTRE-NOVA-FM-TECNOLOGIA.md` §5),
+> adotada após a redação original deste Charter. Público-alvo, proposta de valor, canais, autonomia
+> governada, guardrails financeiros e governança permanecem integralmente válidos — nenhum é
+> Web-incompatível. Ver `docs/web/00_INDICE_PONTO_ZERO_WEB.md` para o System Design Web correspondente.
+
 ## 1. IDENTIDADE DO PRODUTO
 
 **Nome Oficial:** CampaIA  
 **Slogan:** Campanhas inteligentes. Resultados reais.  
-**Natureza:** Aplicativo mobile SaaS independente  
+**Natureza:** Produto Web SaaS independente. A plataforma Web é a linha principal de construção, operação e
+evolução do CampaIA (Lei Web First, ADR-0016 aprovada). O aplicativo mobile (Flutter) permanece em
+quarentena arquitetural (`docs/evidence/MOBILE_QUARENTENA_ARQUITETURAL_20260919.md`) e poderá futuramente
+operar como cliente complementar da plataforma Web, sem jamais substituí-la.  
 **Categoria:** Marketing Automation + IA  
 **Versão:** 1.0 (MVP)
 

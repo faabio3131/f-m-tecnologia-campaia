@@ -234,11 +234,17 @@ Isso **não** muda o estado técnico: nenhuma carga real foi testada nesta fase 
 
 ## 8. COMPATIBILIDADE
 
-### 8.1 Mobile (Flutter)
+> **Nota de reconciliação (19/09/2026, ADR-0016 APROVADA):** a Web (§8.3) é a linha principal de
+> compatibilidade do CampaIA, não uma fase futura. O mobile (§8.1) permanece em quarentena arquitetural
+> (`docs/evidence/MOBILE_QUARENTENA_ARQUITETURAL_20260919.md`).
+
+### 8.1 Mobile (Flutter) — quarentena arquitetural, cliente complementar futuro
 
 - **Versões mínimas:** iOS 13+, Android 8+
 - **Tamanho do APK:** < 150 MB (incluindo assets)
 - **Conectividade:** Suportar offline caching de dados não-críticos
+- Não é a linha principal de construção do CampaIA; requisitos acima preservados como referência para uma
+  eventual saída de quarentena, não como compatibilidade ativa nesta fase.
 
 ### 8.2 Backend (Python/FastAPI)
 
@@ -246,10 +252,11 @@ Isso **não** muda o estado técnico: nenhuma carga real foi testada nesta fase 
 - **Dependências:** Pinned versions em requirements.txt
 - **Compatibilidade:** Cloud-agnostic (Docker + Kubernetes)
 
-### 8.3 Browsers (Web Dashboard — Fase 12)
+### 8.3 Navegadores (Web — linha principal do produto)
 
 - **Suportados:** Chrome 100+, Firefox 100+, Safari 15+
-- **Responsividade:** Mobile-first (< 1280px, 1280-1920px, > 1920px)
+- **Responsividade:** abordagem "mobile-first" de breakpoints CSS (< 1280px, 1280-1920px, > 1920px) —
+  convenção de design responsivo (do menor para o maior breakpoint), não relacionada à natureza do produto
 
 ---
 
