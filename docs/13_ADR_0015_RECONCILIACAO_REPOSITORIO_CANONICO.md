@@ -1,4 +1,4 @@
-# ADR-0014 — Repositório canônico do CampaIA e estratégia de reconciliação
+# ADR-0015 — Repositório canônico do CampaIA e estratégia de reconciliação
 
 **Status:** APROVADA · **Data:** 19/09/2026 · **Aprovador:** Fábio Aluizio da Silva
 
