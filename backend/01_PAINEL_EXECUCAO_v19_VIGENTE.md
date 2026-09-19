@@ -41,7 +41,7 @@ Se qualquer suíte não passar, corrigir antes de qualquer coisa nova.
 
 | Campo | Valor |
 |---|---|
-| **Fase atual** | Reconciliação de repositórios concluída (19/09). Repositório canônico definido: `faabio3131/f-m-tecnologia-campaia`. Bloco fiscal `FISC V2-16.5` (fail-closed, desconectado de campanha/orçamento) importado por cherry-pick da fonte histórica. App mobile (Fase 8, onboarding + fluxo de nova campanha) permanece em **QUARENTENA ARQUITETURAL** — não certificado, não evoluído nesta fase. Próximo passo autorizado: System Design da aplicação Web real (Ponto Zero Web) — ainda **não iniciado** |
+| **Fase atual** | Reconciliação de repositórios concluída (19/09). Repositório canônico definido: `faabio3131/f-m-tecnologia-campaia`. Bloco fiscal `FISC V2-16.5` (fail-closed, desconectado de campanha/orçamento) importado por cherry-pick da fonte histórica. App mobile (Fase 8, onboarding + fluxo de nova campanha) permanece em **QUARENTENA ARQUITETURAL** — não certificado, não evoluído nesta fase. Próximo passo recomendado, pendente de autorização humana explícita: System Design da aplicação Web real (Ponto Zero Web) — ainda **não iniciado** |
 | **Última tarefa concluída** | Reconciliação controlada `faabio3131/CampaIA` → `faabio3131/f-m-tecnologia-campaia`: bloco fiscal importado (3 commits, autoria preservada), teste de regressão do alias `daily_cap` adicionado (cobertura que estava genuinamente ausente), mobile registrado em quarentena formal, ADR-0015 registrando a decisão canônica. Ver "Registro de blocos executados" desta versão |
 | **Status** | Núcleo de domínio determinístico **VALIDADO** — ver contagem real confirmada na Etapa 8 da matriz de validação desta reconciliação, abaixo; camada BFF/API **VALIDADA** com o alias `daily_cap` agora coberto por teste de regressão end-to-end; DDL do Postgres (B7) **CONSTRUÍDO E VERIFICADO CONTRA SERVIDOR REAL**; catálogo de eventos **FORMALIZADO** em AsyncAPI 3.0 (24 eventos); catálogo de erros de usuário **PUBLICADO E COMPLETO**; motor de otimização e pacing (B5) **CONSTRUÍDO**; repositório Git + CI **OPERACIONAL** neste repositório canônico; **B8 (especificação das telas do app) CONCLUÍDO** (documentação); **app mobile em QUARENTENA ARQUITETURAL** (código presente, não certificado, `flutter analyze`/`flutter test` nunca executados de fato — NÃO VERIFICADO); **bloco fiscal FISC V2-16.5 IMPORTADO**, permanece formalmente bloqueado por ausência de autoridade real de billing próprio da CampaIA |
 | **Última evidência** | `docs/13_ADR_0015_RECONCILIACAO_REPOSITORIO_CANONICO.md`, `docs/evidence/MOBILE_QUARENTENA_ARQUITETURAL_20260919.md`, `docs/evidence/V2_16_5_FISCAL_INTEGRATION_BLOCKER_20260913.md` (importado) |
@@ -210,8 +210,9 @@ Não altera nenhum módulo de `campaia_core/` ou `api/` — é puramente SQL + s
 | FISC | `FISC V2-16.5` — boundary fail-closed de billing próprio da CampaIA | **IMPLEMENTADO E IMPORTADO** (19/09, cherry-pick de `faabio3131/CampaIA`) — `fiscal_handoff.py` + 4 testes; **permanece formalmente bloqueado**: sem autoridade real de billing/pagamento próprio, não deve ser conectado a campanha/orçamento; ver `docs/evidence/V2_16_5_FISCAL_INTEGRATION_BLOCKER_20260913.md` |
 | RECON | Reconciliação de repositórios (`faabio3131/CampaIA` → `faabio3131/f-m-tecnologia-campaia`) | **CONCLUÍDA** (19/09) — ADR-0015, bloco fiscal importado, fix `daily_cap` confirmado coerente + teste de regressão adicionado, mobile em quarentena formal; ver "Registro de blocos executados" |
 
-**Recomendação de engenharia:** com a reconciliação concluída, o próximo bloco autorizado é o **System Design
-da aplicação Web real (Ponto Zero Web)** — ainda não iniciado por instrução explícita desta reconciliação. A
+**Recomendação de engenharia:** com a reconciliação concluída, o próximo bloco recomendado, pendente de
+autorização humana explícita, é o **System Design da aplicação Web real (Ponto Zero Web)** — ainda não
+iniciado por instrução explícita desta reconciliação. A
 decisão sobre o destino do app mobile (`mobile/`, em quarentena) deve ser tomada depois desse System Design,
 não antes.
 

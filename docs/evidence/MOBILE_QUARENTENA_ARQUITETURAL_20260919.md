@@ -1,7 +1,7 @@
 # CampaIA — Registro formal: mobile em quarentena arquitetural
 
 **Data:** 19/09/2026
-**Contexto:** Reconciliação controlada `faabio3131/CampaIA` → `faabio3131/f-m-tecnologia-campaia` (repositório canônico), conforme ADR-0014.
+**Contexto:** Reconciliação controlada `faabio3131/CampaIA` → `faabio3131/f-m-tecnologia-campaia` (repositório canônico), conforme ADR-0015.
 **Autor:** Claude, por instrução explícita do Diretor.
 
 ---
