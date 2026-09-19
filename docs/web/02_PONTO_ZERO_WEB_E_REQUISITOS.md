@@ -13,7 +13,7 @@ Todo o domínio em `campaia_core/` (19 módulos), o BFF/API em `backend/api/` (2
 
 ### 1.2 O que adaptar
 - `CAMPAIA_PRODUCT_CHARTER.md` e `NON_FUNCTIONAL_REQUIREMENTS.md`: a declaração de "Natureza: Aplicativo mobile" e o tratamento de Web como Fase 12 estão superados pela Lei Web First (ver `01_CURRENT_E_MATRIZ_CURRENT_TARGET.md` §4.1 e ADR-0016). Atualização formal é `PENDÊNCIA` de decisão humana, fora do escopo de execução desta missão.
-- Autenticação: hoje é um token fixo de teste (`api/deps.py`); TARGET é sessão Web real (ADR-0017).
+- Autenticação: hoje é um token fixo de teste (`api/deps.py`); TARGET é sessão Web real (ADR-0018).
 - Persistência: hoje SQLite é opcional; TARGET é Postgres como banco padrão de todo ambiente além de desenvolvimento local.
 
 ### 1.3 O que criar
@@ -46,7 +46,7 @@ Baseados em `docs/product/13_ESPECIFICACAO_TELAS_APP.md` (F1–F10, já pesquisa
 
 | # | Requisito | Suportado hoje por | Status |
 |---|---|---|---|
-| RF-01 | Cadastro e autenticação | — | `AUSENTE` — TARGET, ADR-0017 |
+| RF-01 | Cadastro e autenticação | — | `AUSENTE` — TARGET, ADR-0018 |
 | RF-02 | Onboarding (empresa, unidade de negócio, conexão de contas) | `POST /brand-profiles`, `POST /connections/oauth/start` | API existe; fluxo Web inexistente |
 | RF-03 | Tenant e unidades | `permissions.py` (ABAC, `business_unit_id`) | Domínio pronto; UI inexistente |
 | RF-04 | Usuários e permissões (RBAC 6 papéis) | `permissions.py` | Domínio pronto; UI inexistente |

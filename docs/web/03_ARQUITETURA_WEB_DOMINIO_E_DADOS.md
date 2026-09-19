@@ -14,7 +14,7 @@
 | Brand Kit | Identidade visual/voz da marca do cliente | `brand_profiles` (tabela) | `api/routes_brand.py` | Tenant | Campaign Execution |
 | Campaign Planning | Briefing, estratégia, plano versionado | `campaigns` (JSONB brief/plan) | `api/routes_campaigns.py` (`create_brief`, `get_plan`, `regenerate_plan`) | AI Orchestration, Brand Kit | Provider Connections diretamente |
 | Creative Assets | Geração/gestão de criativos | AI Gateway (`GENERATE_IMAGE`/`GENERATE_COPY`) | parcialmente em `ai_gateway.py` | AI Orchestration | Campaign Execution |
-| AI Orchestration | Propostas estruturadas, nunca execução | `ai_gateway.py`, `agents.py` | leitura parcial confirmada | — | Provider Connections, Budget, Approval (nunca decide sozinho) |
+| AI Orchestration | Propostas estruturadas, nunca execução | `ai_gateway.py`, `agents.py` | **leitura integral confirmada** — agentes recusam contexto obrigatório ausente (`agents.py`), gateway rejeita schema inválido e debita custo sempre que a chamada chega ao provedor (`ai_gateway.py`) | — | Provider Connections, Budget, Approval (nunca decide sozinho) |
 | Approval & Autonomy | Fila de aprovação, segregação de funções, níveis de autonomia | `permissions.py` (`can_approve`), `autonomy.py` | **autoridade canônica já implementada e testada** | Identity & Access | — |
 | Budget & Policy | Reserva/gasto, Policy Engine | `budget.py`, `policy.py` | **autoridade canônica já implementada e testada** | Approval & Autonomy | AI Orchestration (IA nunca decide política sozinha) |
 | Campaign Execution | Máquina de estados, Saga de publicação | `states.py`, `saga.py` | **autoridade canônica já implementada e testada** | Budget & Policy, Provider Connections | — |
@@ -128,7 +128,7 @@ flowchart TB
 | Área | Rota do backend consumida | Autoridade |
 |---|---|---|
 | Aplicação pública (marketing/login) | — | Nenhuma (não autenticado) |
-| Autenticação | TARGET (ADR-0017) | Identity Provider |
+| Autenticação | TARGET (ADR-0018) | Identity Provider |
 | Onboarding | `POST /brand-profiles`, `POST /connections/oauth/start` | Tenant & BU |
 | Painel principal (dashboard) | `GET /campaigns`, `GET /audit-events` | Campaign Execution |
 | Gestão de campanhas | `GET/POST /campaigns*` | Campaign Planning/Execution |
@@ -275,7 +275,7 @@ Saga (`saga.py`) já implementa: `PAUSE_ALL` / `KEEP_PARTIAL` / `ESCALATE_HUMAN`
 | Entidade | Status | Ação proposta | Observação |
 |---|---|---|---|
 | `brand_profiles`, `connections`, `campaigns`, `approvals`, `audit_events`, `idempotency`, `tenant_autonomy` | Existente, verificado | **Preservar sem alteração estrutural** | Já cobre o que está de fato persistido em `api/db.py` |
-| `users` / `identity` | Inexistente | **Criar** | TARGET da autenticação real (ADR-0017) |
+| `users` / `identity` | Inexistente | **Criar** | TARGET da autenticação real (ADR-0018) |
 | `business_units` | Parcialmente coberta (`business_unit_id` já é coluna nullable em RLS/domínio) | **Avaliar tabela própria** quando D-03 (single-tenant vs. agência multi-empresa) for decidida — decisão ainda aberta, não antecipar | Confirmado: `permissions.py` já documenta que a extensão deve ser aditiva |
 | `budget_reservations` | Hoje em memória (`BudgetEngine._reservations`) | **Não criar tabela nesta fase** sem necessidade comprovada de auditoria de reservas — mesma disciplina já aplicada ao B7 original (não persistir o que não tem precedente real) | Decisão a levar ao Diretor se auditoria de reservas virar requisito |
 | `outbox` / `inbox` | Módulo existe (`outbox.py`), persistência não confirmada nesta leitura | **Verificar antes de assumir** — `PENDÊNCIA`, exige leitura completa do módulo | — |
@@ -295,7 +295,7 @@ Cada entidade, quando criada, deve seguir o padrão já estabelecido no DDL exis
 
 **O que falta (TARGET)**: a camada de sessão Web que alimenta esse domínio com um `Principal` real, a partir de uma autenticação real.
 
-### 7.1 Requisitos obrigatórios para a sessão Web (ADR-0017 detalha as opções)
+### 7.1 Requisitos obrigatórios para a sessão Web (ADR-0018 detalha as opções)
 - Cookies seguros (`HttpOnly`, `Secure`, `SameSite`), não `localStorage` para sessão.
 - CSRF token em toda mutação.
 - CORS restrito por ambiente.

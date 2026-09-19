@@ -4,9 +4,17 @@
 
 ## Contexto
 
-`D-08` (27/08/2026, citada em `docs/evidence/DIRETOR_DECISAO_D08_INFRAESTRUTURA_20260827.md` e reconciliada no painel v16/v17/v18/v19) já aprovou Google Cloud, região São Paulo, como infraestrutura do CampaIA — antes mesmo da governança Nova FM, mas consistente com o princípio cloud-first do Documento Mestre §6. Esta ADR não reabre essa escolha; formaliza como o frontend Web e o BFF existente se implantam sobre ela.
+`D-08` (27/08/2026) já aprovou Google Cloud, **região São Paulo (`southamerica-east1`)**, como infraestrutura do CampaIA — antes mesmo da governança Nova FM, mas consistente com o princípio cloud-first do Documento Mestre §6. Esta ADR não reabre essa escolha; formaliza como o frontend Web e o BFF existente se implantam sobre ela.
 
-`PENDÊNCIA` desta ADR: o texto exato de `DIRETOR_DECISAO_D08_INFRAESTRUTURA_20260827.md` não foi relido palavra por palavra nesta missão (citado por referência do painel já lido em turno anterior desta sessão) — reconfirmar antes de qualquer contratação real.
+`FATO CONFIRMADO` — `docs/evidence/DIRETOR_DECISAO_D08_INFRAESTRUTURA_20260827.md` foi lido integralmente nesta correção. Resumo fiel da fonte primária:
+
+- Pesquisa comparativa direta (AWS, Google Cloud, Azure) cobrindo PostgreSQL gerenciado, Redis/cache-fila, fila de mensagens, motor de workflow durável, armazenamento de objetos e cofre de segredos, com foco na região Brasil de cada nuvem.
+- **Google Cloud** foi a única com confirmação oficial explícita de que os 6 serviços necessários existem em `southamerica-east1`, e a única a declarar oficialmente ausência de sobretaxa regional em ao menos 2 dos serviços pesquisados.
+- **AWS**: 5 de 6 serviços confirmados em `sa-east-1`. **Azure**: 3 de 6 em categoria "não garantida em toda região", não confirmados no Brasil; documentação oficial da Azure sobre residência de dados no Brasil Sul apresentou **contradição interna não resolvida** (página principal afirma garantia de residência única-região; nota de rodapé sugere que isso hoje só vale para Singapura).
+- Recomendação técnica apresentada ao Diretor (Google Cloud/São Paulo) fundamentada em 4 razões: disponibilidade confirmada dos 6 serviços; ausência declarada de sobretaxa regional em 2 deles; fraqueza da Azure em Postgres gerenciado e em residência de dados (relevante para D-09/LGPD); maturidade do SDK Python da nuvem.
+- **Resposta literal do Diretor**: *"pode seguir sua recomendação e depois faremos a pesquisa exata dos valores"*.
+- Serviços gerenciados propostos e aprovados nessa direção estratégica: Cloud SQL (PostgreSQL), Memorystore (Redis), Pub/Sub, **Cloud Workflows** (a escolha entre Cloud Workflows e Temporal auto-hospedado já foi resolvida separadamente pela **ADR-0010**, citada no painel de execução como aprovada — não é mais uma pendência de D-08), Cloud Storage, Secret Manager.
+- **O que D-08 explicitamente NÃO resolveu**, na própria interpretação literal registrada na fonte: (1) o valor de orçamento mensal exato, pendente de conferência na calculadora oficial de preços; (2) confirmação de que a região São Paulo, na prática de contrato, cumpre integralmente a expectativa de residência de dados assumida em D-09 — a fonte é explícita: **"a pesquisa indicou alta confiança de disponibilidade de serviço, mas não constitui parecer jurídico sobre LGPD"**.
 
 ## Restrições
 
@@ -51,4 +59,14 @@ Se o Work Package de CI/CD encontrar custo ou limitação técnica real e compro
 
 ## Pendências
 
-Reconfirmação do texto exato de D-08; escolha do serviço de container específico (Work Package); aprovação humana explícita antes do Gate 6 (Sandbox) em diante.
+`DECISÃO JÁ APROVADA` (D-08, não reaberta por esta ADR): Google Cloud, região `southamerica-east1`, direção estratégica dos serviços gerenciados listados no Contexto.
+
+`PENDÊNCIAS QUE CONTINUAM REAIS` (herdadas de D-08, não resolvidas por esta ADR nem por nenhuma outra encontrada):
+- Orçamento mensal exato (pendente da calculadora oficial de preços — nunca executada, segundo a própria fonte).
+- Confirmação contratual/jurídica de que a região São Paulo cumpre a expectativa de residência de dados de D-09/LGPD — a fonte primária é explícita que isso não foi obtido, apenas alta confiança de disponibilidade de serviço.
+- Escolha do serviço de container específico (Work Package de CI/CD).
+- Dimensionamento e testes reais de capacidade — nenhuma carga real foi testada até esta data (consistente com `docs/product/NON_FUNCTIONAL_REQUIREMENTS.md` §1.2, que já classifica os marcos de capacidade como hipótese de negócio, não validação técnica).
+
+Cloud Workflows vs. Temporal **não é mais pendência de D-08** — resolvida pela ADR-0010 (Cloud Workflows, aprovada), conforme registrado no painel de execução.
+
+Aprovação humana explícita desta ADR (implantação TARGET sobre a base já decidida) antes do Gate 6 (Sandbox) em diante.

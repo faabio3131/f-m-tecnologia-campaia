@@ -25,19 +25,19 @@ Nenhum bloco foi executado. Esta é só a reconciliação de ordem, exigida ante
 ### WP-01 — Fundação do frontend Web
 
 - **Objetivo**: scaffold do projeto Next.js/React (se ADR-0017 aprovada), com lint, typecheck, testes de componente configurados, sem lógica de negócio.
-- **Escopo**: estrutura de pastas, configuração de build, CI de frontend (lint+typecheck+build), conexão de rede com o BFF existente (sem autenticação real ainda — pode usar o token fixo de teste do BFF nesta fase, isolado de qualquer dado real).
-- **Fora do escopo**: qualquer tela funcional, autenticação real, dados de produção.
+- **Escopo**: estrutura de pastas, configuração de build, CI de frontend (lint+typecheck+build). Nenhuma chamada de rede real ao BFF nesta fase — **verificado nesta correção que `GET /me` (`backend/api/routes_me.py`) exige `require_auth`; não existe hoje nenhum endpoint público/health/readiness no BFF** (`backend/api/main.py`, 21 rotas, todas atrás de autenticação). Consumo do contrato é feito via **mock/fixture local gerado a partir de `contracts/bff-openapi.yaml`** (ex.: resposta de exemplo de `GET /me` fixada como dado estático no frontend), nunca contra o backend real.
+- **Fora do escopo**: qualquer tela funcional, autenticação real, dados de produção, qualquer chamada de rede ao BFF.
 - **Dependências**: ADR-0017 aprovada.
-- **Arquivos/componentes previstos**: novo diretório `web/` (ou equivalente) no repositório canônico.
-- **Contratos afetados**: nenhum — só consumo, sem alteração.
-- **Segurança**: nenhuma superfície nova além do que um app estático já expõe.
-- **Critérios de aceitação**: build reproduzível, lint e typecheck verdes em CI, app roda localmente e faz uma chamada de leitura simples ao BFF (ex.: `GET /me`) contra o backend existente (com o token fixo de teste, nunca dado real).
-- **Testes**: smoke de build; teste de componente trivial.
-- **Evidências**: log de CI, screenshot local (sem dado sensível).
+- **Arquivos/componentes previstos**: novo diretório `web/` (ou equivalente) no repositório canônico; fixtures de contrato (ex.: `web/mocks/`).
+- **Contratos afetados**: nenhum — só leitura de `bff-openapi.yaml` para gerar fixtures, sem alteração.
+- **Segurança**: nenhuma superfície nova além do que um app estático já expõe. **Garantias explícitas**: nenhum token no bundle; nenhum segredo em variável `NEXT_PUBLIC_*` (ou equivalente exposta ao navegador); nenhuma credencial em `localStorage`; nenhum mecanismo temporário de autenticação que possa migrar acidentalmente para produção — a integração autenticada real só começa no WP-02.
+- **Critérios de aceitação**: build reproduzível, lint e typecheck verdes em CI, app roda localmente e renderiza uma tela a partir do mock/fixture de contrato — nenhuma chamada de rede ao BFF ocorre.
+- **Testes**: smoke de build; teste de componente trivial contra o mock.
+- **Evidências**: log de CI, screenshot local (sem dado sensível, dado é fixture).
 - **Riscos**: baixo.
 - **Rollback**: remover o diretório novo; nenhum impacto no backend.
 - **Gate**: Gate 2 (Scaffold Web).
-- **Definição de pronto**: scaffold builda e roda, sem lógica de negócio.
+- **Definição de pronto**: scaffold builda e roda contra fixtures locais, sem lógica de negócio e sem nenhuma chamada de rede real.
 - **Autorização necessária**: aprovação da ADR-0017.
 
 ### WP-02 — Autenticação e sessão Web real

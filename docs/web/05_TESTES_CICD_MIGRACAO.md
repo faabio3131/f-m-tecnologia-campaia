@@ -34,7 +34,7 @@ Números confirmados por execução real nesta sessão (ver `07_CERTIFICACAO_PON
 | Carga/concorrência | Inexistente | TARGET, só depois de infraestrutura real — não simular número fictício |
 | Idempotência | Já coberta no domínio (budget, connectors) | manter; adicionar na camada Web (dedupe de duplo clique) |
 | Resiliência/recuperação | Inexistente | TARGET |
-| IA/evals | Não confirmado nesta leitura | `PENDÊNCIA` — verificar `test_ai_gateway.py`/`test_ai_simulator.py` antes de declarar cobertura |
+| IA/evals | `ai_gateway.py`/`agents.py`/`ai_simulator.py` lidos integralmente nesta correção — cobrem schema/custo/circuit breaker/moderação, não evals formais | `PENDÊNCIA` — evals formais não encontrados em nenhum dos arquivos lidos; contagem exata de `test_ai_gateway.py`/`test_ai_simulator.py` não reexecutada isoladamente nesta correção (coberta pela suíte completa de 267 testes validada na Etapa 9) |
 | Reconciliação | `test_reconciliation.py` citado (26 testes no painel, não relidos nesta missão) | manter |
 | Smoke | Workflow atual roda as suítes a cada push/PR | expandir para ambientes reais quando existirem |
 | Pós-deploy | Inexistente | TARGET, depende de ADR-0019 |
@@ -77,7 +77,7 @@ Números confirmados por execução real nesta sessão (ver `07_CERTIFICACAO_PON
 Build/artefatos do frontend (depende de ADR-0017), estratégia de migration (Postgres já tem schema — falta runner de migrations versionado), rollback, feature flags, secrets management real (hoje não há nenhum secret real no repositório, por disciplina), deploy gradual, health checks/readiness, smoke pós-deploy, controle de custo.
 
 ### 4.4 Hospedagem (comparação, sem contratar nada)
-`docs/00_DIAGNOSTICO_INICIAL.md`/`docs/evidence/DIRETOR_DECISAO_D08_INFRAESTRUTURA_20260827.md` (citados no painel v18/v19, não relidos integralmente nesta missão) registram Google Cloud, região São Paulo, como decisão já aprovada (D-08, 27/08/2026) — **tratada aqui como restrição arquitetural existente**, não uma escolha nova desta missão. ADR-0019 formaliza a implantação TARGET **sobre** essa base já decidida, sem reabri-la sem necessidade.
+`docs/evidence/DIRETOR_DECISAO_D08_INFRAESTRUTURA_20260827.md` — **lido integralmente nesta correção** — registra Google Cloud, região São Paulo (`southamerica-east1`), como decisão já aprovada (D-08, 27/08/2026, resposta literal do Diretor: *"pode seguir sua recomendação e depois faremos a pesquisa exata dos valores"*) — **tratada aqui como restrição arquitetural existente**, não uma escolha nova desta missão. Pendências reais herdadas de D-08 (orçamento exato, confirmação jurídica de residência de dados) detalhadas em ADR-0019. ADR-0019 formaliza a implantação TARGET **sobre** essa base já decidida, sem reabri-la sem necessidade.
 
 `PENDÊNCIA`: confirmar a evidência documental exata (`docs/evidence/DIRETOR_DECISAO_D08_INFRAESTRUTURA_20260827.md`) não foi relida palavra por palavra nesta missão — citada por referência do painel já lido em turno anterior desta sessão. Antes de qualquer contratação real, reconfirmar.
 
@@ -96,7 +96,7 @@ Nenhum serviço foi contratado, nenhuma nuvem foi configurada, nenhum deploy foi
 | Fiscal handoff | `MANTER EM QUARENTENA FUNCIONAL` — implementado mas deliberadamente bloqueado | Sem fato real de billing próprio |
 | `mobile/` | `MANTER EM QUARENTENA` | Decisão já formalizada, não revisitada nesta missão |
 | Product Charter / NFR (pontos "mobile-first") | `ADAPTAR` | Superados pela Lei Web First; adaptação é decisão humana, não execução automática desta missão (ADR-0016) |
-| Autenticação (token fixo de teste) | `SUBSTITUIR` | Nunca foi produção; TARGET é sessão real (ADR-0017/0018) |
+| Autenticação (token fixo de teste) | `SUBSTITUIR` | Nunca foi produção; TARGET é sessão real (ADR-0018) |
 | Persistência (SQLite opcional) | `ADAPTAR` | Postgres passa a ser padrão nos ambientes além de dev local; schema já existe |
 | Conectores reais (Google/Meta/WhatsApp) | `CRIAR` | Inexistentes hoje |
 | Frontend Web | `CRIAR` | Inexistente |

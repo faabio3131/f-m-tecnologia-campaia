@@ -22,11 +22,15 @@ Em 13/09/2026 (v1.0) e 17/09/2026 (v2.0), `docs/nova-fm/00-DOCUMENTO-MESTRE-NOVA
 | **B — Registrar a divergência e propor a precedência formal da Lei Web First sobre a frase específica de natureza (esta ADR), deixando a atualização literal do Charter para decisão humana** | Resolve a divergência de autoridade sem executar uma decisão de produto não solicitada | Exige que o Diretor formalize a atualização do Charter depois | Alta |
 | C — Reescrever o Charter agora, unilateralmente | Documentação fica imediatamente consistente | Decisão de produto tomada sem autorização humana explícita — proibido pelo prompt mestre e pelo Documento Mestre §56 (coordenação não é usurpação) | Baixa (mudança de produto já publicada) |
 
-## Decisão
+## Decisão proposta
 
-**Opção B.** A Lei Web First prevalece sobre a frase "Natureza: Aplicativo mobile SaaS independente" do Product Charter e sobre o tratamento de Web como "Fase 12" do NFR, **a partir desta data**, para toda decisão arquitetural futura do CampaIA. O restante do Charter e do NFR permanece válido e é reaproveitado neste Ponto Zero Web (ver `docs/web/02_PONTO_ZERO_WEB_E_REQUISITOS.md` §1.2).
+**Recomendação: Opção B**, ainda não aprovada.
 
-A atualização literal do texto do Charter/NFR para refletir isso **não é executada por esta ADR** — fica registrada como pendência para decisão humana explícita, conforme o prompt mestre desta missão proíbe alteração de documentos de produto fora de escopo.
+Uma distinção importa aqui: a Lei Web First **já é obrigatória** por autoridade institucional vigente (`docs/nova-fm/00-DOCUMENTO-MESTRE-NOVA-FM-TECNOLOGIA.md` v2.0, hierarquicamente superior a documento de produto, conforme `CLAUDE.md`) — isso não depende desta ADR nem de nenhuma aprovação adicional. **O que esta ADR propõe, e que permanece pendente de aprovação humana, é especificamente o tratamento formal da divergência**: registrar que a frase "Natureza: Aplicativo mobile SaaS independente" do Product Charter e o tratamento de Web como "Fase 12" do NFR estão, a partir de agora, superados por essa norma já vigente — e deixar a correção literal desses dois documentos, se aprovada, para decisão humana explícita, em vez de reescrevê-los automaticamente nesta missão.
+
+Se aprovada, esta ADR passa a valer como registro formal dessa precedência para toda decisão arquitetural futura do CampaIA; o restante do Charter e do NFR (público-alvo, canais, autonomia, guardrails) permanece válido e é reaproveitado neste Ponto Zero Web (ver `docs/web/02_PONTO_ZERO_WEB_E_REQUISITOS.md` §1.2) independentemente da aprovação desta ADR específica.
+
+A atualização literal do texto do Charter/NFR **não é executada por esta ADR em nenhuma hipótese** — fica registrada como pendência para decisão humana explícita, conforme o prompt mestre desta missão proíbe alteração de documentos de produto fora de escopo.
 
 ## Razão
 
