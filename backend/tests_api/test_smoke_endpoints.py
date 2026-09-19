@@ -450,6 +450,29 @@ class TestSmokeEndpoints(unittest.TestCase):
         )
         self.assertEqual(r.status_code, 202, r.text)
 
+    def test_budget_patch_accepts_contract_daily_cap_alias(self):
+        # Regression for Achado 18 (backend/api/models.py, BudgetPatchRequest):
+        # bff-openapi.yaml's updateBudget requestBody names this field `daily_cap`,
+        # not `new_daily_cap`. A client following the contract literally must be
+        # accepted, not rejected by `extra="forbid"`.
+        client = make_client()
+        camp = create_campaign(client)
+        cid = camp["id"]
+        approval = client.post(
+            "/approvals", headers=OWNER, json={"campaign_id": cid, "kind": "BUDGET_CHANGE"}
+        ).json()
+        client.post(
+            f"/approvals/{approval['id']}/decision",
+            headers={**with_step_up(APPROVER), **unique_idem()},
+            json={"decision": "APPROVE"},
+        )
+        r = client.patch(
+            f"/campaigns/{cid}/budget",
+            headers={**with_step_up(OWNER), **unique_idem()},
+            json={"approval_id": approval["id"], "daily_cap": "550"},
+        )
+        self.assertEqual(r.status_code, 202, r.text)
+
     def test_budget_patch_without_idempotency_key_rejected(self):
         client = make_client()
         camp = create_campaign(client)
