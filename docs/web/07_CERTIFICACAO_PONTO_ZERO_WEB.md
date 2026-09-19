@@ -13,10 +13,12 @@ Este documento registra eventos de validação em ordem cronológica, cada um co
 | Validação local de runtime (testes de domínio, testes de API, AsyncAPI, DDL/Postgres) | `a4a36ec2457fdb1ecd25319015b67470b899fd1e` | 267 testes de domínio, 81 de API, AsyncAPI 24/24, DDL/RLS contra Postgres 16 real — todos executados de fato, saída capturada |
 | Commit de certificação inicial (doc 07, primeira versão) | `9a5935e` | Documental — não altera código, não exige nova execução de runtime |
 | Commit do painel v20 | `0160182887a11cf1fc787ef97fdf085e6d3cdc21` | Documental — não altera código |
-| **CI do GitHub Actions no HEAD `0160182`** | run **#11** (`35446255809`) | **`completed` / `success`**, confirmado diretamente via `mcp__github__actions_list` nesta correção — 267 testes de domínio + 81 de API + AsyncAPI 24/24, executados pelo runner do GitHub, não apenas localmente |
-| Esta correção (task atual) | *(commits novos, ainda sem SHA no momento em que este texto é escrito)* | Corrige referências de ADR, remove token fixo do WP-01, incorpora leitura integral de 7 módulos + fonte D-08, ajusta linguagem da ADR-0016, reconcilia ADR-0019 |
+| **CI do GitHub Actions no HEAD `0160182`** | run **#11** (`35446255809`) | **`completed` / `success`** — 267 testes de domínio + 81 de API + AsyncAPI 24/24, executados pelo runner do GitHub, não apenas localmente |
+| Correção de referências de ADR/WP-01/D-08/ADR-0016 (2 commits: `ad1fe73`, `4ae62a5`) | `4ae62a5a073245770402957a1eb261568e42e416` | Documental — corrige referências de ADR, remove token fixo do WP-01, incorpora leitura integral de 7 módulos + fonte D-08, ajusta linguagem da ADR-0016, reconcilia ADR-0019 |
+| **CI do GitHub Actions no HEAD `4ae62a5`** | run **#12** (`35447359152`) | **`completed` / `success`**, confirmado diretamente via `mcp__github__actions_list` — 267 testes de domínio + 81 de API + AsyncAPI 24/24 |
+| Esta correção (task atual: contradição D-08, cronologia deste documento, WP-02 fail-closed, painel, descrição da PR) | *(commit novo, ainda sem SHA no momento em que este texto é escrito)* | Puramente documental — nenhum código de `backend/`, `contracts/` ou `mobile/` tocado |
 
-**Obrigação registrada**: os commits desta correção alteram apenas documentação (nenhum código de `backend/`, `contracts/` ou `mobile/` é tocado), mas ainda assim exigem um **novo CI no novo HEAD** antes de qualquer certificação ser considerada válida para esse HEAD — reexecutado e confirmado antes do fechamento desta correção (ver relatório final da missão para o resultado real).
+**`4ae62a5` é o último HEAD funcional/documental integralmente validado antes desta correção** — validação local de runtime real (SHA `a4a36ec`) **e** CI real do GitHub (run #12) ambos confirmados sobre a mesma linha de commits que leva a `4ae62a5`. Esta correção em curso não repete código nem contratos; é exclusivamente documental, mas ainda assim exige um **novo CI no novo HEAD** antes de ser considerada certificada — reexecutado e confirmado antes do fechamento (ver relatório final da missão para o SHA e o resultado reais, que este arquivo não pode antecipar sem se tornar autorreferencial).
 
 ---
 
@@ -43,7 +45,7 @@ Este documento registra eventos de validação em ordem cronológica, cada um co
 | `mobile/` | Intocado |
 | ADRs em `PROPOSTA` | Todas as 4 (0016–0019) — nenhuma `APROVADA` |
 
-Esta correção (task atual) adiciona commits sobre `0160182`; a matriz de escopo/secrets/CI será reconfirmada no HEAD final resultante e reportada no relatório da missão.
+A matriz acima é um retrato do momento de criação da PR (`0160182`). A correção seguinte (referências de ADR/WP-01/D-08/ADR-0016) levou o HEAD a `4ae62a5`, com CI run #12 confirmado `completed`/`success` (ver §1). Esta correção atual (contradição D-08, cronologia deste documento, WP-02 fail-closed, painel, descrição da PR) adiciona commits sobre `4ae62a5`; a matriz de escopo/secrets/CI será reconfirmada no HEAD resultante e reportada no relatório da missão.
 
 ---
 

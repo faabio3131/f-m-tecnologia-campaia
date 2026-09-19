@@ -52,7 +52,7 @@ Nenhum bloco foi executado. Esta é só a reconciliação de ordem, exigida ante
 - **Testes**: automatizados de CSRF, CORS, step-up, isolamento cross-tenant (novo, na camada Web).
 - **Evidências**: suíte de testes de segurança passando; log de CI.
 - **Riscos**: alto — é a superfície de autenticação real do produto.
-- **Rollback**: manter o BFF capaz de aceitar o token de teste em ambiente de desenvolvimento isolado, nunca em produção.
+- **Rollback**: qualquer fixture/token de autenticação de teste só pode existir em ambiente de **testes automatizados ou desenvolvimento local isolado**, nunca em preview, staging ou produção. A inicialização do BFF deve ser **fail-closed por padrão**: a fixture não fica disponível a menos que seja explicitamente habilitada por uma flag de ambiente cujo valor default, em qualquer ambiente que não seja teste/dev local, é desabilitado — nunca o inverso (nunca "habilitada por padrão, desabilitar em produção"). Deve ser **impossível habilitar esse mecanismo em preview, staging ou produção**, mesmo por engano de configuração — a checagem de ambiente deve recusar a inicialização, não apenas ocultar a opção.
 - **Gate**: Gate 3 (Autenticação).
 - **Definição de pronto**: nenhuma rota protegida acessível sem sessão válida; RBAC/ABAC exercitado ponta a ponta pela primeira vez via Web.
 - **Autorização necessária**: FM Security Engineer + Diretor.

@@ -79,7 +79,7 @@ Build/artefatos do frontend (depende de ADR-0017), estratégia de migration (Pos
 ### 4.4 Hospedagem (comparação, sem contratar nada)
 `docs/evidence/DIRETOR_DECISAO_D08_INFRAESTRUTURA_20260827.md` — **lido integralmente nesta correção** — registra Google Cloud, região São Paulo (`southamerica-east1`), como decisão já aprovada (D-08, 27/08/2026, resposta literal do Diretor: *"pode seguir sua recomendação e depois faremos a pesquisa exata dos valores"*) — **tratada aqui como restrição arquitetural existente**, não uma escolha nova desta missão. Pendências reais herdadas de D-08 (orçamento exato, confirmação jurídica de residência de dados) detalhadas em ADR-0019. ADR-0019 formaliza a implantação TARGET **sobre** essa base já decidida, sem reabri-la sem necessidade.
 
-`PENDÊNCIA`: confirmar a evidência documental exata (`docs/evidence/DIRETOR_DECISAO_D08_INFRAESTRUTURA_20260827.md`) não foi relida palavra por palavra nesta missão — citada por referência do painel já lido em turno anterior desta sessão. Antes de qualquer contratação real, reconfirmar.
+`PENDÊNCIA` real (preservada, não a de releitura — já eliminada acima): orçamento mensal exato e confirmação contratual/jurídica de que a região São Paulo cumpre a expectativa de residência de dados de D-09/LGPD — a própria fonte primária já registra ambas como não resolvidas (ver ADR-0019).
 
 Nenhum serviço foi contratado, nenhuma nuvem foi configurada, nenhum deploy foi realizado nesta missão.
 
