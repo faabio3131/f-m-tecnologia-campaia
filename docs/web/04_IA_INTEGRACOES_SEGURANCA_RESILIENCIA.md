@@ -20,10 +20,10 @@ Core/IA → interpretação/recomendação → policy_decision_id (PolicyEngine)
 ```
 Já é exatamente assim no código: `connectors.py::require_authorization()` recusa qualquer `PublishCommand` sem `policy_decision_id`; o `PolicyEngine` é quem emite esse id, nunca o `ai_gateway`.
 
-### 1.2 O que é TARGET (não implementado, não lido em profundidade nesta missão)
-- Moderação de conteúdo gerado — `AIStatus.BLOCKED_BY_MODERATION` existe como enum, comportamento real não confirmado nesta leitura.
+### 1.2 O que é TARGET (não implementado)
+- Moderação de conteúdo gerado — **confirmado por leitura integral de `ai_gateway.py`**: `ModerationBlocked` é tratado de forma distinta de erro de provedor — não abre circuit breaker e não tenta outro provedor, retorna `BLOCKED_BY_MODERATION` imediatamente. O que é `NÃO VERIFICADO` é a origem real da moderação (qual provedor/mecanismo decide bloquear) — não encontrada nos 7 arquivos lidos.
 - Evals formais — não encontrados nesta leitura; `PENDÊNCIA`.
-- Cache seguro de resultados de IA — não confirmado.
+- Cache seguro de resultados de IA — não confirmado; nenhum código de cache encontrado em `ai_gateway.py`.
 - Versionamento de prompts — `prompt_version: str = "v1"` existe no `AIRequest`, estratégia de evolução não documentada.
 - Proteção específica contra prompt injection além da trava de credencial — não confirmada nesta leitura; `NÃO VERIFICADO`.
 - Isolamento entre tenants na camada de IA — `tenant_id` está no `AIRequest`; enforcement de que um tenant nunca vê contexto de outro não foi confirmado nesta leitura (`TenantIsolationViolation` existe como exceção importada, comportamento não lido).
@@ -50,7 +50,7 @@ Proposto: um registro versionado por `(provider, capability)` que o `PolicyEngin
 |---|---|---|---|---|---|---|---|
 | Google Ads | TARGET | `NÃO VERIFICADO` — requer pesquisa oficial | Já suportado pelo contrato (`idempotency_key`) | `NON_RETRYABLE` já define quais erros não repetem | TARGET | TARGET | TARGET |
 | Meta Ads | TARGET | `NÃO VERIFICADO` — Marketing API Access Tier exige histórico real de chamadas com erro baixo (citado no painel v18/v19, não reverificado nesta missão) | idem | idem | TARGET | TARGET | TARGET |
-| WhatsApp Business | TARGET | `NÃO VERIFICADO` | idem | idem | TARGET | TARGET (assinatura/replay já há padrão em `webhooks.py`, não lido linha a linha) | TARGET |
+| WhatsApp Business | TARGET | `NÃO VERIFICADO` | idem | idem | TARGET | TARGET — **padrão de assinatura/replay confirmado por leitura integral de `webhooks.py`**: HMAC-SHA256 sobre timestamp+corpo cru, comparação em tempo constante, janela de 5 minutos, dedupe por `provider`+`external_event_id`; nenhuma persistência confirmada (em memória) | TARGET |
 
 WhatsApp deve preservar (já são requisitos de produto no Charter/NFR, não inventados aqui): consentimento, opt-out, templates aprovados, janela de atendimento, classificação de mensagens, governança de contatos.
 
@@ -94,13 +94,13 @@ Metodologia: STRIDE, aplicada aos trust boundaries de `03_ARQUITETURA_WEB_DOMINI
 | CSRF | Sessão Web | Mutação sem token CSRF | Médio | TARGET — token CSRF em toda mutação | — | — | Gate de Autenticação |
 | XSS | Sessão Web, dados exibidos | Conteúdo não sanitizado (ex.: copy gerado por IA) renderizado sem escape | Médio | CSP (TARGET) + escape padrão do framework escolhido (ADR-0017) | — | — | Gate de Autenticação |
 | IDOR/BOLA | Qualquer recurso por ID | Adivinhar ID de recurso de outro tenant | Alto | Já mitigado no domínio: `NOT_FOUND` em vez de `PERMISSION_DENIED` (existe) | — | — | Gate de Autenticação |
-| Webhooks falsificados | Eventos de provider | Payload forjado sem assinatura válida | Médio | HMAC já citado em `webhooks.py` (não lido linha a linha — `PENDÊNCIA` de confirmação antes do Work Package de integração) | — | — | Gate de Sandbox |
-| Replay de webhook | Eventos duplicados | Reenvio de payload antigo | Médio | Módulo `webhooks.py` cita "replay, dedupe" (não confirmado em profundidade) | — | — | Gate de Sandbox |
+| Webhooks falsificados | Eventos de provider | Payload forjado sem assinatura válida | Médio | **Confirmado por leitura integral**: HMAC-SHA256 sobre timestamp+corpo cru, comparado com `hmac.compare_digest` (tempo constante, evita vazamento por timing) — existe e é a primeira defesa aplicada, antes de qualquer parse | — | — | Gate de Sandbox |
+| Replay de webhook | Eventos duplicados | Reenvio de payload antigo | Médio | **Confirmado por leitura integral**: janela de tolerância de 5 minutos (`DEFAULT_TOLERANCE`) rejeita fora da janela mesmo com assinatura válida; dedupe por `(provider, external_event_id)` em `_seen` (em memória, sem persistência confirmada) | — | — | Gate de Sandbox |
 | Idempotency abuse | Budget, publicação | Reuso indevido de `idempotency_key` entre operações distintas | Médio | Chave já é composta por `command_id:channel` (existe, `saga.py`) | — | — | — |
 | Prompt injection | AI Gateway | Conteúdo malicioso no briefing tentando extrair segredo ou instrução indevida | Médio | Trava de credencial já existe (`assert_no_credentials`); proteção mais ampla contra injection **não confirmada** | — | — | `NÃO VERIFICADO` — Work Package de IA |
 | Exfiltração por IA | Dados de outro tenant via prompt | Contexto cruzado entre tenants | Alto | `tenant_id` no `AIRequest`; enforcement real **não confirmado nesta leitura** | — | — | `NÃO VERIFICADO` — Work Package de IA |
 | Upload malicioso | Assets | Arquivo malicioso em upload de criativo | Médio | TARGET — validação de tipo/tamanho, scan | — | — | Gate de Sandbox |
-| PII/LGPD | Dados pessoais de leads/clientes | Retenção indevida, falta de consentimento | Alto | Sanitização já existe (`sanitizer.py`, não lido linha a linha); política de retenção é TARGET | — | — | Gate de Produção controlada |
+| PII/LGPD | Dados pessoais de leads/clientes | Retenção indevida, falta de consentimento | Alto | **Confirmado por leitura integral de `sanitizer.py`**: pseudonimização (placeholders estáveis `[CPF_1]` etc.), nunca exclusão — preserva raciocínio do modelo sem expor dado; mapa de reidratação fica exclusivamente no backend, nunca serializado, nunca em log; `rehydrate()` existe só para exibir ao próprio dono do dado. Política de retenção continua TARGET | — | — | Gate de Produção controlada |
 | Abuso financeiro | Orçamento | Publicação/otimização fora de limite | Alto | `budget.py`/`policy.py` já bloqueiam (existe, testado) | — | — | — |
 | Campanha não autorizada | Publicação | Publicar sem `policy_decision_id`/aprovação | Crítico | `_guard_publishing` já recusa (existe, testado) | — | — | — |
 | Alteração indevida de orçamento | Budget | Variação além do permitido | Alto | `validate_change()` já recusa (existe, testado) | — | — | — |
@@ -119,7 +119,7 @@ Nenhum segredo real foi incluído nesta matriz ou em qualquer artefato desta mis
 - Backoff com jitter explícito — `saga.py` usa retry simples (`while attempts <= MAX_RETRIES`), sem backoff exponencial confirmado nesta leitura.
 - Circuit breaker por provider — citado no painel para `ai_gateway.py` (`CIRCUIT_THRESHOLD = 3`, confirmado em código lido), **não confirmado para conectores de Ads**.
 - Bulkhead entre tenants na camada de infraestrutura — não aplicável ainda (sem infraestrutura real).
-- Dead-letter queue — citado para `outbox.py` no painel, não lido linha a linha nesta missão.
+- Dead-letter queue — **confirmado por leitura integral de `outbox.py`**: `MAX_ATTEMPTS = 5`; ao esgotar, status vira `DEAD_LETTER` (nunca descarta o evento). Entrega é "pelo menos uma vez", nunca "no máximo uma vez"; ordenação garantida só por agregado, ordem global explicitamente não garantida (Inbox, do lado consumidor, é quem converte isso em efeito único, por `tenant_id`+`event_id`). Persistência real (além de memória de processo) não confirmada — mesma ressalva do outbox em si.
 - Degradação controlada / modo somente leitura — TARGET, não implementado.
 - RPO/RTO — NFR já define metas (`<5min`/`<1h`), mas são `HIPÓTESE`/`TARGET` sem infraestrutura real para validar. **Não declarar como aprovado sem autoridade humana** — permanece TARGET nesta missão.
 - Backup/restore — TARGET, depende da decisão de hospedagem (ADR-0019).
@@ -135,7 +135,7 @@ TARGET mínimo, priorizado pelos fluxos críticos já identificados:
 - Latência por rota.
 - Erro por provider (`ConnectorErrorCode` já dá a taxonomia certa para métricas).
 - Rate limit, fila, DLQ (quando existirem).
-- Divergência de reconciliação (`reconciliation.py` existe, não lido em profundidade).
+- Divergência de reconciliação — **confirmado por leitura integral de `reconciliation.py`**: `Reconciler` é puramente determinístico (não chama IA, não executa nada por conta própria); regra central preservada em código — o reconciliador **só reduz efeito ou corrige registro**, nunca cria, reativa ou aumenta verba; recurso órfão (existe na plataforma, sem registro interno) nasce com severidade `FINANCIAL` e sempre escala para humano (`requires_human=True`); divergência de orçamento também sempre escala para humano, nunca é ajustada automaticamente; estado externo é sempre a autoridade para estado da plataforma (interno nunca sobrepõe).
 - Orçamento próximo do limite (`should_stop()` já existe em `budget.py` — falta alertar, não só bloquear).
 - Campanha pausada, kill switch acionado (já gera evento de domínio via `history`).
 - Tokens expirados (`AUTH_EXPIRED` já é código canônico).
