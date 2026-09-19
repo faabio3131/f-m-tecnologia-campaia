@@ -2,6 +2,15 @@
 
 Estas regras valem para toda atividade de engenharia neste repositório.
 
+## Fontes normativas versionadas
+
+Antes de planejar, implementar, corrigir, revisar ou certificar uma mudança, ler nesta ordem:
+
+1. [`docs/nova-fm/00-DOCUMENTO-MESTRE-NOVA-FM-TECNOLOGIA.md`](docs/nova-fm/00-DOCUMENTO-MESTRE-NOVA-FM-TECNOLOGIA.md) — Norma Mestre Obrigatória, versão 2.0;
+2. [`docs/nova-fm/02-PADROES-DE-CONSTRUCAO-NOVA-FM.md`](docs/nova-fm/02-PADROES-DE-CONSTRUCAO-NOVA-FM.md) — Norma Operacional de Engenharia, subordinada ao Documento Mestre.
+
+Esses arquivos são fontes institucionais canônicas deste repositório. Não substituí-los por memória de conversa, conhecimento geral do modelo, resumo informal ou cópia histórica. Não alterá-los durante tarefas de produto sem autorização humana explícita e específica. Se estiverem ausentes, ilegíveis ou contraditórios, interromper a mudança e registrar o bloqueio.
+
 ## Autoridade
 
 Obedecer, nesta ordem:
@@ -43,6 +52,7 @@ Não editar enquanto o CURRENT necessário estiver contraditório ou insuficient
 ## Engenharia
 
 - Implementar a menor mudança coerente que resolva integralmente o requisito aprovado.
+- Construir todo novo software comercial da Nova FM como Web First desde a concepção; não criar produto local para depois reconstruí-lo na Web. Exceções exigem necessidade comprovada, ADR e aprovação humana explícita.
 - Preservar autoridades canônicas, contratos, boundaries, compatibilidade e comportamento não relacionado.
 - Não criar arquitetura paralela, segundo domínio, segunda fonte de verdade, autenticação concorrente ou regra crítica duplicada no frontend.
 - Não reescrever por preferência estética nem adicionar abstração, dependência ou provider sem necessidade comprovada.
@@ -97,4 +107,3 @@ Ao concluir cada bloco, informar objetivamente:
 5. riscos, pendências e itens não verificados;
 6. status exato de prontidão;
 7. confirmação de que merge/deploy/produção ocorreram ou não.
-
