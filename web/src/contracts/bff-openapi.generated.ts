@@ -4,6 +4,57 @@
  */
 
 export interface paths {
+    "/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inicia o fluxo OIDC Authorization Code + PKCE. Redireciona o navegador ao authorization_endpoint do provedor de identidade configurado (real, via CAMPAIA_OIDC_*, ou o provedor de teste fail-closed em CAMPAIA_ENV=test|local_dev). */
+        get: operations["startLogin"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Callback do provedor de identidade. Troca o codigo de autorizacao (com PKCE), verifica a assinatura e as claims do ID token, e estabelece uma sessao real (cookies `campaia_session` HttpOnly/Secure e `campaia_csrf`). */
+        get: operations["authCallback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoga a sessao atual (se houver) e limpa os cookies de sessao/CSRF. */
+        post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me": {
         parameters: {
             query?: never;
@@ -644,6 +695,77 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    startLogin: {
+        parameters: {
+            query?: {
+                /** @description Caminho relativo same-origin para redirecionar apos login bem-sucedido (default `/`). Qualquer valor absoluto ou iniciado por `//` e ignorado (protecao contra open redirect). */
+                redirect_after_login?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirecionamento ao authorization_endpoint do provedor de identidade. */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Nenhum provedor de identidade configurado. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    authCallback: {
+        parameters: {
+            query: {
+                code: string;
+                state: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sessao estabelecida; redireciona para `redirect_after_login`. */
+            302: {
+                headers: {
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sessao revogada; redireciona para `/`. */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     getMe: {
         parameters: {
             query?: never;

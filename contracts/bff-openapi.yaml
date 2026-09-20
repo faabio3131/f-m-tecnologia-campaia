@@ -25,8 +25,10 @@ servers:
 
 security:
   - bearerAuth: []
+  - cookieAuth: []
 
 tags:
+  - name: Autenticacao
   - name: Conta
   - name: Marca
   - name: Conexoes
@@ -35,6 +37,68 @@ tags:
   - name: Metricas
 
 paths:
+  /auth/login:
+    get:
+      tags: [Autenticacao]
+      summary: >-
+        Inicia o fluxo OIDC Authorization Code + PKCE. Redireciona o navegador ao
+        authorization_endpoint do provedor de identidade configurado (real, via
+        CAMPAIA_OIDC_*, ou o provedor de teste fail-closed em CAMPAIA_ENV=test|local_dev).
+      operationId: startLogin
+      security: []
+      parameters:
+        - name: redirect_after_login
+          in: query
+          required: false
+          schema: { type: string }
+          description: >-
+            Caminho relativo same-origin para redirecionar apos login bem-sucedido
+            (default `/`). Qualquer valor absoluto ou iniciado por `//` e ignorado
+            (protecao contra open redirect).
+      responses:
+        '302':
+          description: Redirecionamento ao authorization_endpoint do provedor de identidade.
+        '503':
+          description: Nenhum provedor de identidade configurado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /auth/callback:
+    get:
+      tags: [Autenticacao]
+      summary: >-
+        Callback do provedor de identidade. Troca o codigo de autorizacao (com PKCE),
+        verifica a assinatura e as claims do ID token, e estabelece uma sessao real
+        (cookies `campaia_session` HttpOnly/Secure e `campaia_csrf`).
+      operationId: authCallback
+      security: []
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema: { type: string }
+        - name: state
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '302':
+          description: Sessao estabelecida; redireciona para `redirect_after_login`.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/logout:
+    post:
+      tags: [Autenticacao]
+      summary: Revoga a sessao atual (se houver) e limpa os cookies de sessao/CSRF.
+      operationId: logout
+      responses:
+        '302':
+          description: Sessao revogada; redireciona para `/`.
+
   /me:
     get:
       tags: [Conta]
@@ -506,7 +570,20 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Token de sessao. O `tenant_id` e derivado dele e nunca aceito do cliente.
+      description: >-
+        Fixture de teste/desenvolvimento local apenas (WP-01-era). Fail-closed por
+        construcao desde o WP-02 (ADR-0018): nunca disponivel fora de CAMPAIA_ENV=
+        test|local_dev, mesmo por engano de configuracao. O `tenant_id` e derivado dele e
+        nunca aceito do cliente.
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: campaia_session
+      description: >-
+        Sessao Web real (WP-02, ADR-0018). Cookie HttpOnly/Secure/SameSite=Lax, emitido por
+        `GET /auth/callback` apos um fluxo OIDC Authorization Code + PKCE completo e
+        verificado. Mutacoes autenticadas por este cookie exigem tambem o header
+        `X-CSRF-Token` (ver `campaia_csrf`, nao-HttpOnly, mesmo fluxo de emissao).
 
   parameters:
     IdempotencyKey:
