@@ -1,26 +1,37 @@
 # CampaIA — Ponto Zero Web · 08. Certificação do WP-01 (Fundação do frontend Web)
 
-**Estado máximo declarado neste documento:** `WP-01 IMPLEMENTADO — AGUARDANDO CI DA PR PARA GATE 2 DEFINITIVO`
+**Estado máximo declarado neste documento:** `WP-01 VALIDADO — GATE 2 APROVADO`
 
 Este documento certifica a execução real do WP-01 (`docs/web/06_ROADMAP_WORK_PACKAGES.md`),
 autorizada por "PROMPT MESTRE — CAMPAIA WEB FIRST / EXECUÇÃO REAL E COMPLETA DO WP-01"
 (19/09/2026), sobre `main`@`41b521fed83b87d8cd0df3d1def2fd26f9af8379`
 (merge certificado da PR #4, ADR-0016–0019 aprovadas).
 
-O veredito final de Gate 2 — se `WP-01 VALIDADO — GATE 2 APROVADO` ou
-`WP-01 IMPLEMENTADO — GATE 2 PENDENTE` — depende do CI da PR desta missão,
-que só é conhecido depois deste documento ser escrito e commitado; por
-isso ele não é antecipado aqui, seguindo a mesma disciplina de não
-autorreferência já aplicada nas certificações anteriores deste repositório.
-O relatório final da missão (fora deste arquivo) reporta o CI real da PR.
+**Reconciliação (20/09/2026)**: esta seção inicial foi corrigida após confirmação direta do
+CI real da PR #5 no HEAD `cb6d8fe` — ambos os workflows (`CAMPAIA Backend Tests` run
+`35481949324` e `CAMPAIA Frontend Tests` run `35481949368`) `completed`/`success`,
+confirmado via `mcp__github__actions_list`. O veredito `WP-01 VALIDADO — GATE 2 APROVADO`
+substitui o anterior `WP-01 IMPLEMENTADO — AGUARDANDO CI DA PR PARA GATE 2 DEFINITIVO`,
+que era o estado correto no momento em que este documento foi escrito pela primeira vez
+(antes do CI existir) — ver §19 para o checklist completo.
 
 ---
 
 ## 1. Escopo executado
 
 Criação de `web/` — fundação Next.js/React/TypeScript do frontend Web do
-CampaIA — e `.github/workflows/frontend-tests.yml`. Nenhuma outra parte do
-repositório foi alterada.
+CampaIA — e `.github/workflows/frontend-tests.yml`. Nenhum arquivo de
+`backend/campaia_core/`, `backend/api/`, `backend/db/`, `contracts/` ou
+`mobile/` foi alterado.
+
+**Correção (20/09/2026)**: a frase anterior ("nenhuma outra parte do
+repositório foi alterada") estava imprecisa — o mesmo commit que introduz
+este documento também atualiza `docs/web/00,02,03,04,05,06_*.md` (propagação
+de status) e cria `backend/01_PAINEL_EXECUCAO_v21_VIGENTE.md` (painel), como
+o próprio §16 já detalhava corretamente. O escopo real da PR #5 inteira é
+**49 arquivos**: todo `web/` (código, testes, config), 1 workflow novo, e a
+documentação/painel citados — confirmado por `git diff --stat main..HEAD` e
+pelo `changed_files` da PR no GitHub.
 
 ## 2. Versões-base
 
@@ -205,17 +216,19 @@ Igual ao baseline (24/24) — nenhuma regressão.
 
 ## 16. Escopo do diff
 
-Apenas `web/` (novo diretório completo) e
-`.github/workflows/frontend-tests.yml` (novo). Confirmado por
-`git status`/`git diff --stat` na execução: nenhuma alteração em
-`mobile/`, `backend/campaia_core/`, `backend/api/`, `backend/db/`,
-`contracts/`, nem em `.github/workflows/backend-tests.yml`.
+**49 arquivos alterados** (`main..HEAD` da PR #5, confirmado por
+`git diff --stat` e pelo `changed_files` do GitHub): todo `web/` (novo
+diretório completo — código, testes, configuração), 1 workflow novo
+(`.github/workflows/frontend-tests.yml`), e documentação/painel
+(`docs/web/00,02,03,04,05,06,08_*.md`, `backend/01_PAINEL_EXECUCAO_v21_VIGENTE.md`).
+Confirmado por `git diff --stat main..HEAD -- mobile/ backend/campaia_core
+backend/api backend/db contracts/`: **nenhuma alteração** em nenhum desses
+diretórios, nem em `.github/workflows/backend-tests.yml`.
 
 ## 17. Itens não verificados / pendências reais
 
 - `npm audit` não foi executado nesta missão — fora do escopo explícito do WP-01.
 - Cobertura de código (coverage) não foi medida — não exigida pelos critérios do WP-01.
-- O CI da PR desta missão ainda não tinha rodado no momento em que este documento foi escrito — reportado no relatório final da missão, não aqui.
 - Nenhum teste de carga, performance ou Lighthouse foi executado — fora do escopo do WP-01.
 
 ## 18. Confirmações negativas
@@ -229,7 +242,7 @@ Apenas `web/` (novo diretório completo) e
 
 | Critério | Situação |
 |---|---|
-| Branch correta, PR OPEN/DRAFT | Ver relatório final da missão |
+| Branch correta, PR OPEN/DRAFT | Sim — PR #5, `open`/`draft: true`/`merged: false`, `mergeable_state: clean` |
 | Scaffold Next.js/React criado | Sim |
 | TypeScript estrito | Sim |
 | Lockfile presente | Sim (`package-lock.json`) |
@@ -243,12 +256,13 @@ Apenas `web/` (novo diretório completo) e
 | Verificação de fronteiras verde | Sim |
 | Build de produção verde | Sim |
 | Smoke E2E verde | Sim (4/4) |
-| CI de frontend verde | Ver relatório final da missão |
-| CI de backend verde | Reconfirmado localmente (267+81+24/24); CI real ver relatório final |
+| CI de frontend verde | Sim — run `35481949368` (`CAMPAIA Frontend Tests`), `completed`/`success` no HEAD `cb6d8fe` |
+| CI de backend verde | Sim — run `35481949324` (`CAMPAIA Backend Tests`), `completed`/`success` no HEAD `cb6d8fe`; reconfirmado localmente (267+81+24/24) |
 | Documentação/painel reconciliados | Sim (este documento + roadmap + doc 05 + painel) |
-| Worktree limpa | Ver relatório final da missão |
-| HEAD local = HEAD remoto | Ver relatório final da missão |
+| Worktree limpa | Sim — `git status` → "nothing to commit, working tree clean" |
+| HEAD local = HEAD remoto | Sim — `cb6d8feead7e4f40405f38632474559ce1f9d4e6` em ambos, confirmado via `git ls-remote` |
 | Nenhuma regressão conhecida | Sim |
 
-Enquanto os itens marcados "Ver relatório final da missão" não estiverem
-confirmados, o status correto é `WP-01 IMPLEMENTADO — GATE 2 PENDENTE`.
+Todos os critérios estão satisfeitos e confirmados diretamente (CI via
+`mcp__github__actions_list`, não apenas localmente) — o status correto é
+`WP-01 VALIDADO — GATE 2 APROVADO`.

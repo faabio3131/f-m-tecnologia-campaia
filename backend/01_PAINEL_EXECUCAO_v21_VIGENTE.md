@@ -232,11 +232,14 @@ Não altera nenhum módulo de `campaia_core/` ou `api/` — é puramente SQL + s
 | RECON | Reconciliação de repositórios (`faabio3131/CampaIA` → `faabio3131/f-m-tecnologia-campaia`) | **CONCLUÍDA** (19/09) — ADR-0015, bloco fiscal importado, fix `daily_cap` confirmado coerente + teste de regressão adicionado, mobile em quarentena formal; ver "Registro de blocos executados" |
 | WP-01 | Fundação do frontend Web (`web/`) | **IMPLEMENTADO E VALIDADO** (19/09) — Next.js/React/TypeScript estrito, lint/typecheck/testes/build/E2E verdes a partir de checkout limpo, fixture tipada do contrato, CI próprio criado, sem chamada real ao BFF, sem token; ver `docs/web/08_CERTIFICACAO_WP01_FUNDACAO_WEB.md` |
 
-**Recomendação de engenharia:** com a reconciliação concluída, o próximo bloco recomendado, pendente de
-autorização humana explícita, é o **System Design da aplicação Web real (Ponto Zero Web)** — ainda não
-iniciado por instrução explícita desta reconciliação. A
-decisão sobre o destino do app mobile (`mobile/`, em quarentena) deve ser tomada depois desse System Design,
-não antes.
+**Recomendação de engenharia (corrigida em v21 — a versão abaixo estava desatualizada desde v20):**
+o System Design da aplicação Web real (Ponto Zero Web) foi produzido, as ADRs 0016–0019 foram
+**aprovadas** (19/09/2026, PR #4 mergeada em `main`@`41b521f`), e o **WP-01 (Fundação do frontend
+Web) já foi implementado e validado** (ver linha WP-01 acima e `docs/web/08_CERTIFICACAO_WP01_FUNDACAO_WEB.md`).
+O próximo bloco recomendado é **WP-02 (autenticação e sessão Web real)**, condicionado à escolha do
+provedor de identidade específico e a um Prompt Mestre de implementação dedicado — **não iniciado**.
+A decisão sobre o destino final do app mobile (`mobile/`, em quarentena) segue pendente de decisão
+humana futura, sem prazo vinculado a nenhum Work Package específico.
 
 ---
 
