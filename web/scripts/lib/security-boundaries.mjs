@@ -7,13 +7,24 @@ import { join, extname } from "node:path";
 const SCAN_EXTENSIONS = new Set([".ts", ".tsx", ".css"]);
 const EXCLUDED_FILES = new Set(["bff-openapi.generated.ts"]);
 
-/** @type {{name: string, pattern: RegExp, message: string}[]} */
+// WP-01's rule was "no BFF calls anywhere in web/src" because no session existed to call
+// with. WP-02 introduces two, and only two, legitimate real calls to the BFF: a server-only
+// session read (never reaches the client bundle, forwards the HttpOnly cookie the browser
+// itself cannot read) and a client-side logout action explicitly protected by the
+// double-submit CSRF token (the one case where client JS legitimately needs to read a
+// cookie value and send it as a header). Every other file in web/src -- the WP-01
+// foundation page, all 5 shared components, the contract types, the fixture -- must remain
+// at zero network calls; this allowlist is intentionally two files, not a blanket rule.
+const NETWORK_CALL_ALLOWED_FILES = new Set(["session.ts", "LogoutButton.tsx"]);
+
+/** @type {{name: string, pattern: RegExp, message: string, exemptFiles?: Set<string>}[]} */
 export const FORBIDDEN_PATTERNS = [
   {
     name: "network-call",
     pattern: /\b(fetch|axios|XMLHttpRequest)\s*\(/,
     message:
-      "chamada de rede detectada (fetch/axios/XMLHttpRequest) -- WP-01 nao deve chamar o BFF",
+      "chamada de rede detectada (fetch/axios/XMLHttpRequest) fora da lista de excecoes do WP-02 (session.ts, LogoutButton.tsx)",
+    exemptFiles: NETWORK_CALL_ALLOWED_FILES,
   },
   {
     name: "browser-storage",
@@ -76,9 +87,11 @@ export function checkSecurityBoundaries(srcRoot) {
   const violations = [];
 
   for (const file of files) {
+    const baseName = file.split("/").pop();
     const content = readFileSync(file, "utf8");
     const lines = content.split("\n");
-    for (const { name, pattern, message } of FORBIDDEN_PATTERNS) {
+    for (const { name, pattern, message, exemptFiles } of FORBIDDEN_PATTERNS) {
+      if (exemptFiles?.has(baseName)) continue;
       lines.forEach((line, index) => {
         if (pattern.test(line)) {
           violations.push({ file, rule: name, message, line: index + 1 });

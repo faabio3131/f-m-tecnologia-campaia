@@ -1,0 +1,39 @@
+.header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--campaia-space-2);
+}
+
+.title {
+  font-size: var(--campaia-font-size-xl);
+  margin: 0;
+}
+
+.note {
+  margin: 0 0 var(--campaia-space-3);
+  color: var(--campaia-color-text-muted);
+  font-size: var(--campaia-font-size-sm);
+}
+
+.note code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--campaia-color-bg);
+  padding: 0 var(--campaia-space-1);
+  border-radius: var(--campaia-radius-sm);
+}
+
+.loginLink {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--campaia-space-2) var(--campaia-space-4);
+  border-radius: var(--campaia-radius-sm);
+  background: var(--campaia-color-primary);
+  color: var(--campaia-color-primary-contrast);
+  font-weight: 600;
+  font-size: var(--campaia-font-size-sm);
+}
+
+.loginLink:hover {
+  filter: brightness(1.08);
+}
