@@ -1,6 +1,6 @@
 # CampaIA — Ponto Zero Web · 06. Roadmap e Work Packages
 
-**Status:** TARGET PROPOSTO — nenhum Work Package foi executado nesta missão.
+**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019) — **WP-01 implementado e validado** (19/09/2026, ver `docs/web/08_CERTIFICACAO_WP01_FUNDACAO_WEB.md`). WP-02 em diante permanecem não iniciados.
 
 ---
 
@@ -16,29 +16,29 @@ A sequência de 25 blocos sugerida no prompt mestre foi confrontada com `01_CURR
 - **Métricas**, **orçamento**, **recomendações**, **otimização limitada** — orçamento já tem API e domínio prontos (`PATCH /budget`); pode, na prática, ser paralelizável ao bloco de aprovação, mas mantido na ordem sugerida para não expandir escopo do roadmap sem necessidade.
 - **Hardening, acessibilidade, observabilidade, segurança, staging, produção controlada** — mantidos como fechamento, conforme sugerido, e amarrados aos Gates 6–7 de `05_TESTES_CICD_MIGRACAO.md`.
 
-Nenhum bloco foi executado. Esta é só a reconciliação de ordem, exigida antes de definir os primeiros Work Packages prontos.
+Esta seção registra a reconciliação de ordem original, anterior a qualquer execução. **WP-01 foi implementado e validado em 19/09/2026** (ver abaixo); WP-02 em diante permanecem não executados, na ordem aqui reconciliada.
 
 ---
 
 ## 2. Primeiros 5 Work Packages prontos para execução futura
 
-### WP-01 — Fundação do frontend Web
+### WP-01 — Fundação do frontend Web — **IMPLEMENTADO E VALIDADO (19/09/2026)**
 
-- **Objetivo**: scaffold do projeto Next.js/React (se ADR-0017 aprovada), com lint, typecheck, testes de componente configurados, sem lógica de negócio.
-- **Escopo**: estrutura de pastas, configuração de build, CI de frontend (lint+typecheck+build). Nenhuma chamada de rede real ao BFF nesta fase — **verificado nesta correção que `GET /me` (`backend/api/routes_me.py`) exige `require_auth`; não existe hoje nenhum endpoint público/health/readiness no BFF** (`backend/api/main.py`, 21 rotas, todas atrás de autenticação). Consumo do contrato é feito via **mock/fixture local gerado a partir de `contracts/bff-openapi.yaml`** (ex.: resposta de exemplo de `GET /me` fixada como dado estático no frontend), nunca contra o backend real.
-- **Fora do escopo**: qualquer tela funcional, autenticação real, dados de produção, qualquer chamada de rede ao BFF.
-- **Dependências**: ADR-0017 aprovada.
-- **Arquivos/componentes previstos**: novo diretório `web/` (ou equivalente) no repositório canônico; fixtures de contrato (ex.: `web/mocks/`).
-- **Contratos afetados**: nenhum — só leitura de `bff-openapi.yaml` para gerar fixtures, sem alteração.
-- **Segurança**: nenhuma superfície nova além do que um app estático já expõe. **Garantias explícitas**: nenhum token no bundle; nenhum segredo em variável `NEXT_PUBLIC_*` (ou equivalente exposta ao navegador); nenhuma credencial em `localStorage`; nenhum mecanismo temporário de autenticação que possa migrar acidentalmente para produção — a integração autenticada real só começa no WP-02.
-- **Critérios de aceitação**: build reproduzível, lint e typecheck verdes em CI, app roda localmente e renderiza uma tela a partir do mock/fixture de contrato — nenhuma chamada de rede ao BFF ocorre.
-- **Testes**: smoke de build; teste de componente trivial contra o mock.
-- **Evidências**: log de CI, screenshot local (sem dado sensível, dado é fixture).
-- **Riscos**: baixo.
-- **Rollback**: remover o diretório novo; nenhum impacto no backend.
-- **Gate**: Gate 2 (Scaffold Web).
-- **Definição de pronto**: scaffold builda e roda contra fixtures locais, sem lógica de negócio e sem nenhuma chamada de rede real.
-- **Autorização necessária**: aprovação da ADR-0017.
+- **Objetivo**: scaffold do projeto Next.js/React, com lint, typecheck, testes de componente configurados, sem lógica de negócio. **Executado.**
+- **Escopo realizado**: `web/` — Next.js 16.3.5 (App Router) + React 19.2.8 + TypeScript estrito, ESLint, Vitest (unitário/componente/acessibilidade), Playwright (smoke E2E desktop+mobile), design tokens mínimos e 5 componentes (`Button`, `Card`, `Badge`, `PageContainer`, `StatusPanel`), tela de fundação explicitamente identificada como "CampaIA Web Foundation — WP-01". Nenhuma chamada de rede real ao BFF — confirmado que `GET /me` exige `require_auth` e não existe endpoint público no BFF (`backend/api/main.py`, `backend/api/routes_me.py`, inalterados). Consumo do contrato via **fixture local tipada** (`src/fixtures/me.local.ts`), gerada a partir de tipos derivados deterministicamente de `contracts/bff-openapi.yaml` (`openapi-typescript`, `src/contracts/bff-openapi.generated.ts`, com verificação de drift em CI).
+- **Fora do escopo, confirmado intocado**: nenhuma tela funcional, nenhuma autenticação real, nenhum dado de produção, nenhuma chamada de rede ao BFF, nenhuma alteração em `backend/campaia_core/`, `backend/api/`, `backend/db/`, `contracts/` ou `mobile/`.
+- **Dependências**: ADR-0017 (aprovada 19/09/2026).
+- **Arquivos/componentes criados**: diretório `web/` completo (ver `docs/web/08_CERTIFICACAO_WP01_FUNDACAO_WEB.md` para a lista completa) e `.github/workflows/frontend-tests.yml` (novo, CI próprio do frontend; `backend-tests.yml` inalterado).
+- **Contratos afetados**: nenhum — apenas leitura de `bff-openapi.yaml` para gerar tipos; `contracts:check` falha o CI se o gerado divergir do contrato.
+- **Segurança**: verificado por script automatizado (`npm run boundary:check`, integrado ao CI e aos testes) — nenhum token no bundle, nenhuma variável `NEXT_PUBLIC_*` sensível, nenhuma credencial em `localStorage`/`sessionStorage`, nenhuma chamada de rede em `web/src`. Não certifica segurança formal do produto.
+- **Critérios de aceitação**: todos atendidos — build reproduzível a partir de `npm ci` limpo, lint/typecheck/contract-drift/boundary-check/testes/build verdes localmente e em CI, smoke E2E verde (desktop + mobile), app renderiza a tela de fundação a partir da fixture local, zero chamadas de rede ao BFF confirmadas em teste E2E.
+- **Testes**: 15 testes Vitest (unitários, componentes, acessibilidade automatizada via `jest-axe`, fronteiras de segurança e drift de contrato) + 4 testes Playwright (smoke desktop/mobile).
+- **Evidências**: `docs/web/08_CERTIFICACAO_WP01_FUNDACAO_WEB.md` — comandos reais, resultados reais, HEAD, CI.
+- **Riscos**: baixo, como previsto; nenhum materializado.
+- **Rollback**: remover `web/` e `.github/workflows/frontend-tests.yml`; nenhum impacto no backend (confirmado por regressão completa — ver certificação).
+- **Gate**: Gate 2 (Scaffold Web) — **aprovado**, condicionado ao CI verde da PR (ver certificação).
+- **Definição de pronto**: **atingida** — scaffold builda e roda contra fixture local, sem lógica de negócio e sem nenhuma chamada de rede real.
+- **Autorização**: ADR-0017 aprovada + "PROMPT MESTRE — CAMPAIA WEB FIRST / EXECUÇÃO REAL E COMPLETA DO WP-01", 19/09/2026.
 
 ### WP-02 — Autenticação e sessão Web real
 
