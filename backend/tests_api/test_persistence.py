@@ -27,6 +27,10 @@ from starlette.testclient import TestClient
 
 from api.main import create_app
 
+# WP-02 fail-closed gate: see tests_api/test_helpers.py for why this is required before
+# any create_app(enable_test_auth_fixtures=True) call in this file.
+os.environ.setdefault("CAMPAIA_ENV", "test")
+
 OWNER = {"Authorization": "Bearer demo-owner-token"}
 APPROVER = {"Authorization": "Bearer demo-approver-token"}
 FINANCE = {"Authorization": "Bearer demo-finance-token"}
@@ -65,7 +69,7 @@ class PersistenceTestCase(unittest.TestCase):
 
     def new_client(self) -> TestClient:
         """A fresh app/state instance pointed at this test's db file."""
-        return TestClient(create_app(db_path=self.db_path))
+        return TestClient(create_app(db_path=self.db_path, enable_test_auth_fixtures=True))
 
     def teardown_client(self, client: TestClient) -> None:
         """Drop every reference to the client/app/state so they are actually garbage
@@ -426,8 +430,8 @@ class TestEphemeralModeUnaffected(unittest.TestCase):
     """
 
     def test_default_app_instances_do_not_share_state(self) -> None:
-        c1 = TestClient(create_app())
-        c2 = TestClient(create_app())
+        c1 = TestClient(create_app(enable_test_auth_fixtures=True))
+        c2 = TestClient(create_app(enable_test_auth_fixtures=True))
 
         r = c1.post(
             "/brand-profiles",

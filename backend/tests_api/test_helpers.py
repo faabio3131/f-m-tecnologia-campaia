@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+import os
+
 from starlette.testclient import TestClient
 
 from api.main import create_app
+
+# WP-02 fail-closed gate (api/state.py AppState.__post_init__): fixture Bearer tokens are
+# only ever seeded when the caller both passes enable_test_auth_fixtures=True AND the
+# process declares itself test/local-dev via this env var. Setting it here, once, for the
+# whole test process is the intended "test/local-dev" context -- never set in CI's
+# deploy/preview/staging/production jobs.
+os.environ.setdefault("CAMPAIA_ENV", "test")
 
 OWNER = {"Authorization": "Bearer demo-owner-token"}
 OTHER_OWNER = {"Authorization": "Bearer other-owner-token"}
@@ -21,7 +30,7 @@ def with_step_up(headers: dict) -> dict:
 
 
 def make_client() -> TestClient:
-    return TestClient(create_app())
+    return TestClient(create_app(enable_test_auth_fixtures=True))
 
 
 _idem_counter = [0]

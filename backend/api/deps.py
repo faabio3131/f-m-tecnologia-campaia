@@ -19,17 +19,44 @@ from .state import AppState, TokenPrincipal
 MIN_IDEMPOTENCY_KEY_LEN = 16
 MAX_IDEMPOTENCY_KEY_LEN = 128
 
+#: WP-02 / ADR-0018: HttpOnly, so client-side script can never read it (mitigates the
+#: session id itself being exfiltrated via XSS). Never localStorage/sessionStorage.
+SESSION_COOKIE_NAME = "campaia_session"
+#: Deliberately NOT HttpOnly -- the double-submit CSRF pattern requires browser JS to read
+#: this value and echo it back as a header on mutating requests (see CSRFMiddleware in
+#: api/csrf.py). It is a per-session random token, not itself a credential: knowing it
+#: without also holding the (HttpOnly) session cookie grants nothing.
+CSRF_COOKIE_NAME = "campaia_csrf"
+CSRF_HEADER_NAME = "x-csrf-token"
+
 
 def get_state(request: Request) -> AppState:
     return request.app.state.campaia
 
 
 def require_auth(request: Request) -> TokenPrincipal:
-    """Resolve the bearer token to a fixture principal. 401 on anything else.
+    """Resolves the authenticated principal for this request. Two mechanisms, checked in
+    order:
 
-    The token is an opaque local-dev fixture string (e.g. "demo-owner-token"), looked up
-    in an in-memory dict -- never parsed, never treated as a JWT/credential format.
+    1. Real Web session (WP-02, ADR-0018) -- an opaque, HttpOnly session cookie looked up
+       in AppState.sessions. This is the only mechanism a browser client should ever use.
+    2. Fixture Bearer token -- a local-dev/test-only fallback, itself fail-closed by
+       construction (AppState.__post_init__ refuses to seed it outside CAMPAIA_ENV=
+       test|local_dev). Existing API tests use this path unchanged.
+
+    401 (UNAUTHENTICATED) on anything else -- an unknown, expired, or revoked session and a
+    missing/unknown Bearer token are deliberately indistinguishable to the caller (no
+    signal about *why* auth failed beyond "not authenticated").
     """
+    state = get_state(request)
+
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if session_id:
+        record = state.get_session(session_id)
+        if record is None:
+            raise ApiError("UNAUTHENTICATED", "Session is invalid, expired, or revoked.")
+        return record.principal
+
     header = request.headers.get("authorization", "")
     if not header.startswith("Bearer "):
         raise ApiError("UNAUTHENTICATED", "Missing or malformed Authorization header.")
@@ -37,7 +64,6 @@ def require_auth(request: Request) -> TokenPrincipal:
     if not token:
         raise ApiError("UNAUTHENTICATED", "Empty bearer token.")
 
-    state = get_state(request)
     principal = state.tokens.get(token)
     if principal is None:
         raise ApiError("UNAUTHENTICATED", "Unknown or expired token.")

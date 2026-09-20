@@ -11,14 +11,19 @@ so this app mirrors the routing/response shape a FastAPI app would have.
 from __future__ import annotations
 
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from campaia_core.errors import CampaiaError
 
+from .csrf import CSRFMiddleware
 from .errors import ApiError, from_domain_error
 from .routes_approvals import create_approval, decide_approval, list_approvals
+from .routes_auth import callback as auth_callback
+from .routes_auth import login as auth_login
+from .routes_auth import logout as auth_logout
 from .routes_audit import list_audit_events
 from .routes_autonomy import get_autonomy, put_autonomy
 from .routes_brand import create_brand_profile, list_brand_profiles
@@ -43,6 +48,7 @@ from .routes_connections import (
 )
 from .routes_me import get_me
 from .state import AppState
+from .test_idp import test_idp_routes
 
 
 async def api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
@@ -58,6 +64,10 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> JSONRespo
 
 
 routes = [
+    Route("/auth/login", auth_login, methods=["GET"]),
+    Route("/auth/callback", auth_callback, methods=["GET"]),
+    Route("/auth/logout", auth_logout, methods=["POST"]),
+
     Route("/me", get_me, methods=["GET"]),
 
     Route("/brand-profiles", list_brand_profiles, methods=["GET"]),
@@ -99,16 +109,37 @@ exception_handlers = {
 }
 
 
-def create_app(db_path: str | None = None) -> Starlette:
+def create_app(db_path: str | None = None, *, enable_test_auth_fixtures: bool = False) -> Starlette:
     """``db_path=None`` (the default) is pure in-memory state, byte-for-byte identical to
     this app before persistence existed -- every pre-existing test relies on that. Passing
     a real path backs campaigns, approvals, connections, brand profiles, the audit log,
     idempotency records, and tenant autonomy settings with a SQLite file at that path (see
     api/db.py and api/state.py's AppState.__post_init__), so state survives a process
     restart when the same path is reused.
+
+    ``enable_test_auth_fixtures=False`` (the default) means the fixture Bearer tokens
+    (WP-01-era ``demo-owner-token`` etc.) are never seeded -- ``AppState`` starts with an
+    empty ``tokens`` dict, so a bare ``create_app()`` (this is what the module-level ``app``
+    below uses) can never authenticate a request via the old fixture mechanism. Only
+    ``tests_api/test_helpers.py`` passes ``True`` (see its own ``CAMPAIA_ENV=test`` guard).
+    See ``AppState.__post_init__`` for the fail-closed double-check.
+
+    The test identity provider's own routes (``/test-idp/*``) are only added to this
+    specific app instance's route table when ``enable_test_auth_fixtures=True`` -- the
+    shared module-level ``routes`` list above is never mutated, so every other
+    ``create_app()`` call (including the production ``app`` below) never exposes them,
+    not even as a 404 that reveals they *could* exist.
     """
-    app = Starlette(routes=routes, exception_handlers=exception_handlers)
-    app.state.campaia = AppState(db_path=db_path)
+    app_routes = list(routes)
+    if enable_test_auth_fixtures:
+        app_routes = app_routes + test_idp_routes
+
+    app = Starlette(
+        routes=app_routes,
+        exception_handlers=exception_handlers,
+        middleware=[Middleware(CSRFMiddleware)],
+    )
+    app.state.campaia = AppState(db_path=db_path, enable_test_auth_fixtures=enable_test_auth_fixtures)
     return app
 
 
