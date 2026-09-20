@@ -1,6 +1,6 @@
 # CampaIA — Ponto Zero Web · 06. Roadmap e Work Packages
 
-**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019) — **WP-01 implementado e validado** (19/09/2026, ver `docs/web/08_CERTIFICACAO_WP01_FUNDACAO_WEB.md`). WP-02 em diante permanecem não iniciados.
+**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019) — **WP-01 implementado e validado** (19/09/2026) e **WP-02 implementado, com revisão de segurança humana pendente** (20/09/2026, ver `docs/web/09_CERTIFICACAO_WP02_AUTENTICACAO_SESSAO_WEB.md`). WP-03 em diante permanecem não iniciados.
 
 ---
 
@@ -40,22 +40,22 @@ Esta seção registra a reconciliação de ordem original, anterior a qualquer e
 - **Definição de pronto**: **atingida** — scaffold builda e roda contra fixture local, sem lógica de negócio e sem nenhuma chamada de rede real.
 - **Autorização**: ADR-0017 aprovada + "PROMPT MESTRE — CAMPAIA WEB FIRST / EXECUÇÃO REAL E COMPLETA DO WP-01", 19/09/2026.
 
-### WP-02 — Autenticação e sessão Web real
+### WP-02 — Autenticação e sessão Web real — **IMPLEMENTADO (20/09/2026), REVISÃO DE SEGURANÇA HUMANA PENDENTE**
 
-- **Objetivo**: substituir o token fixo de teste por sessão real (ADR-0018), alimentando `Principal` (`permissions.py`) sem alterar esse módulo.
-- **Escopo**: integração com provedor de identidade escolhido, cookies de sessão seguros, CSRF, logout, mapeamento de claims → `roles`/`business_unit_ids`.
-- **Fora do escopo**: MFA avançado além do já modelado em `REQUIRES_MFA`; provisionamento de convite de usuário (Work Package futuro).
-- **Dependências**: WP-01, ADR-0018 aprovada, provedor de identidade escolhido.
-- **Contratos afetados**: `api/deps.py` (troca de mecanismo de autenticação); nenhuma rota de negócio muda de contrato.
-- **Segurança**: superfície nova — sessão, CSRF, cookies. Exige revisão de FM Security Engineer antes de fechar.
-- **Critérios de aceitação**: login real funciona; rota protegida recusa acesso sem sessão válida; teste automatizado de tentativa cross-tenant confirma `NOT_FOUND`.
-- **Testes**: automatizados de CSRF, CORS, step-up, isolamento cross-tenant (novo, na camada Web).
-- **Evidências**: suíte de testes de segurança passando; log de CI.
-- **Riscos**: alto — é a superfície de autenticação real do produto.
-- **Rollback**: qualquer fixture/token de autenticação de teste só pode existir em ambiente de **testes automatizados ou desenvolvimento local isolado**, nunca em preview, staging ou produção. A inicialização do BFF deve ser **fail-closed por padrão**: a fixture não fica disponível a menos que seja explicitamente habilitada por uma flag de ambiente cujo valor default, em qualquer ambiente que não seja teste/dev local, é desabilitado — nunca o inverso (nunca "habilitada por padrão, desabilitar em produção"). Deve ser **impossível habilitar esse mecanismo em preview, staging ou produção**, mesmo por engano de configuração — a checagem de ambiente deve recusar a inicialização, não apenas ocultar a opção.
-- **Gate**: Gate 3 (Autenticação).
-- **Definição de pronto**: nenhuma rota protegida acessível sem sessão válida; RBAC/ABAC exercitado ponta a ponta pela primeira vez via Web.
-- **Autorização necessária**: FM Security Engineer + Diretor.
+- **Objetivo**: substituir o token fixo de teste por sessão real (ADR-0018), alimentando `Principal` (`permissions.py`) — **executado, `permissions.py` intocado** (confirmado por `git diff`).
+- **Escopo realizado**: OIDC Authorization Code + PKCE **provider-neutral** real (`backend/api/oidc.py`), cookies de sessão `HttpOnly`/`Secure`/`SameSite=Lax` (`backend/api/routes_auth.py`), CSRF por double-submit cookie (`backend/api/csrf.py`), logout com revogação server-side, mapeamento de claims → `roles`/`business_unit_ids` (`TokenPrincipal.from_verified_id_token`, roles desconhecidas descartadas, nunca concedidas). Nenhum provedor comercial aprovado ainda (ADR-0018 Pendências) — implementado um **provedor de identidade de teste real, próprio, fail-closed** (`backend/api/test_idp.py`), spec-compliant (discovery, authorize, token, JWKS), para que o mecanismo seja exercitado ponta a ponta sem inventar aprovação de vendor. Suporte a um provedor real via `CAMPAIA_OIDC_*` já existe (zero mudança de código ao configurar um).
+- **Fora do escopo, confirmado não implementado**: MFA avançado além de `REQUIRES_MFA`; provisionamento de convite de usuário; escolha de provedor comercial.
+- **Dependências**: WP-01 (satisfeita), ADR-0018 aprovada (satisfeita); provedor de identidade comercial **ainda não escolhido** — a mesma lacuna que já existia antes desta execução, não fechada por ela (ver Pendências).
+- **Contratos afetados**: `api/deps.py` (mecanismo de autenticação: sessão real primeiro, fixture Bearer como fallback fail-closed) — nenhuma rota de negócio pré-existente mudou de contrato; 3 rotas novas (`/auth/login`, `/auth/callback`, `/auth/logout`) adicionadas a `contracts/bff-openapi.yaml`, aditivamente.
+- **Segurança**: superfície nova implementada com sessão real, CSRF, cookies seguros — **auto-testada exaustivamente nesta execução** (37 novos testes automatizados: PKCE, state/nonce, verificação de assinatura/issuer/audience/expiração de ID token, sessão ausente/desconhecida/adulterada/expirada/revogada, CSRF ausente/incorreto/correto, isolamento cross-tenant via sessão, replay de state e de código de autorização, fail-closed ponta a ponta). **A revisão formal por um FM Security Engineer humano, exigida pela autorização original deste Work Package, não ocorreu nesta execução** — permanece uma pendência real e explícita, não uma aprovação presumida.
+- **Critérios de aceitação**: login real funciona (confirmado, fluxo completo via TestClient real) — **Sim**; rota protegida recusa acesso sem sessão válida — **Sim**; teste automatizado de tentativa cross-tenant confirma isolamento — **Sim** (`test_other_tenant_owner_cannot_see_demo_tenant_brand_profile`).
+- **Testes**: automatizados de CSRF (3), isolamento cross-tenant (1), sessão negativa (5), integridade do fluxo de autorização/replay (3), verificação de ID token (11), PKCE/unicidade (8), fail-closed (10, incluindo os 8 já cobertos no WP-01/fixture). CORS explícito por ambiente **não implementado nesta execução** — pendência real. Step-up: reforçado por herança do domínio existente (`permissions.py` já testado), sem teste novo dedicado de step-up via sessão Web nesta execução — pendência.
+- **Evidências**: `docs/web/09_CERTIFICACAO_WP02_AUTENTICACAO_SESSAO_WEB.md`.
+- **Riscos**: alto, como previsto — mitigado por cobertura de teste extensa, mas **não substitui revisão humana de segurança**, que continua pendente.
+- **Rollback**: implementado e testado — fixture Bearer permanece fail-closed por construção (WP-01, reforçado); o provedor de teste (novo nesta execução) segue a mesma disciplina, com o mesmo único interruptor fail-closed (`enable_test_auth_fixtures` + `CAMPAIA_ENV=test|local_dev`), confirmado por teste automatizado que suas rotas (`/test-idp/*`) nem existem fora desse contexto.
+- **Gate**: Gate 3 (Autenticação) — **implementação concluída; gate formal aguarda a revisão de segurança humana pendente**.
+- **Definição de pronto**: nenhuma rota protegida acessível sem sessão válida — **atingido**; RBAC/ABAC exercitado ponta a ponta pela primeira vez via Web — **atingido**, para as 6 identidades fixture (owner/marketer/approver/finance/viewer/other-tenant owner).
+- **Autorização necessária**: FM Security Engineer + Diretor. **Autorização de execução recebida do Diretor** ("PROMPT MESTRE — CAMPAIA SaaS V1 COMPLETO", 20/09/2026); **a revisão do FM Security Engineer é uma pendência real, não satisfeita por esta execução** — registrada explicitamente, não presumida como concluída.
 
 ### WP-03 — Contexto de tenant/unidade e shell do dashboard
 

@@ -16,6 +16,7 @@
 | 06 | `06_ROADMAP_WORK_PACKAGES.md` | Roadmap reconciliado, 5 primeiros Work Packages prontos para execução futura |
 | 07 | `07_CERTIFICACAO_PONTO_ZERO_WEB.md` | Matriz de validação real, pendências, riscos, certificação do estado alcançado |
 | 08 | `08_CERTIFICACAO_WP01_FUNDACAO_WEB.md` | Certificação da execução real do WP-01 (fundação do frontend Web), missão separada e posterior a esta ("PROMPT MESTRE — CAMPAIA WEB FIRST / EXECUÇÃO REAL E COMPLETA DO WP-01", 19/09/2026) |
+| 09 | `09_CERTIFICACAO_WP02_AUTENTICACAO_SESSAO_WEB.md` | Certificação da execução real do WP-02 (autenticação e sessão Web real), missão separada e posterior ("PROMPT MESTRE — CAMPAIA SaaS V1 COMPLETO", 20/09/2026) — implementado e autotestado, revisão de segurança humana (FM Security Engineer) pendente |
 
 ADRs (raiz de `docs/`, seguindo a convenção de arquivo próprio já usada em `docs/09_ADR_0013_...md` e `docs/13_ADR_0015_...md`) — **APROVADAS em 19/09/2026** pelo Diretor Fábio Aluizio da Silva:
 
@@ -28,7 +29,7 @@ ADRs (raiz de `docs/`, seguindo a convenção de arquivo próprio já usada em `
 
 ## O que este conjunto de documentos NÃO é
 
-- Não é, por si só, uma implementação: os documentos 00–07 são exclusivamente System Design e decisão arquitetural. A implementação do WP-01 foi executada em uma missão separada e posterior ("PROMPT MESTRE — CAMPAIA WEB FIRST", 19/09/2026), certificada em `08_CERTIFICACAO_WP01_FUNDACAO_WEB.md` — WP-02 em diante permanecem **não iniciados**.
+- Não é, por si só, uma implementação: os documentos 00–07 são exclusivamente System Design e decisão arquitetural. A implementação do WP-01 (19/09/2026) e do WP-02 (20/09/2026, revisão de segurança humana pendente) foi executada em missões separadas e posteriores, certificadas em `08_CERTIFICACAO_WP01_FUNDACAO_WEB.md` e `09_CERTIFICACAO_WP02_AUTENTICACAO_SESSAO_WEB.md` — WP-03 em diante permanecem **não iniciados**.
 - Não é uma alteração do backend funcional, dos contratos vigentes ou dos documentos normativos da Nova FM.
 - Não é uma reclassificação do mobile — `mobile/` permanece em quarentena, exatamente como formalizado em `docs/evidence/MOBILE_QUARENTENA_ARQUITETURAL_20260919.md`.
 - Não é homologação nem produção — as ADRs aprovadas autorizam a arquitetura Web, não sua implementação, integração ou operação.
