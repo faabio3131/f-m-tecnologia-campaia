@@ -1,6 +1,6 @@
 # CampaIA — Ponto Zero Web · 06. Roadmap e Work Packages
 
-**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019) — **WP-01 implementado e validado** (19/09/2026), **WP-02 implementado, com revisão de segurança humana pendente** (20/09/2026, ver `docs/web/09_CERTIFICACAO_WP02_AUTENTICACAO_SESSAO_WEB.md`), **WP-03 implementado, com a mesma revisão de segurança humana pendente** (21/09/2026, ver `docs/web/10_CERTIFICACAO_WP03_TENANCY_SHELL.md`), **WP-04 implementado, revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/11_CERTIFICACAO_WP04_ONBOARDING_BRAND_KIT.md`), **WP-05 implementado, fechando o Gate 5 (primeira jornada crítica), revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/12_CERTIFICACAO_WP05_BRIEFING_APROVACAO.md`) e **WP-06 implementado (alteração de orçamento, definido nesta mesma missão por reconciliação de CURRENT), mesma revisão pendente** (21/09/2026, ver `docs/web/13_CERTIFICACAO_WP06_ALTERACAO_ORCAMENTO.md`). Nenhum bloco além do WP-06 foi definido.
+**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019) — **WP-01 implementado e validado** (19/09/2026), **WP-02 implementado, com revisão de segurança humana pendente** (20/09/2026, ver `docs/web/09_CERTIFICACAO_WP02_AUTENTICACAO_SESSAO_WEB.md`), **WP-03 implementado, com a mesma revisão de segurança humana pendente** (21/09/2026, ver `docs/web/10_CERTIFICACAO_WP03_TENANCY_SHELL.md`), **WP-04 implementado, revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/11_CERTIFICACAO_WP04_ONBOARDING_BRAND_KIT.md`), **WP-05 implementado, fechando o Gate 5 (primeira jornada crítica), revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/12_CERTIFICACAO_WP05_BRIEFING_APROVACAO.md`), **WP-06 implementado (alteração de orçamento, definido nesta mesma missão por reconciliação de CURRENT), mesma revisão pendente** (21/09/2026, ver `docs/web/13_CERTIFICACAO_WP06_ALTERACAO_ORCAMENTO.md`) e **WP-07 implementado (nível de autonomia/Modo Manual-Automático, definido nesta mesma missão por reconciliação de CURRENT, sob nova autorização do Diretor de continuar a construção enquanto a cota do CI está esgotada), mesma revisão pendente** (21/09/2026, ver `docs/web/14_CERTIFICACAO_WP07_NIVEL_AUTONOMIA.md`). Nenhum bloco além do WP-07 foi definido.
 
 ---
 
@@ -198,6 +198,8 @@ como a Seção 3 original descrevia este candidato.
 
 ### WP-07 — Nível de autonomia (Modo Manual/Automático)
 
+**IMPLEMENTADO (21/09/2026)**
+
 **Definido em 21/09/2026, por reconciliação de CURRENT**, sob nova autorização do Diretor
 ("a cota será renovada no dia 31 então vamos continuar trabalhando na construção e fazer
 tudo que for possível sem atrasar o término e no final faremos os testes necessários" —
@@ -245,26 +247,57 @@ domínio — muda de nível SEMPRE exige aprovação humana, em qualquer nível 
 - **Critérios de aceitação**: usuário propõe uma mudança de nível; um segundo usuário aprova
   na fila já existente; mudança aprovada é aplicada de verdade e reflete no painel; tentativa
   de nível acima do teto contratado é recusada visivelmente.
-- **Testes**: mesma disciplina dos WP-05/06 — testes de backend via sessão Web real se algum
-  gap real for descoberto; Vitest para o componente novo; E2E de fumaça sem backend; E2E
-  cross-stack real com dois usuários.
-- **Riscos**: baixo — nenhuma rota nova de backend esperada.
+- **Achado real de contrato, corrigido durante a execução**: `AutonomySettings.max_level_allowed`
+  e `Campaign.business_unit_id` estão sempre presentes na resposta real
+  (`campaia_core/autonomy.py`, `api/models.py CampaignResponse`), mas nenhum dos dois constava
+  do contrato — mesma classe dos achados `requested_by`/`kind`/`amount` dos WP-05/06.
+  `max_level_allowed` foi descoberto ao projetar o painel (sem ele tipado, a Web não teria como
+  desabilitar corretamente os níveis acima do teto contratado); `business_unit_id` foi
+  descoberto pelo próprio `tsc` ao escrever `autonomy-panel.test.tsx` (um fixture `Campaign`
+  totalmente tipado, ausente nos fixtures anteriores por não terem anotação de tipo explícita,
+  o que mascarava a lacuna via checagem de excesso de propriedade do TypeScript). Ambos
+  corrigidos aditivamente; `npm run contracts:generate`/`contracts:check` confirmaram sincronia
+  após cada correção.
+- **Testes**: backend — 2 novos (`test_autonomy_change_web_session.py`: jornada completa
+  propor→aprovar→aplicar via sessão Web real com dois usuários distintos, nível 1→0, a única
+  mudança dentro do teto disponível sob a configuração padrão do tenant; proposta e até
+  aprovação de um nível acima do teto contratado são aceitas, mas a aplicação é recusada com
+  `422 VALIDATION_FAILED` pela própria guarda anti-auto-promoção do domínio, invariante I-11).
+  Frontend — 10 novos Vitest (`AutonomyPanel`) + 1 novo teste em `dashboard-page.test.tsx` + 1
+  E2E cross-stack real de dois usuários (`e2e-crossstack/autonomy-change.spec.ts`). Regressão
+  completa: 267 domínio + 168 API (166 + 2) + 24/24 AsyncAPI + 110 Vitest (99 + 11) + build +
+  fronteiras de segurança (11 arquivos) + 9 E2E cross-stack (8 + 1) — todos verdes, zero
+  regressão.
+- **Achado real corrigido durante a execução (regressão E2E, não de produto)**: ao rodar a
+  suíte cross-stack completa, `briefing-approval-journey.spec.ts` (WP-05) revelou duas
+  asserções `getByText("APPROVED")` sem escopo, que se tornaram ambíguas (violação de modo
+  estrito do Playwright) assim que `autonomy-change.spec.ts` passou a deixar seu próprio card
+  `APPROVED` na mesma fila de aprovação do backend compartilhado (todos os specs cross-stack
+  rodam sequencialmente, `workers: 1`, contra um único `AppState`). Corrigido delimitando ambas
+  as asserções por `data-testid` (`approval-card-PUBLISH-{campaignId}`), mesma disciplina que
+  `budget-change.spec.ts` (WP-06) já usava para si mesmo — causa raiz corrigida, não mascarada.
+- **Riscos**: baixos, como previsto — nenhuma rota nova de backend foi necessária; os achados
+  reais foram de contrato (campos ausentes) e de fronteira de teste (asserção E2E sem escopo).
 - **Rollback**: reverter para o estado do WP-06; painel novo isolado em `/dashboard`, nenhuma
   outra tela depende dele.
 - **Gate**: nenhum gate formal do roadmap original cobre este bloco — tratado como extensão
   do Gate 5, mesma infraestrutura de aprovação.
 - **Definição de pronto**: mudança de nível de autonomia funciona ponta a ponta com dois
-  usuários distintos e dados simulados.
+  usuários distintos e dados simulados — **atingido**, confirmado por E2E cross-stack real.
 - **Autorização necessária**: autorização do Diretor de continuar a construção enquanto a
   cota do CI está esgotada ("vamos continuar trabalhando na construção..."), 21/09/2026;
-  revisão de FM QA Engineer permanece pendente.
+  revisão de FM QA Engineer permanece pendente, como em todo bloco desde o WP-02.
 
 ---
 
 ## 3. Blocos além do WP-07 (não detalhados como Work Package nesta missão)
 
-**Nota (21/09/2026): WP-01 a WP-06 estão todos implementados**, e o WP-07 foi definido
-acima por reconciliação de CURRENT — o CURRENT que esta seção antecipava agora existe de
-fato para esses blocos. Nenhum bloco além do WP-07 foi definido.
+**Nota (21/09/2026): WP-01 a WP-07 estão todos implementados**, o WP-07 sob a autorização do
+Diretor de continuar a construção enquanto a cota do CI do GitHub Actions está esgotada
+("vamos continuar trabalhando na construção e fazer tudo que for possível sem atrasar o
+término e no final faremos os testes necessários", 21/09/2026 — os "testes necessários"
+referem-se à confirmação do CI remoto, não aos testes locais, que seguem obrigatórios e
+executados a cada passo). Nenhum bloco além do WP-07 foi definido; qualquer bloco seguinte
+exige a mesma disciplina de reconciliação de CURRENT usada para definir o WP-07.
 
 Publicação sandbox (depende de credenciais reais de sandbox de ao menos 1 provider — bloqueio externo, não técnico), reconciliação, métricas, recomendações/otimização limitada, hardening, acessibilidade, observabilidade, segurança formal, staging, produção controlada — todos dependem de decisões e Work Packages anteriores não executados nesta missão até 21/09/2026. Orçamento, único candidato tecnicamente desbloqueado desta lista, foi promovido a WP-06 (ver acima).

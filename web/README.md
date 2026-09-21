@@ -1,4 +1,4 @@
-# CampaIA Web — Fundação, sessão real, shell autenticado, primeira jornada e orçamento (WP-01 a WP-06)
+# CampaIA Web — Fundação, sessão real, shell autenticado, primeira jornada, orçamento e autonomia (WP-01 a WP-07)
 
 Fundação técnica do frontend Web do CampaIA. Este diretório implementa o
 **WP-01 — Fundação do frontend Web** (aprovado pela ADR-0017), o
@@ -13,10 +13,16 @@ segurança humana por um FM Security Engineer ainda pendente), o
 Engineer ainda pendente), o **WP-05 — Briefing, estratégia e aprovação**
 (fecha o Gate 5 — ver
 `docs/web/12_CERTIFICACAO_WP05_BRIEFING_APROVACAO.md`; mesma revisão de FM
-QA Engineer ainda pendente) e o **WP-06 — Alteração de orçamento** (ver
+QA Engineer ainda pendente), o **WP-06 — Alteração de orçamento** (ver
 `docs/web/13_CERTIFICACAO_WP06_ALTERACAO_ORCAMENTO.md`; bloco não previsto
 no roadmap original, definido nesta mesma missão por reconciliação de
-CURRENT; mesma revisão de FM QA Engineer ainda pendente).
+CURRENT; mesma revisão de FM QA Engineer ainda pendente) e o **WP-07 —
+Nível de autonomia (Modo Manual/Automático)** (ver
+`docs/web/14_CERTIFICACAO_WP07_NIVEL_AUTONOMIA.md`; bloco também não
+previsto no roadmap original, definido nesta mesma missão por
+reconciliação de CURRENT, sob nova autorização do Diretor para continuar
+a construção enquanto a cota do CI do GitHub Actions está esgotada; mesma
+revisão de FM QA Engineer ainda pendente).
 
 **Não é** um produto comercial concluído. WP-01 (a tela `/`) permanece
 inteiramente fixture-based, sem nenhuma chamada de rede — essa garantia
@@ -27,9 +33,10 @@ contas). WP-05 adiciona `/campaigns` e `/approvals` (briefing, estratégia
 por IA, validação e fila de aprovação com segregação de funções real) —
 fechando a primeira jornada crítica ponta a ponta com dados simulados.
 WP-06 adiciona um painel de orçamento em `/campaigns/[id]`, reutilizando
-inteiramente a fila de aprovação do WP-05. Publicação real em um provedor
-de verdade continua fora do escopo (nenhum bloco além do WP-06 foi
-definido).
+inteiramente a fila de aprovação do WP-05. WP-07 adiciona um painel de
+nível de autonomia em `/dashboard`, reutilizando a mesma fila. Publicação
+real em um provedor de verdade continua fora do escopo (nenhum bloco além
+do WP-07 foi definido).
 
 ## Requisitos
 
@@ -129,7 +136,8 @@ frontend.
 web/
   src/
     app/          # App Router: layout, fundação (/), conta (/account, WP-02),
-                    # dashboard (/dashboard, WP-03), onboarding (/onboarding, WP-04),
+                    # dashboard (/dashboard, WP-03, painel de autonomia adicionado no WP-07),
+                    # onboarding (/onboarding, WP-04),
                     # campanhas (/campaigns, /campaigns/[campaignId], WP-05),
                     # aprovações (/approvals, WP-05)
     components/    # Button, Card, Badge, PageContainer, StatusPanel (WP-01);
@@ -138,7 +146,7 @@ web/
                     # BrandKitForm, ConnectAccountCard (client, chamadas de rede -- WP-04);
                     # BriefForm, PlanPanel, ValidationPanel, ApprovalDecisionCard
                     # (client, chamadas de rede -- WP-05); BudgetPanel (client, chamadas
-                    # de rede -- WP-06)
+                    # de rede -- WP-06); AutonomyPanel (client, chamadas de rede -- WP-07)
     contracts/     # types.ts (import estável) + bff-openapi.generated.ts (gerado, não editar)
     fixtures/       # dado fictício local, tipado a partir do contrato (usado só por /)
     lib/            # session.ts: leitura de sessão (WP-02), memberships (WP-03),
@@ -301,25 +309,65 @@ a fila de aprovação do WP-05 — nenhuma tela nova de decisão.
 Fora de escopo, deliberadamente: alterar `total_amount` (orçamento
 total) — só o teto diário é editável por esta tela.
 
-## O que ainda não existe (fora do escopo do WP-01 a WP-06)
+## Nível de autonomia (WP-07)
+
+Bloco também **não previsto no roadmap original**, definido nesta mesma
+missão por reconciliação de CURRENT (ver
+`docs/web/06_ROADMAP_WORK_PACKAGES.md` §"WP-07"), sob nova autorização do
+Diretor para continuar a construção enquanto a cota do CI do GitHub
+Actions está esgotada. Reutiliza inteiramente a fila de aprovação do
+WP-05 — nenhuma tela nova de decisão.
+
+- **Propor**: `AutonomyPanel` (Client Component, em `/dashboard`) mostra
+  o nível atual, o rótulo, o teto contratado (`max_level_allowed`) e os
+  gatilhos que sempre exigem humano (`always_require_human`) e, quando
+  não há pedido pendente ou aprovado para aplicar, um formulário com um
+  nível por vez — `POST {BFF_ORIGIN}/approvals` (CSRF) com `kind:
+  AUTONOMY_CHANGE` e o nível proposto em `amount`. Níveis acima do teto
+  contratado aparecem desabilitados, nunca escondidos.
+- **Decidir**: acontece na fila `/approvals` já existente, sem nenhuma
+  mudança de UI — `ApprovalDecisionCard` já soube decidir qualquer `kind`
+  desde o WP-05.
+- **Aplicar**: uma vez `APPROVED`, `AutonomyPanel` mostra o nível aprovado
+  e um botão "Aplicar alteração" — `PUT {BFF_ORIGIN}/autonomy` (CSRF +
+  `X-Step-Up-Token` + `Idempotency-Key`) com o `level` aprovado e o
+  `approval_id`. Um nível acima do teto contratado é recusado com `422
+  VALIDATION_FAILED` pela guarda anti-auto-promoção do próprio domínio
+  (invariante I-11), mostrado ao usuário tal como o servidor o descreve —
+  nunca "ajustado automaticamente".
+
+Restrição real de backend, documentada e não contornada: `POST
+/approvals` exige `campaign_id` para qualquer `kind`, inclusive
+`AUTONOMY_CHANGE`, mesmo essa mudança sendo conceitualmente do tenant
+inteiro — `AutonomyPanel` usa a primeira campanha do tenant só para
+satisfazer essa exigência real da API; sem nenhuma campanha, o formulário
+fica desabilitado com uma explicação honesta.
+
+Fora de escopo, deliberadamente: alterar `max_level_allowed` (o teto
+contratado) — nenhuma rota de API expõe essa alteração; é configuração
+comercial/plano.
+
+## O que ainda não existe (fora do escopo do WP-01 a WP-07)
 
 - Publicação real em um provedor de verdade, reconciliação, métricas,
   otimização, hardening, acessibilidade formal, observabilidade — nenhum
-  bloco além do WP-06 foi definido.
+  bloco além do WP-07 foi definido.
 - Alterar `total_amount` (orçamento total) — só `daily_cap` é editável.
+- Alterar `max_level_allowed` (teto contratado de autonomia) — é
+  configuração comercial/plano, fora desta tela.
 - Qualquer chamada ao BFF fora de `session.ts`/`LogoutButton.tsx`/
   `TenantSwitcher.tsx`/`BrandKitForm.tsx`/`ConnectAccountCard.tsx`/
   `BriefForm.tsx`/`PlanPanel.tsx`/`ValidationPanel.tsx`/
-  `ApprovalDecisionCard.tsx`/`BudgetPanel.tsx` — a tela `/` (WP-01)
-  permanece inteiramente fixture-based.
+  `ApprovalDecisionCard.tsx`/`BudgetPanel.tsx`/`AutonomyPanel.tsx` — a
+  tela `/` (WP-01) permanece inteiramente fixture-based.
 - Deploy, infraestrutura, qualquer configuração de nuvem.
 - Revisão de segurança humana (FM Security Engineer) da superfície de
   autenticação — pendência explícita, ver certificação do WP-02 (segue
   pendente; nenhuma revisão humana ocorreu em nenhuma execução até
-  agora). Revisão de FM QA Engineer do WP-04/WP-05/WP-06 — também
+  agora). Revisão de FM QA Engineer do WP-04/WP-05/WP-06/WP-07 — também
   pendente.
 
-## Fronteiras de segurança (WP-01 a WP-06)
+## Fronteiras de segurança (WP-01 a WP-07)
 
 Verificadas automaticamente por `npm run boundary:check` (e por
 `tests/boundaries.test.ts`, que roda a mesma lógica sem subprocesso) a
@@ -338,13 +386,14 @@ cada execução local e no CI:
   conexão simulada de contas, WP-04),
   `src/components/{BriefForm,PlanPanel,ValidationPanel,
   ApprovalDecisionCard}.tsx` (briefing, estratégia, validação e decisão
-  de aprovação, WP-05) e `src/components/BudgetPanel.tsx` (alteração de
-  orçamento, WP-06) — os dez únicos pontos legítimos, todos protegidos
-  por CSRF. Todo o resto de `web/src`, incluindo a tela `/` e os
-  componentes do WP-01, permanece em zero chamadas de rede.
+  de aprovação, WP-05), `src/components/BudgetPanel.tsx` (alteração de
+  orçamento, WP-06) e `src/components/AutonomyPanel.tsx` (alteração de
+  nível de autonomia, WP-07) — os onze únicos pontos legítimos, todos
+  protegidos por CSRF. Todo o resto de `web/src`, incluindo a tela `/` e
+  os componentes do WP-01, permanece em zero chamadas de rede.
 
 Este script **não certifica segurança formal do produto** — apenas as
-proibições explícitas de escopo do WP-01 a WP-06.
+proibições explícitas de escopo do WP-01 a WP-07.
 
 ## Próximo gate
 
@@ -367,5 +416,11 @@ definido nesta mesma missão por reconciliação de CURRENT — não estava no
 roadmap original) **implementado e autotestado** — ver
 `docs/web/13_CERTIFICACAO_WP06_ALTERACAO_ORCAMENTO.md`, mesma revisão
 pendente. Com o WP-06, a autorização de 3 blocos do Diretor ("pode
-avançar mais 3 blocos") está integralmente executada; nenhum bloco além
-do WP-06 foi definido.
+avançar mais 3 blocos") foi integralmente executada. WP-07 (nível de
+autonomia, também definido por reconciliação de CURRENT, sob nova
+autorização do Diretor para continuar a construção enquanto a cota do CI
+está esgotada) **implementado e autotestado** — ver
+`docs/web/14_CERTIFICACAO_WP07_NIVEL_AUTONOMIA.md`, mesma revisão
+pendente. Nenhum bloco além do WP-07 foi definido; qualquer trabalho
+futuro exige a mesma disciplina de reconciliação de CURRENT usada para
+definir este bloco.
