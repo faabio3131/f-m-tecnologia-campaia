@@ -391,16 +391,164 @@ escolhido para este bloco.
 
 ---
 
-## 3. Blocos além do WP-08 (não detalhados como Work Package nesta missão)
+### WP-09 — Desconectar conta e ver capacidades da conexão
 
-**Nota (21/09/2026): WP-01 a WP-08 estão todos implementados**, sob a autorização contínua do Diretor de continuar a
-construção enquanto a cota do CI do GitHub Actions está esgotada ("vamos continuar trabalhando
-na construção e fazer tudo que for possível sem atrasar o término e no final faremos os testes
-necessários", reafirmada em seguida: "vamos continuar a construção eu autorizo prosseguir e no
-final iremos auditar e corrigir o que for necessário" — os "testes necessários"/"auditar e
-corrigir" referem-se à confirmação do CI remoto e a uma auditoria humana formal posteriores,
-não aos testes locais desta execução, que seguem obrigatórios e executados a cada passo).
-Nenhum bloco além do WP-08 foi definido; qualquer bloco seguinte exige a mesma disciplina de
-reconciliação de CURRENT usada para definir o WP-08.
+**Definido em 21/09/2026, por reconciliação de CURRENT**, sob autorização explícita do
+Diretor para construir mais 3 blocos ("pode sim construa mais 3 blocos"), reafirmando a
+autorização de continuar a construção enquanto a cota do CI está esgotada. CURRENT
+reconstruído por leitura direta de `backend/api/routes_connections.py`
+(`revoke_connection`, `connection_capabilities`) e de `contracts/bff-openapi.yaml` antes de
+qualquer código: `DELETE /connections/{id}` e `GET /connections/{id}/capabilities` já
+existem e já são usados pelo próprio WP-04 apenas parcialmente — o WP-04 construiu conectar
+(`/connections/oauth/start`+`/complete`) e listar (`GET /connections`), mas nunca
+desconectar nem consultar capacidades, apesar de ambas as rotas já existirem desde antes do
+WP-04. Nenhuma rota nova de backend esperada.
 
-Publicação sandbox (depende de credenciais reais de sandbox de ao menos 1 provider — bloqueio externo, não técnico), reconciliação, métricas, recomendações/otimização limitada, hardening, acessibilidade, observabilidade, segurança formal, staging, produção controlada — todos dependem de decisões e Work Packages anteriores não executados nesta missão até 21/09/2026. Orçamento e autonomia, os dois candidatos tecnicamente desbloqueados encontrados até aqui, foram promovidos a WP-06 e WP-07 respectivamente; parada de emergência (kill switch), um terceiro candidato tecnicamente desbloqueado (rota já pronta e testada), foi promovido a WP-08 (ver acima). Retomar campanha pausada (resume) permanece um candidato real, mas bloqueado por uma lacuna arquitetural genuína (nenhuma operação canônica de retomada existe em `campaia_core/connectors.py`'s `AdsConnector` Protocol) — não promovido, registrado como achado real (P-40).
+- **Objetivo**: completar o ciclo de vida de uma conexão na Web — conectar (WP-04),
+  desconectar e consultar capacidades comprovadas (este bloco).
+- **Escopo**: estender `ConnectAccountCard.tsx` (`/onboarding`, já construído pelo WP-04):
+  quando conectada, a conta ganha um botão "Desconectar" (`DELETE
+  /connections/{id}`, CSRF + `X-Step-Up-Token` + `Idempotency-Key`, mesmo padrão do próprio
+  fluxo de conectar) e um botão "Ver capacidades" que consulta `GET
+  /connections/{id}/capabilities` sob demanda e exibe o resultado real (canal, suportado ou
+  não, exige aprovação ou não) — **primeira chamada de rede client-side GET desta
+  aplicação**: `GET`/`HEAD`/`OPTIONS` estão fora do `CSRFMiddleware`
+  (`backend/api/csrf.py _SAFE_METHODS`), então esta chamada não carrega `X-CSRF-Token`, por
+  desenho real do próprio backend, não por omissão.
+- **Achado real de contrato, a corrigir nesta execução**: o schema `Capability`
+  (`contracts/bff-openapi.yaml`) não declara `provider`, `country` nem `api_version`,
+  apesar de `CapabilityResponse` (`api/models.py`) sempre devolvê-los — mesma classe dos
+  achados reais anteriores (campo real, sempre presente, nunca documentado).
+- **Dependências**: WP-04 (`ConnectAccountCard.tsx`, `getServerConnections`).
+- **Segurança**: `Permission.CONNECTION_MANAGE` para desconectar (mesma permissão do
+  conectar); `Permission.CAMPAIGN_VIEW` (ampla, somente leitura) para consultar
+  capacidades; desconectar exige step-up, idêntico ao conectar.
+- **Critérios de aceitação**: usuário desconecta uma conta conectada, o estado reflete
+  "Não conectado" (sem reinventar o texto "(simulado)" já usado pelo WP-04); usuário
+  consulta as capacidades reais de uma conta conectada e vê o resultado real da API, nunca
+  inventado.
+- **Testes**: mesma disciplina dos WP-05 a WP-08 — teste de backend via sessão Web real se
+  algum gap real for descoberto; Vitest para o componente estendido; E2E de fumaça sem
+  backend; E2E cross-stack real.
+- **Riscos**: baixos — nenhuma rota nova de backend esperada; o único achado real conhecido
+  de antemão é a correção aditiva do schema `Capability`.
+- **Rollback**: reverter para o estado do WP-08; `ConnectAccountCard.tsx` volta a não ter os
+  dois botões novos, nenhuma outra tela depende deles.
+- **Gate**: nenhum gate formal do roadmap original cobre este bloco — tratado como extensão
+  do Gate 5, mesma disciplina dos WP-06/07/08.
+- **Definição de pronto**: desconectar e consultar capacidades funcionam ponta a ponta com
+  dados reais (simulados no domínio, nunca inventados na Web).
+- **Autorização necessária**: autorização do Diretor de construir mais 3 blocos sob a mesma
+  continuidade de construção durante o bloqueio de cota do CI ("pode sim construa mais 3
+  blocos", 21/09/2026); revisão de FM QA Engineer permanece pendente, como em todo bloco
+  desde o WP-02.
+
+---
+
+### WP-10 — Trilha de auditoria
+
+**Definido em 21/09/2026, por reconciliação de CURRENT**, mesma autorização do WP-09.
+CURRENT reconstruído por leitura direta de `backend/api/routes_audit.py`
+(`list_audit_events`) e de `contracts/bff-openapi.yaml` antes de qualquer código: `GET
+/audit-events` já existe, já testado, e já é escrito por praticamente todo bloco desde o
+WP-04 (`OAUTH_START`, `CONNECTION_CREATE`, `CONNECTION_REVOKE` do WP-09,
+`APPROVAL_REQUEST_CREATE`, `APPROVAL_*` do WP-05, `BUDGET_CHANGE` do WP-06,
+`AUTONOMY_CHANGE` do WP-07, `KILL_SWITCH` do WP-08) — mas nenhuma tela jamais exibiu esse
+histórico. Nenhuma rota nova de backend esperada.
+
+- **Objetivo**: permitir visualizar a trilha de auditoria real do tenant — toda ação
+  registrada por qualquer bloco anterior, nunca reconstruída ou resumida pela Web.
+- **Escopo**: nova página `/audit`, linkada a partir do card de navegação já existente em
+  `/dashboard` ("Onboarding e campanhas"). Lista os eventos reais (`GET /audit-events`):
+  quando, quem, qual ação, qual alvo — mais recente primeiro (reordenação apenas de exibição
+  no cliente; a API devolve em ordem cronológica crescente). Filtro opcional por
+  `campaign_id`, já suportado pela API.
+- **Achado real de CURRENT, confirmado e não corrigido**: `AuditEvent.target` é um campo
+  genérico "o que quer que seja o alvo desta ação" (comentário do próprio código-fonte,
+  achado 15) — para ações de escopo de campanha é o `campaign_id`; para outras
+  (`CONNECTION_REVOKE`, `KILL_SWITCH` com escopo `TENANT`) é outra coisa (um `connection_id`,
+  o próprio escopo). A tela exibe o valor bruto de `target`, nunca inventa um nome legível
+  para o que não pode identificar com certeza.
+- **Dependências**: nenhuma além da sessão autenticada (WP-02/03).
+- **Segurança**: `Permission.AUDIT_VIEW` — não é universal (ADMIN/FINANCE/APPROVER/OWNER,
+  confirmado por leitura direta de `permissions.py`; nem MARKETER nem VIEWER a possuem).
+  Sem paginação real na API (`next_cursor` sempre `null`, achado 3/15, documentado no
+  próprio código) — a tela exibe honestamente a lista completa devolvida, sem fabricar
+  paginação que não existe.
+- **Critérios de aceitação**: usuário com a permissão visualiza a trilha real de auditoria
+  do tenant; usuário sem a permissão recebe a recusa real do servidor, visível.
+- **Testes**: mesma disciplina — teste de backend via sessão Web real se algum gap real for
+  descoberto; Vitest para a página nova; E2E de fumaça sem backend; E2E cross-stack real
+  (idealmente reaproveitando eventos já gerados por outro spec, confirmando que a trilha
+  reflete ações reais de outros blocos).
+- **Riscos**: baixos — nenhuma rota nova de backend esperada; nenhum achado real de contrato
+  conhecido de antemão (a leitura direta do schema `AuditEvent` contra `AuditEventResponse`
+  não revelou divergência, diferente dos achados dos WP-06/07/09).
+- **Rollback**: reverter para o estado do WP-09; página nova isolada em `/audit`, nenhuma
+  outra tela depende dela.
+- **Gate**: nenhum gate formal do roadmap original cobre este bloco — tratado como extensão
+  do Gate 5.
+- **Definição de pronto**: trilha de auditoria real visível ponta a ponta, com permissão
+  aplicada corretamente.
+- **Autorização necessária**: mesma autorização do WP-09 ("pode sim construa mais 3
+  blocos"); revisão de FM QA Engineer permanece pendente.
+
+---
+
+### WP-11 — Métricas honestas da campanha
+
+**Definido em 21/09/2026, por reconciliação de CURRENT**, mesma autorização do WP-09/10.
+CURRENT reconstruído por leitura direta de `backend/api/routes_campaigns.py`
+(`get_insights`) e de `contracts/bff-openapi.yaml` antes de qualquer código: `GET
+/campaigns/{id}/insights` já existe, já testado
+(`test_insights_is_honest_placeholder`, `test_insights_validates_date_query_params`), e
+devolve deliberadamente uma lista vazia de pontos — "não há camada de analytics em
+`campaia_core` ainda... isto é um placeholder honesto, não dado fabricado" (comentário do
+próprio código-fonte). Nenhuma rota nova de backend esperada.
+
+- **Objetivo**: exibir o estado real de métricas de uma campanha na Web — honestamente vazio
+  hoje — em vez de simplesmente não ter nenhuma seção de métricas, que poderia ser lido como
+  "métricas não fazem parte do produto" em vez de "a camada de analytics ainda não existe".
+- **Escopo**: nova seção "Métricas" em `/campaigns/{id}` (já construída pelo WP-05), exibindo
+  a resposta real de `GET /campaigns/{id}/insights`: quando `points` está vazio (sempre,
+  hoje), mostra a nota real devolvida pela API ("Nenhum dado disponível — camada de
+  analytics ainda não implementada"), nunca um gráfico vazio nem um placeholder inventado
+  pela Web. Quando `points` não estiver vazio (não acontece hoje, mas o código não deve
+  presumir isso), exibe os pontos reais recebidos.
+- **Achado real de contrato, a corrigir nesta execução**: o campo `note`
+  (`InsightSeriesResponse.note`, `api/models.py`) está sempre presente na resposta real, mas
+  ausente do schema `InsightSeries` em `contracts/bff-openapi.yaml` — mesma classe dos
+  achados reais anteriores.
+- **Fora de escopo, deliberadamente**: qualquer gráfico, cálculo, agregação ou visualização
+  de dados que não venha diretamente da resposta real da API — a camada de analytics não
+  existe em `campaia_core`, e esta Web não a fabrica.
+- **Dependências**: WP-05 (`/campaigns/{id}`, já construída).
+- **Segurança**: `Permission.CAMPAIGN_VIEW` (ampla, somente leitura, mesma permissão de ver a
+  campanha).
+- **Critérios de aceitação**: usuário visualiza a seção de métricas da campanha e vê a nota
+  real da API explicando a ausência de dados, nunca um erro nem um dado inventado.
+- **Testes**: mesma disciplina — teste de backend via sessão Web real se algum gap real for
+  descoberto; Vitest para a seção nova; E2E de fumaça sem backend; E2E cross-stack real.
+- **Riscos**: baixos — nenhuma rota nova de backend esperada; o único achado real conhecido
+  de antemão é a correção aditiva do campo `note`.
+- **Rollback**: reverter para o estado do WP-10; seção nova isolada em `/campaigns/{id}`,
+  nenhuma outra tela depende dela.
+- **Gate**: nenhum gate formal do roadmap original cobre este bloco — tratado como extensão
+  do Gate 5.
+- **Definição de pronto**: seção de métricas exibe o estado real (vazio, honestamente
+  explicado) ponta a ponta.
+- **Autorização necessária**: mesma autorização do WP-09/10 ("pode sim construa mais 3
+  blocos"); revisão de FM QA Engineer permanece pendente.
+
+---
+
+## 3. Blocos além do WP-11 (não detalhados como Work Package nesta missão)
+
+**Nota (21/09/2026): WP-01 a WP-08 estão implementados**, e o Diretor autorizou explicitamente
+construir mais 3 blocos ("pode sim construa mais 3 blocos"), reafirmando a autorização contínua
+de continuar a construção enquanto a cota do CI do GitHub Actions está esgotada. WP-09, WP-10 e
+WP-11 (acima) foram definidos sob essa autorização, cada um por reconciliação de CURRENT própria,
+antes de qualquer código. Nenhum bloco além do WP-11 foi definido; qualquer bloco seguinte exige
+a mesma disciplina de reconciliação de CURRENT.
+
+Publicação sandbox (depende de credenciais reais de sandbox de ao menos 1 provider — bloqueio externo, não técnico), reconciliação, recomendações/otimização limitada, hardening, acessibilidade formal, observabilidade formal, segurança formal, staging, produção controlada — todos dependem de decisões e Work Packages anteriores não executados nesta missão até 21/09/2026. Orçamento, autonomia e parada de emergência, os três primeiros candidatos tecnicamente desbloqueados encontrados, foram promovidos a WP-06/07/08 respectivamente; desconectar conta/capacidades, trilha de auditoria e métricas honestas, três novos candidatos tecnicamente desbloqueados (rotas já prontas e testadas, achados reais de contrato encontrados em pelo menos duas delas), foram promovidos a WP-09/10/11 (ver acima). Retomar campanha pausada (resume) e seletor de unidade de negócio (nenhuma rota de troca de unidade existe, só de tenant) permanecem candidatos reais, mas bloqueados por lacunas arquiteturais genuínas — não promovidos, registrados como achados reais (P-40 e um novo achado a registrar no painel).
