@@ -12,6 +12,7 @@ export type Connection = components["schemas"]["Connection"];
 export type Campaign = components["schemas"]["Campaign"];
 export type PolicyDecision = components["schemas"]["PolicyDecision"];
 export type ApprovalRequest = components["schemas"]["ApprovalRequest"];
+export type AutonomySettings = components["schemas"]["AutonomySettings"];
 
 /**
  * WP-05: the strategist agent's real output schema (backend/campaia_core/agents.py

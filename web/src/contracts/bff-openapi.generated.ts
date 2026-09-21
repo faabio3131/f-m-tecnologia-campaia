@@ -613,6 +613,13 @@ export interface components {
         Campaign: {
             /** Format: uuid */
             id?: string;
+            /**
+             * Format: uuid
+             * @description Campo real, sempre presente na resposta (backend/api/models.py CampaignResponse.
+             *     business_unit_id), ausente do contrato ate esta correcao (achado do WP-07, mesma
+             *     classe dos achados requested_by/kind/amount/max_level_allowed dos WP-05/06/07).
+             */
+            business_unit_id?: string | null;
             name?: string;
             state?: components["schemas"]["CampaignState"];
             objective?: string;

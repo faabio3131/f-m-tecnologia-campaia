@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import type {
   ApprovalRequest,
+  AutonomySettings,
   BrandProfile,
   Campaign,
   CampaignPlan,
@@ -96,6 +97,13 @@ export async function getServerPlan(campaignId: string): Promise<CampaignPlan | 
  * state (nothing awaiting decision) -- only null means the read itself failed. */
 export async function getServerApprovals(): Promise<ApprovalRequest[] | null> {
   return getWithSessionCookie<ApprovalRequest[]>("/approvals");
+}
+
+/** WP-07: the tenant's current autonomy level and contracted ceiling (GET /autonomy).
+ * Always resolves to a real settings object server-side (backend seeds a default) -- only
+ * null means the read itself failed. */
+export async function getServerAutonomy(): Promise<AutonomySettings | null> {
+  return getWithSessionCookie<AutonomySettings>("/autonomy");
 }
 
 export function getPublicBffOrigin(): string | undefined {

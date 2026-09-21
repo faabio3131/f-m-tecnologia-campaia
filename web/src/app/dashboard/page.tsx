@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AutonomyPanel } from "@/components/AutonomyPanel";
 import { Badge } from "@/components/Badge";
 import { Card } from "@/components/Card";
 import { ErrorState } from "@/components/ErrorState";
@@ -8,6 +9,9 @@ import { StatusPanel } from "@/components/StatusPanel";
 import { TenantSwitcher } from "@/components/TenantSwitcher";
 import {
   getPublicBffOrigin,
+  getServerApprovals,
+  getServerAutonomy,
+  getServerCampaigns,
   getServerSession,
   getServerSessionMemberships,
 } from "@/lib/session";
@@ -70,6 +74,12 @@ export default async function DashboardPage() {
     );
   }
 
+  const [autonomy, approvals, campaigns] = await Promise.all([
+    getServerAutonomy(),
+    getServerApprovals(),
+    getServerCampaigns(),
+  ]);
+
   return (
     <PageContainer>
       <header className={styles.header}>
@@ -104,6 +114,23 @@ export default async function DashboardPage() {
             Fila de aprovação
           </Link>
         </nav>
+      </Card>
+
+      <Card>
+        <h2 className={styles.navTitle}>Nível de autonomia</h2>
+        {autonomy === null || approvals === null || campaigns === null ? (
+          <ErrorState
+            title="Não foi possível carregar o nível de autonomia"
+            description="GET /autonomy, GET /approvals ou GET /campaigns falhou. Tente recarregar a página."
+          />
+        ) : (
+          <AutonomyPanel
+            bffOrigin={bffOrigin}
+            autonomy={autonomy}
+            approvals={approvals}
+            campaigns={campaigns}
+          />
+        )}
       </Card>
     </PageContainer>
   );

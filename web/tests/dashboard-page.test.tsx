@@ -1,17 +1,28 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-const { getServerSession, getServerSessionMemberships, getPublicBffOrigin } = vi.hoisted(
-  () => ({
-    getServerSession: vi.fn(),
-    getServerSessionMemberships: vi.fn(),
-    getPublicBffOrigin: vi.fn(),
-  }),
-);
+const {
+  getServerSession,
+  getServerSessionMemberships,
+  getServerAutonomy,
+  getServerApprovals,
+  getServerCampaigns,
+  getPublicBffOrigin,
+} = vi.hoisted(() => ({
+  getServerSession: vi.fn(),
+  getServerSessionMemberships: vi.fn(),
+  getServerAutonomy: vi.fn(),
+  getServerApprovals: vi.fn(),
+  getServerCampaigns: vi.fn(),
+  getPublicBffOrigin: vi.fn(),
+}));
 
 vi.mock("@/lib/session", () => ({
   getServerSession,
   getServerSessionMemberships,
+  getServerAutonomy,
+  getServerApprovals,
+  getServerCampaigns,
   getPublicBffOrigin,
 }));
 
@@ -77,6 +88,16 @@ describe("DashboardPage", () => {
         { tenant_id: "demo-tenant", business_unit_id: "bu-1", roles: ["OWNER"], is_active: true },
       ],
     });
+    getServerAutonomy.mockResolvedValue({
+      level: 1,
+      level_label: "APROVADO",
+      max_level_allowed: 1,
+      always_require_human: [],
+      max_budget_change_pct: 10,
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    getServerApprovals.mockResolvedValue([]);
+    getServerCampaigns.mockResolvedValue([]);
 
     await renderDashboardPage();
 
@@ -87,6 +108,9 @@ describe("DashboardPage", () => {
       "href",
       "/campaigns",
     );
+    // WP-07: AutonomyPanel renders on the same shell.
+    expect(screen.getByText(/Nível de autonomia/)).toBeInTheDocument();
+    expect(screen.getByText(/1 — APROVADO/)).toBeInTheDocument();
   });
 
   it("renders the tenant switcher for a multi-membership session", async () => {
@@ -98,9 +122,38 @@ describe("DashboardPage", () => {
         { tenant_id: "other-tenant", business_unit_id: "bu-2", roles: ["VIEWER"], is_active: false },
       ],
     });
+    getServerAutonomy.mockResolvedValue({
+      level: 1,
+      level_label: "APROVADO",
+      max_level_allowed: 1,
+      always_require_human: [],
+      max_budget_change_pct: 10,
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    getServerApprovals.mockResolvedValue([]);
+    getServerCampaigns.mockResolvedValue([]);
 
     await renderDashboardPage();
 
     expect(screen.getByLabelText("Tenant ativo")).toBeInTheDocument();
+  });
+
+  it("shows an error state when autonomy/approvals/campaigns cannot be loaded", async () => {
+    getPublicBffOrigin.mockReturnValue("https://bff.example");
+    getServerSession.mockResolvedValue(ME);
+    getServerSessionMemberships.mockResolvedValue({
+      memberships: [
+        { tenant_id: "demo-tenant", business_unit_id: "bu-1", roles: ["OWNER"], is_active: true },
+      ],
+    });
+    getServerAutonomy.mockResolvedValue(null);
+    getServerApprovals.mockResolvedValue([]);
+    getServerCampaigns.mockResolvedValue([]);
+
+    await renderDashboardPage();
+
+    expect(
+      screen.getByText("Não foi possível carregar o nível de autonomia"),
+    ).toBeInTheDocument();
   });
 });
