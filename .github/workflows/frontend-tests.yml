@@ -69,3 +69,47 @@ jobs:
           name: playwright-report
           path: web/playwright-report/
           retention-days: 7
+
+  crossstack-e2e:
+    name: WP-03 cross-stack E2E (real backend + real frontend, tenant switch)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
+      - name: Cross-stack E2E (real OIDC login + tenant switch, real backend + real frontend)
+        working-directory: web
+        run: npm run test:e2e:crossstack
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crossstack-playwright-report
+          path: web/playwright-report/
+          retention-days: 7
