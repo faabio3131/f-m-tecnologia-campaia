@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import type {
   ApprovalRequest,
+  AuditEvent,
   AutonomySettings,
   BrandProfile,
   Campaign,
@@ -116,6 +117,17 @@ export async function getServerApprovals(): Promise<ApprovalRequest[] | null> {
  * null means the read itself failed. */
 export async function getServerAutonomy(): Promise<AutonomySettings | null> {
   return getWithSessionCookie<AutonomySettings>("/autonomy");
+}
+
+/** WP-10: the tenant's real audit trail (GET /audit-events). Empty array is a real, valid
+ * state (nothing recorded yet) -- only null means the read itself failed. Unwraps the
+ * contract's {items, next_cursor} envelope -- there is no real pagination layer yet
+ * (routes_audit.py's own comment: `next_cursor` is always null), same pattern as
+ * getServerCampaigns. Optional `campaignId` maps to the API's own `campaign_id` filter. */
+export async function getServerAuditEvents(campaignId?: string): Promise<AuditEvent[] | null> {
+  const query = campaignId ? `?campaign_id=${encodeURIComponent(campaignId)}` : "";
+  const envelope = await getWithSessionCookie<{ items: AuditEvent[] }>(`/audit-events${query}`);
+  return envelope ? envelope.items : null;
 }
 
 export function getPublicBffOrigin(): string | undefined {

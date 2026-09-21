@@ -114,6 +114,9 @@ export default async function DashboardPage() {
           <Link className={styles.navLink} href="/approvals">
             Fila de aprovação
           </Link>
+          <Link className={styles.navLink} href="/audit">
+            Trilha de auditoria
+          </Link>
         </nav>
       </Card>
 
