@@ -83,7 +83,10 @@ describe("DashboardPage", () => {
     expect(screen.getByText("user-owner-3")).toBeInTheDocument();
     expect(screen.queryByLabelText("Tenant ativo")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sair" })).toBeInTheDocument();
-    expect(screen.getByText("Nenhuma funcionalidade de negócio ainda")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Campanhas/ })).toHaveAttribute(
+      "href",
+      "/campaigns",
+    );
   });
 
   it("renders the tenant switcher for a multi-membership session", async () => {

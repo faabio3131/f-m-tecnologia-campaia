@@ -1,6 +1,6 @@
+import Link from "next/link";
 import { Badge } from "@/components/Badge";
 import { Card } from "@/components/Card";
-import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { LogoutButton } from "@/components/LogoutButton";
 import { PageContainer } from "@/components/PageContainer";
@@ -92,10 +92,18 @@ export default async function DashboardPage() {
         <LogoutButton bffOrigin={bffOrigin} />
       </Card>
       <Card>
-        <EmptyState
-          title="Nenhuma funcionalidade de negócio ainda"
-          description="O shell autenticado (WP-03) resolve tenant/unidade a partir da sessão e permite trocar de tenant. Onboarding, Brand Kit, campanhas e demais telas de produto chegam a partir do WP-04."
-        />
+        <h2 className={styles.navTitle}>Onboarding e campanhas</h2>
+        <nav className={styles.nav}>
+          <Link className={styles.navLink} href="/onboarding">
+            Onboarding (Brand Kit, conectar contas)
+          </Link>
+          <Link className={styles.navLink} href="/campaigns">
+            Campanhas (briefing, estratégia, validação)
+          </Link>
+          <Link className={styles.navLink} href="/approvals">
+            Fila de aprovação
+          </Link>
+        </nav>
       </Card>
     </PageContainer>
   );
