@@ -722,6 +722,17 @@ export interface components {
             /** Format: date-time */
             updated_at?: string;
         };
+        /**
+         * @description Corpo de resposta real do 202 de POST /kill-switch (api/routes_campaigns.py
+         *     _do_kill_switch) -- ausente do contrato ate esta correcao (achado do WP-08, mesma
+         *     classe dos achados anteriores: campo/schema real, sempre devolvido, nunca
+         *     documentado).
+         */
+        KillSwitchResult: {
+            /** @enum {string} */
+            scope?: "CAMPAIGN" | "ACCOUNT" | "TENANT" | "PLATFORM" | "GLOBAL";
+            affected_campaign_ids?: string[];
+        };
         InsightSeries: {
             /** Format: uuid */
             campaign_id?: string;
@@ -1587,7 +1598,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["KillSwitchResult"];
+                };
             };
         };
     };

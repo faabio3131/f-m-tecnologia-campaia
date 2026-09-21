@@ -3,6 +3,7 @@ import { AutonomyPanel } from "@/components/AutonomyPanel";
 import { Badge } from "@/components/Badge";
 import { Card } from "@/components/Card";
 import { ErrorState } from "@/components/ErrorState";
+import { KillSwitchPanel } from "@/components/KillSwitchPanel";
 import { LogoutButton } from "@/components/LogoutButton";
 import { PageContainer } from "@/components/PageContainer";
 import { StatusPanel } from "@/components/StatusPanel";
@@ -130,6 +131,18 @@ export default async function DashboardPage() {
             approvals={approvals}
             campaigns={campaigns}
           />
+        )}
+      </Card>
+
+      <Card>
+        <h2 className={styles.navTitle}>Parada de emergência</h2>
+        {campaigns === null ? (
+          <ErrorState
+            title="Não foi possível carregar as campanhas"
+            description="GET /campaigns falhou. Tente recarregar a página."
+          />
+        ) : (
+          <KillSwitchPanel bffOrigin={bffOrigin} campaigns={campaigns} />
         )}
       </Card>
     </PageContainer>

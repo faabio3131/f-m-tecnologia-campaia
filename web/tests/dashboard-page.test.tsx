@@ -111,6 +111,8 @@ describe("DashboardPage", () => {
     // WP-07: AutonomyPanel renders on the same shell.
     expect(screen.getByText(/Nível de autonomia/)).toBeInTheDocument();
     expect(screen.getByText(/1 — APROVADO/)).toBeInTheDocument();
+    // WP-08: KillSwitchPanel renders on the same shell.
+    expect(screen.getByText("Parada de emergência")).toBeInTheDocument();
   });
 
   it("renders the tenant switcher for a multi-membership session", async () => {
@@ -154,6 +156,32 @@ describe("DashboardPage", () => {
 
     expect(
       screen.getByText("Não foi possível carregar o nível de autonomia"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows an error state on the kill-switch card when campaigns cannot be loaded", async () => {
+    getPublicBffOrigin.mockReturnValue("https://bff.example");
+    getServerSession.mockResolvedValue(ME);
+    getServerSessionMemberships.mockResolvedValue({
+      memberships: [
+        { tenant_id: "demo-tenant", business_unit_id: "bu-1", roles: ["OWNER"], is_active: true },
+      ],
+    });
+    getServerAutonomy.mockResolvedValue({
+      level: 1,
+      level_label: "APROVADO",
+      max_level_allowed: 1,
+      always_require_human: [],
+      max_budget_change_pct: 10,
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    getServerApprovals.mockResolvedValue([]);
+    getServerCampaigns.mockResolvedValue(null);
+
+    await renderDashboardPage();
+
+    expect(
+      screen.getByText("Não foi possível carregar as campanhas"),
     ).toBeInTheDocument();
   });
 });

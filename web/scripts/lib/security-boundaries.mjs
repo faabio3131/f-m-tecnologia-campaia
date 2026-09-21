@@ -17,10 +17,11 @@ const EXCLUDED_FILES = new Set(["bff-openapi.generated.ts"]);
 // /campaigns/{id}/plan/regenerate), ValidationPanel.tsx (POST /campaigns/{id}/validate +
 // POST /approvals), and ApprovalDecisionCard.tsx (POST /approvals/{id}/decision). WP-06
 // added one more: BudgetPanel.tsx (POST /approvals + PATCH /campaigns/{id}/budget). WP-07
-// adds one more, same discipline: AutonomyPanel.tsx (POST /approvals + PUT /autonomy) --
-// every mutation still goes through the same non-HttpOnly campaia_csrf cookie double-submit
-// check. Every other file in web/src must remain at zero network calls; this allowlist is
-// intentionally eleven files, not a blanket rule.
+// added one more: AutonomyPanel.tsx (POST /approvals + PUT /autonomy). WP-08 adds one more:
+// KillSwitchPanel.tsx (POST /kill-switch) -- every mutation still goes through the same
+// non-HttpOnly campaia_csrf cookie double-submit check. Every other file in web/src must
+// remain at zero network calls; this allowlist is intentionally twelve files, not a blanket
+// rule.
 const NETWORK_CALL_ALLOWED_FILES = new Set([
   "session.ts",
   "LogoutButton.tsx",
@@ -33,6 +34,7 @@ const NETWORK_CALL_ALLOWED_FILES = new Set([
   "ApprovalDecisionCard.tsx",
   "BudgetPanel.tsx",
   "AutonomyPanel.tsx",
+  "KillSwitchPanel.tsx",
 ]);
 
 /** @type {{name: string, pattern: RegExp, message: string, exemptFiles?: Set<string>}[]} */
@@ -41,7 +43,7 @@ export const FORBIDDEN_PATTERNS = [
     name: "network-call",
     pattern: /\b(fetch|axios|XMLHttpRequest)\s*\(/,
     message:
-      "chamada de rede detectada (fetch/axios/XMLHttpRequest) fora da lista de excecoes do WP-02 a WP-07 (session.ts, LogoutButton.tsx, TenantSwitcher.tsx, BrandKitForm.tsx, ConnectAccountCard.tsx, BriefForm.tsx, PlanPanel.tsx, ValidationPanel.tsx, ApprovalDecisionCard.tsx, BudgetPanel.tsx, AutonomyPanel.tsx)",
+      "chamada de rede detectada (fetch/axios/XMLHttpRequest) fora da lista de excecoes do WP-02 a WP-08 (session.ts, LogoutButton.tsx, TenantSwitcher.tsx, BrandKitForm.tsx, ConnectAccountCard.tsx, BriefForm.tsx, PlanPanel.tsx, ValidationPanel.tsx, ApprovalDecisionCard.tsx, BudgetPanel.tsx, AutonomyPanel.tsx, KillSwitchPanel.tsx)",
     exemptFiles: NETWORK_CALL_ALLOWED_FILES,
   },
   {
