@@ -99,6 +99,18 @@ class OAuthStartResponse(BaseModel):
     state: str
 
 
+class OAuthCompleteRequest(ApiModel):
+    """WP-04: finalizes the /connections/oauth/start attempt named by `state`. No real
+    provider exists yet -- this simulates the account-selection step a real callback would
+    receive (contract's own description of /connections/oauth/start: "o callback e recebido
+    pelo backend"), never a client-supplied provider or tenant (both come from the pending
+    attempt `state` references, looked up server-side)."""
+
+    state: str
+    external_account_id: str
+    display_name: str
+
+
 class CapabilityResponse(BaseModel):
     provider: str
     capability_key: str

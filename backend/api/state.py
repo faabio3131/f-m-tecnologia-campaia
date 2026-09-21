@@ -111,6 +111,28 @@ def _parse_roles(raw_roles: tuple[str, ...] | list[str]) -> frozenset[Role]:
     return frozenset(roles)
 
 
+#: WP-04: how long a /connections/oauth/start attempt may remain unclaimed before
+#: /connections/oauth/complete no longer accepts it -- same rationale as
+#: PENDING_LOGIN_TTL_SECONDS (oidc.py): bounds a stolen/replayed state's usefulness and
+#: bounds unbounded growth from abandoned connect attempts.
+OAUTH_PENDING_TTL_SECONDS = 600
+
+
+@dataclass(frozen=True)
+class PendingOAuth:
+    """One /connections/oauth/start attempt, held server-side until /connections/oauth/
+    complete finalizes it (WP-04). No real provider exists yet (roadmap WP-04: "ainda sem
+    provider real por tras") -- this models the same shape a real Authorization Code flow's
+    server-side pending state would have (issued at start, consumed exactly once at
+    callback, bound to the tenant that started it), so swapping in a real provider later
+    changes only where the callback's account data comes from, never this state machine.
+    """
+
+    tenant_id: str
+    provider: str
+    created_at: float
+
+
 def _seed_tokens() -> dict[str, TokenPrincipal]:
     """Local dev fixtures only. Never anything resembling a real token format."""
     return {
@@ -234,6 +256,10 @@ class AppState:
     #: In-flight /auth/login attempts, keyed by the `state` value handed to the issuer.
     #: Consumed exactly once by /auth/callback (see pop_pending_login).
     pending_logins: dict[str, PendingLogin] = field(default_factory=dict)
+    #: In-flight /connections/oauth/start attempts (WP-04), keyed by the `state` value
+    #: returned to the caller. Consumed exactly once by /connections/oauth/complete (see
+    #: pop_pending_oauth).
+    oauth_pending: dict[str, PendingOAuth] = field(default_factory=dict)
     #: None unless a real OIDC issuer is configured via CAMPAIA_OIDC_* env vars, or the
     #: fail-closed test-identity-provider gate below is enabled. /auth/login returns a
     #: clear "not configured" error rather than silently succeeding when this is None.
@@ -367,6 +393,31 @@ class AppState:
         if pending is None:
             return None
         if time.time() - pending.created_at > PENDING_LOGIN_TTL_SECONDS:
+            return None
+        return pending
+
+    # -- WP-04: pending /connections/oauth/start attempts ----------------------------
+
+    def create_pending_oauth(self, *, tenant_id: str, provider: str) -> str:
+        oauth_state = generate_session_id()  # same shape requirements as a session id
+        self.oauth_pending[oauth_state] = PendingOAuth(
+            tenant_id=tenant_id, provider=provider, created_at=time.time()
+        )
+        return oauth_state
+
+    def pop_pending_oauth(self, oauth_state: str, *, tenant_id: str) -> PendingOAuth | None:
+        """Consumes (removes) a pending OAuth attempt by its state value -- single-use, so
+        a replayed /connections/oauth/complete request with the same state always fails the
+        second time. Returns None for an unknown, expired, OR cross-tenant attempt (a state
+        issued while authenticated as tenant A must never complete for tenant B, even if
+        somehow guessed or leaked) -- callers must treat all three identically.
+        """
+        pending = self.oauth_pending.pop(oauth_state, None)
+        if pending is None:
+            return None
+        if time.time() - pending.created_at > OAUTH_PENDING_TTL_SECONDS:
+            return None
+        if pending.tenant_id != tenant_id:
             return None
         return pending
 
