@@ -892,6 +892,16 @@ components:
         id: { type: string, format: uuid }
         campaign_id: { type: string, format: uuid }
         reason: { type: string, description: Gatilho que exigiu aprovacao humana. }
+        requested_by:
+          type: string
+          format: uuid
+          description: |
+            Quem propos a acao que gerou esta aprovacao (campaign_id.created_by ou
+            equivalente) -- campo real, sempre presente na resposta (ver
+            api/helpers.py serialize_approval), adicionado ao contrato no WP-05 apos
+            achado de campo ausente durante a construcao da tela de aprovacoes.
+            Necessario para a UI comunicar segregacao de funcoes (quem propos nao
+            aprova a propria proposta, campaia_core.permissions.can_approve).
         plan_version: { type: integer }
         status: { type: string, enum: [PENDING, APPROVED, REJECTED, CHANGES_REQUESTED, EXPIRED] }
         requires_dual_approval: { type: boolean }

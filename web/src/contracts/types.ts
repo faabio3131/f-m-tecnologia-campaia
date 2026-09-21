@@ -9,3 +9,38 @@ export type Membership = components["schemas"]["Membership"];
 export type SessionMemberships = components["schemas"]["SessionMemberships"];
 export type BrandProfile = components["schemas"]["BrandProfile"];
 export type Connection = components["schemas"]["Connection"];
+export type Campaign = components["schemas"]["Campaign"];
+export type PolicyDecision = components["schemas"]["PolicyDecision"];
+export type ApprovalRequest = components["schemas"]["ApprovalRequest"];
+
+/**
+ * WP-05: the strategist agent's real output schema (backend/campaia_core/agents.py
+ * AGENTS["strategist"].output_schema) -- a structured object, NOT free text. Found via a
+ * real cross-stack E2E run: PlanPanel.tsx originally rendered `plan.output` directly as a
+ * string child and React threw "Objects are not valid as a React child" the first time this
+ * component ever ran against the real strategist output.
+ */
+export interface StrategistPlanOutput {
+  objetivo: string;
+  funil: string;
+  canais: string[];
+  justificativa: string;
+}
+
+/**
+ * WP-05: GET/POST .../plan's response. The contract deliberately leaves this untyped
+ * (`schema: { type: object }`, see contracts/bff-openapi.yaml's /campaigns/{campaignId}/plan
+ * description: "conforme campaign-plan.schema.json" -- a separate, not-yet-adopted-here
+ * schema) -- this mirrors the real shape backend/api/models.py's PlanResponse actually
+ * serializes (campaign_id, plan_version, plan), not a contract-generated type.
+ */
+export interface CampaignPlan {
+  campaign_id: string;
+  plan_version: number;
+  plan: {
+    proposal_id?: string;
+    output?: StrategistPlanOutput;
+    provider?: string;
+    model?: string;
+  } | null;
+}

@@ -1,5 +1,13 @@
 import { cookies } from "next/headers";
-import type { BrandProfile, Connection, Me, SessionMemberships } from "@/contracts/types";
+import type {
+  ApprovalRequest,
+  BrandProfile,
+  Campaign,
+  CampaignPlan,
+  Connection,
+  Me,
+  SessionMemberships,
+} from "@/contracts/types";
 
 /**
  * WP-02: server-only, session-cookie-authenticated GET. Runs on the Next.js server (never
@@ -58,6 +66,36 @@ export async function getServerBrandProfiles(): Promise<BrandProfile[] | null> {
  * state (nothing connected yet) -- only null means the read itself failed. */
 export async function getServerConnections(): Promise<Connection[] | null> {
   return getWithSessionCookie<Connection[]>("/connections");
+}
+
+/** WP-05: the tenant's campaigns (GET /campaigns). Empty array is a real, valid state (no
+ * brief submitted yet) -- only null means the read itself failed. Unwraps the contract's
+ * {items, next_cursor} envelope -- there is no real pagination layer yet (see
+ * routes_campaigns.py's own comment on `next_cursor` always being null), so callers just
+ * want the list. */
+export async function getServerCampaigns(): Promise<Campaign[] | null> {
+  const envelope = await getWithSessionCookie<{ items: Campaign[] }>("/campaigns");
+  return envelope ? envelope.items : null;
+}
+
+/** WP-05: a single campaign's detail (GET /campaigns/{id}), reconciled state included. Null
+ * covers both "read failed" and "not found" -- callers show the same not-found-shaped UI
+ * either way, exactly like BrandKitForm/ConnectAccountCard already do for other reads. */
+export async function getServerCampaign(campaignId: string): Promise<Campaign | null> {
+  return getWithSessionCookie<Campaign>(`/campaigns/${encodeURIComponent(campaignId)}`);
+}
+
+/** WP-05: a campaign's current plan (GET /campaigns/{id}/plan). `plan: null` inside the
+ * response is a real, valid state (no strategy generated yet) -- only the outer null means
+ * the read itself failed. */
+export async function getServerPlan(campaignId: string): Promise<CampaignPlan | null> {
+  return getWithSessionCookie<CampaignPlan>(`/campaigns/${encodeURIComponent(campaignId)}/plan`);
+}
+
+/** WP-05: pending approvals for the tenant (GET /approvals). Empty array is a real, valid
+ * state (nothing awaiting decision) -- only null means the read itself failed. */
+export async function getServerApprovals(): Promise<ApprovalRequest[] | null> {
+  return getWithSessionCookie<ApprovalRequest[]>("/approvals");
 }
 
 export function getPublicBffOrigin(): string | undefined {
