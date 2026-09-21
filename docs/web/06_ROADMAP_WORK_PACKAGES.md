@@ -112,8 +112,68 @@ Esta seção registra a reconciliação de ordem original, anterior a qualquer e
 
 ---
 
-## 3. Blocos além do WP-05 (não detalhados como Work Package nesta missão)
+### WP-06 — Alteração de orçamento (Web sobre API já pronta)
 
-**Nota (21/09/2026): WP-01 a WP-05 estão todos implementados** — o CURRENT que esta seção antecipava agora existe de fato. WP-06 ainda não foi definido a partir dele; essa definição é o próximo passo, não este parágrafo.
+**Definido em 21/09/2026, por reconciliação de CURRENT** (não fazia parte do roadmap
+original — este é o 3º bloco autorizado pelo Diretor, "pode avançar mais 3 blocos",
+depois de WP-04 e WP-05). Escolhido entre os candidatos da Seção 3 (abaixo) por ser o
+único tecnicamente desbloqueado sem decisão humana nova ou credencial externa: reutiliza
+inteiramente a máquina de aprovação (`POST /approvals`, `POST /approvals/{id}/decision`) já
+construída e testada pelo WP-05, sobre uma rota de backend (`PATCH /campaigns/{id}/budget`)
+que já existe e já é testada desde blocos anteriores — "Web sobre API já pronta", exatamente
+como a Seção 3 original descrevia este candidato.
 
-Publicação sandbox (depende de credenciais reais de sandbox de ao menos 1 provider — bloqueio externo, não técnico), reconciliação, métricas, orçamento (Web sobre API já pronta), recomendações/otimização limitada, hardening, acessibilidade, observabilidade, segurança formal, staging, produção controlada — todos dependem de decisões e Work Packages anteriores não executados nesta missão até 21/09/2026.
+- **Objetivo**: permitir alterar o teto diário (`daily_cap`) de uma campanha pela Web, com
+  aprovação humana obrigatória (segregação de funções — quem propõe não aprova a própria
+  proposta, igual ao WP-05) e respeitando o limite de variação percentual já aplicado pelo
+  domínio (`campaia_core/budget.py BudgetEngine.validate_change`).
+- **Escopo**: exibir o orçamento atual na tela de detalhe da campanha (`/campaigns/{id}`,
+  já construída pelo WP-05); formulário para propor um novo `daily_cap`, que cria uma
+  aprovação (`POST /approvals`, `kind: BUDGET_CHANGE`) — decisão continua acontecendo na
+  fila de aprovação já existente (`/approvals`, WP-05), sem tela nova; uma vez aprovada,
+  aplicar a mudança (`PATCH /campaigns/{id}/budget`, `daily_cap` + `approval_id`, CSRF +
+  `X-Step-Up-Token` + `Idempotency-Key`).
+- **Fora do escopo**: alteração de `total_amount` (orçamento total). **Achado real de
+  contrato, não corrigido nesta definição, registrado como pendência**: o contrato
+  (`bff-openapi.yaml`, `updateBudget` requestBody) declara `total_amount` como propriedade
+  opcional aceita, mas `BudgetPatchRequest` (`api/models.py`, `extra="forbid"`) não tem esse
+  campo — um cliente que o enviasse seria recusado com `422 VALIDATION_FAILED`. Como este
+  WP-06 nunca envia `total_amount`, o achado não bloqueia sua execução, mas é uma
+  divergência real de contrato×código que alguém precisa decidir como fechar (documentar o
+  campo como não implementado, ou implementá-lo) — não decidido aqui, para não expandir o
+  escopo deste bloco.
+- **Dependências**: WP-05 (reutiliza `/approvals` inteiramente, inclusive sua UI de
+  decisão).
+- **Segurança**: `X-Step-Up-Token` na aplicação da mudança (rota já exige, comportamento
+  preexistente, não alterado); segregação de funções aplicada pelo mesmo mecanismo do
+  WP-05, nunca reimplementada na UI; variação percentual fora do limite configurado é
+  recusada pelo domínio com `BUDGET_LIMIT`, nunca "ajustada automaticamente" — a UI deve
+  mostrar essa recusa, não escondê-la ou tentar contornar.
+- **Critérios de aceitação**: usuário propõe uma mudança de orçamento; um segundo usuário
+  aprova (ou rejeita) na fila já existente; mudança aprovada é aplicada de verdade e reflete
+  no orçamento exibido; mudança fora do limite percentual é recusada visivelmente.
+- **Testes**: mesma disciplina do WP-05 — testes de backend via sessão Web real (não só
+  Bearer fixture) se algum gap real for descoberto; Vitest para o(s) componente(s) novo(s);
+  E2E de fumaça sem backend; E2E cross-stack real.
+- **Riscos**: baixo — nenhuma rota nova de backend esperada (a menos que um gap real seja
+  descoberto durante a implementação, como aconteceu nos WP-04/WP-05).
+- **Rollback**: reverter para o estado do WP-05; `PATCH /campaigns/{id}/budget` não é
+  chamado por nenhuma outra tela, então o rollback é puramente de frontend.
+- **Gate**: nenhum gate formal do roadmap original cobre este bloco (é um bloco novo,
+  definido nesta reconciliação) — tratado como uma extensão do Gate 5, já que reutiliza sua
+  infraestrutura de aprovação por completo.
+- **Definição de pronto**: alteração de orçamento funciona ponta a ponta com dois usuários
+  distintos (proponente e aprovador) e dados simulados.
+- **Autorização necessária**: mesma autorização já concedida pelo Diretor para o 3º bloco
+  ("pode avançar mais 3 blocos"); revisão de FM QA Engineer permanece pendente, como em
+  todo bloco desde o WP-02.
+
+---
+
+## 3. Blocos além do WP-06 (não detalhados como Work Package nesta missão)
+
+**Nota (21/09/2026): WP-01 a WP-05 estão todos implementados**, e o WP-06 foi definido
+acima por reconciliação de CURRENT — o CURRENT que esta seção antecipava agora existe de
+fato para esses blocos. Nenhum bloco além do WP-06 foi definido.
+
+Publicação sandbox (depende de credenciais reais de sandbox de ao menos 1 provider — bloqueio externo, não técnico), reconciliação, métricas, recomendações/otimização limitada, hardening, acessibilidade, observabilidade, segurança formal, staging, produção controlada — todos dependem de decisões e Work Packages anteriores não executados nesta missão até 21/09/2026. Orçamento, único candidato tecnicamente desbloqueado desta lista, foi promovido a WP-06 (ver acima).
