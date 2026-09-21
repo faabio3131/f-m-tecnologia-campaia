@@ -39,3 +39,15 @@
   color: var(--campaia-color-text-muted);
   font-size: var(--campaia-font-size-sm);
 }
+
+.insightsNote {
+  margin: 0;
+  color: var(--campaia-color-text-muted);
+  font-size: var(--campaia-font-size-sm);
+}
+
+.insightsList {
+  margin: 0;
+  padding-left: var(--campaia-space-4);
+  font-size: var(--campaia-font-size-sm);
+}

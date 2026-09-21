@@ -9,6 +9,7 @@ import {
   getPublicBffOrigin,
   getServerApprovals,
   getServerCampaign,
+  getServerInsights,
   getServerPlan,
   getServerSession,
 } from "@/lib/session";
@@ -18,7 +19,10 @@ import styles from "./page.module.css";
  * WP-05: detalhe da campanha -- estratégia (IA) e validação, os dois passos entre o
  * briefing (/campaigns) e a fila de aprovação (/approvals). Publicação real fica fora do
  * escopo deste Work Package (docs/web/06_ROADMAP_WORK_PACKAGES.md: "depende de adaptador de
- * provider, fora desta lista") -- nada nesta tela chama POST .../publish.
+ * provider, fora desta lista") -- nada nesta tela chama POST .../publish. WP-11 adiciona a
+ * seção "Métricas": o estado real de GET /campaigns/{id}/insights, honestamente vazio hoje
+ * (nenhuma camada de analytics em campaia_core ainda) -- exibido diretamente, sem gráfico ou
+ * placeholder inventado pela Web.
  */
 export default async function CampaignDetailPage({
   params,
@@ -59,10 +63,11 @@ export default async function CampaignDetailPage({
     );
   }
 
-  const [campaign, plan, approvals] = await Promise.all([
+  const [campaign, plan, approvals, insights] = await Promise.all([
     getServerCampaign(campaignId),
     getServerPlan(campaignId),
     getServerApprovals(),
+    getServerInsights(campaignId),
   ]);
 
   if (campaign === null || plan === null || approvals === null) {
@@ -128,6 +133,30 @@ export default async function CampaignDetailPage({
           budget={campaign.budget}
           approvals={approvals}
         />
+      </Card>
+
+      <Card>
+        <h2 className={styles.sectionTitle}>Métricas</h2>
+        {insights === null ? (
+          <ErrorState
+            title="Não foi possível carregar as métricas"
+            description="GET /campaigns/{id}/insights falhou. Tente recarregar a página."
+          />
+        ) : insights.points && insights.points.length > 0 ? (
+          <ul className={styles.insightsList}>
+            {insights.points.map((point, index) => (
+              <li key={index}>
+                {point.date} · {point.channel}: {point.impressions} impressões,{" "}
+                {point.clicks} cliques, {point.conversions} conversões
+              </li>
+            ))}
+          </ul>
+        ) : (
+          // `note` is typed optional by the generated contract types (object property with
+          // no `required` entry) but always present in the real response -- same pattern as
+          // Connection.id/Campaign.id elsewhere in this app.
+          <p className={styles.insightsNote}>{insights.note as string}</p>
+        )}
       </Card>
     </PageContainer>
   );

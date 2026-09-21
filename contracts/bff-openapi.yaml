@@ -1036,6 +1036,7 @@ components:
               spend: { type: number }
               conversions: { type: integer }
               cpa: { type: [number, 'null'] }
+        note: { type: string }
 
     AuditEvent:
       type: object

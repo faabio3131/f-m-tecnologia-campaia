@@ -6,12 +6,14 @@ const {
   getServerCampaign,
   getServerPlan,
   getServerApprovals,
+  getServerInsights,
   getPublicBffOrigin,
 } = vi.hoisted(() => ({
   getServerSession: vi.fn(),
   getServerCampaign: vi.fn(),
   getServerPlan: vi.fn(),
   getServerApprovals: vi.fn(),
+  getServerInsights: vi.fn(),
   getPublicBffOrigin: vi.fn(),
 }));
 
@@ -20,6 +22,7 @@ vi.mock("@/lib/session", () => ({
   getServerCampaign,
   getServerPlan,
   getServerApprovals,
+  getServerInsights,
   getPublicBffOrigin,
 }));
 
@@ -51,6 +54,30 @@ const CAMPAIGN = {
 };
 
 const NO_PLAN = { campaign_id: "camp-1", plan_version: 0, plan: null };
+
+const EMPTY_INSIGHTS = {
+  campaign_id: "camp-1",
+  points: [],
+  last_synced_at: null,
+  note: "No analytics layer implemented yet in campaia_core; this is an honest placeholder, not fabricated data.",
+};
+
+const NONEMPTY_INSIGHTS = {
+  campaign_id: "camp-1",
+  points: [
+    {
+      date: "2026-01-01",
+      channel: "GOOGLE_ADS" as const,
+      impressions: 1000,
+      clicks: 50,
+      spend: 100,
+      conversions: 5,
+      cpa: 20,
+    },
+  ],
+  last_synced_at: "2026-01-01T00:00:00Z",
+  note: "",
+};
 
 const PENDING_APPROVAL_ELSEWHERE = {
   id: "appr-other",
@@ -96,6 +123,7 @@ describe("CampaignDetailPage", () => {
     getServerCampaign.mockResolvedValue(null);
     getServerPlan.mockResolvedValue(NO_PLAN);
     getServerApprovals.mockResolvedValue([]);
+    getServerInsights.mockResolvedValue(EMPTY_INSIGHTS);
 
     await renderCampaignDetailPage();
 
@@ -108,6 +136,7 @@ describe("CampaignDetailPage", () => {
     getServerCampaign.mockResolvedValue(CAMPAIGN);
     getServerPlan.mockResolvedValue(NO_PLAN);
     getServerApprovals.mockResolvedValue([PENDING_APPROVAL_ELSEWHERE]);
+    getServerInsights.mockResolvedValue(EMPTY_INSIGHTS);
 
     await renderCampaignDetailPage();
 
@@ -125,6 +154,7 @@ describe("CampaignDetailPage", () => {
     getServerCampaign.mockResolvedValue(CAMPAIGN);
     getServerPlan.mockResolvedValue(NO_PLAN);
     getServerApprovals.mockResolvedValue([PENDING_APPROVAL_THIS_CAMPAIGN]);
+    getServerInsights.mockResolvedValue(EMPTY_INSIGHTS);
 
     await renderCampaignDetailPage();
 
@@ -133,5 +163,47 @@ describe("CampaignDetailPage", () => {
     // without error with a same-campaign PENDING approval present; the note's exact wiring
     // is unit-tested directly in tests/validation-panel.test.tsx.
     expect(screen.getByRole("button", { name: "Validar" })).toBeInTheDocument();
+  });
+
+  it("WP-11: shows the real API note when insights has no points, never an invented placeholder", async () => {
+    getPublicBffOrigin.mockReturnValue("https://bff.example");
+    getServerSession.mockResolvedValue(ME);
+    getServerCampaign.mockResolvedValue(CAMPAIGN);
+    getServerPlan.mockResolvedValue(NO_PLAN);
+    getServerApprovals.mockResolvedValue([]);
+    getServerInsights.mockResolvedValue(EMPTY_INSIGHTS);
+
+    await renderCampaignDetailPage();
+
+    expect(screen.getByText("Métricas")).toBeInTheDocument();
+    expect(screen.getByText(EMPTY_INSIGHTS.note)).toBeInTheDocument();
+  });
+
+  it("WP-11: shows real points when insights has them, instead of the empty note", async () => {
+    getPublicBffOrigin.mockReturnValue("https://bff.example");
+    getServerSession.mockResolvedValue(ME);
+    getServerCampaign.mockResolvedValue(CAMPAIGN);
+    getServerPlan.mockResolvedValue(NO_PLAN);
+    getServerApprovals.mockResolvedValue([]);
+    getServerInsights.mockResolvedValue(NONEMPTY_INSIGHTS);
+
+    await renderCampaignDetailPage();
+
+    expect(
+      screen.getByText(/2026-01-01 · GOOGLE_ADS: 1000 impressões, 50 cliques, 5 conversões/),
+    ).toBeInTheDocument();
+  });
+
+  it("WP-11: shows an error state when the insights read fails", async () => {
+    getPublicBffOrigin.mockReturnValue("https://bff.example");
+    getServerSession.mockResolvedValue(ME);
+    getServerCampaign.mockResolvedValue(CAMPAIGN);
+    getServerPlan.mockResolvedValue(NO_PLAN);
+    getServerApprovals.mockResolvedValue([]);
+    getServerInsights.mockResolvedValue(null);
+
+    await renderCampaignDetailPage();
+
+    expect(screen.getByText("Não foi possível carregar as métricas")).toBeInTheDocument();
   });
 });

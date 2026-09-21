@@ -8,6 +8,7 @@ import type {
   CampaignPlan,
   Capability,
   Connection,
+  InsightSeries,
   Me,
   SessionMemberships,
 } from "@/contracts/types";
@@ -128,6 +129,15 @@ export async function getServerAuditEvents(campaignId?: string): Promise<AuditEv
   const query = campaignId ? `?campaign_id=${encodeURIComponent(campaignId)}` : "";
   const envelope = await getWithSessionCookie<{ items: AuditEvent[] }>(`/audit-events${query}`);
   return envelope ? envelope.items : null;
+}
+
+/** WP-11: a campaign's real insights (GET /campaigns/{id}/insights). Always resolves to a
+ * real object server-side (the backend returns an honest empty-points placeholder with a
+ * `note` explaining why, never a 404) -- only null means the read itself failed. */
+export async function getServerInsights(campaignId: string): Promise<InsightSeries | null> {
+  return getWithSessionCookie<InsightSeries>(
+    `/campaigns/${encodeURIComponent(campaignId)}/insights`,
+  );
 }
 
 export function getPublicBffOrigin(): string | undefined {

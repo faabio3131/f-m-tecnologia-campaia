@@ -760,6 +760,7 @@ export interface components {
                 conversions?: number;
                 cpa?: number | null;
             }[];
+            note?: string;
         };
         AuditEvent: {
             /** Format: uuid */
