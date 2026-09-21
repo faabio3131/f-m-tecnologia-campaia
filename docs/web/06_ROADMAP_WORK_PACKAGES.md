@@ -1,6 +1,6 @@
 # CampaIA — Ponto Zero Web · 06. Roadmap e Work Packages
 
-**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019) — **WP-01 implementado e validado** (19/09/2026), **WP-02 implementado, com revisão de segurança humana pendente** (20/09/2026, ver `docs/web/09_CERTIFICACAO_WP02_AUTENTICACAO_SESSAO_WEB.md`), **WP-03 implementado, com a mesma revisão de segurança humana pendente** (21/09/2026, ver `docs/web/10_CERTIFICACAO_WP03_TENANCY_SHELL.md`), **WP-04 implementado, revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/11_CERTIFICACAO_WP04_ONBOARDING_BRAND_KIT.md`), **WP-05 implementado, fechando o Gate 5 (primeira jornada crítica), revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/12_CERTIFICACAO_WP05_BRIEFING_APROVACAO.md`), **WP-06 implementado (alteração de orçamento, definido nesta mesma missão por reconciliação de CURRENT), mesma revisão pendente** (21/09/2026, ver `docs/web/13_CERTIFICACAO_WP06_ALTERACAO_ORCAMENTO.md`) e **WP-07 implementado (nível de autonomia/Modo Manual-Automático, definido nesta mesma missão por reconciliação de CURRENT, sob nova autorização do Diretor de continuar a construção enquanto a cota do CI está esgotada), mesma revisão pendente** (21/09/2026, ver `docs/web/14_CERTIFICACAO_WP07_NIVEL_AUTONOMIA.md`) e **WP-08 implementado (parada de emergência/kill switch, definido nesta mesma missão por reconciliação de CURRENT), mesma revisão pendente** (21/09/2026, ver `docs/web/15_CERTIFICACAO_WP08_PARADA_EMERGENCIA.md`). Nenhum bloco além do WP-08 foi definido.
+**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019) — **WP-01 implementado e validado** (19/09/2026), **WP-02 implementado, com revisão de segurança humana pendente** (20/09/2026, ver `docs/web/09_CERTIFICACAO_WP02_AUTENTICACAO_SESSAO_WEB.md`), **WP-03 implementado, com a mesma revisão de segurança humana pendente** (21/09/2026, ver `docs/web/10_CERTIFICACAO_WP03_TENANCY_SHELL.md`), **WP-04 implementado, revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/11_CERTIFICACAO_WP04_ONBOARDING_BRAND_KIT.md`), **WP-05 implementado, fechando o Gate 5 (primeira jornada crítica), revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/12_CERTIFICACAO_WP05_BRIEFING_APROVACAO.md`), **WP-06 implementado (alteração de orçamento, definido nesta mesma missão por reconciliação de CURRENT), mesma revisão pendente** (21/09/2026, ver `docs/web/13_CERTIFICACAO_WP06_ALTERACAO_ORCAMENTO.md`) e **WP-07 implementado (nível de autonomia/Modo Manual-Automático, definido nesta mesma missão por reconciliação de CURRENT, sob nova autorização do Diretor de continuar a construção enquanto a cota do CI está esgotada), mesma revisão pendente** (21/09/2026, ver `docs/web/14_CERTIFICACAO_WP07_NIVEL_AUTONOMIA.md`) **WP-08 implementado (parada de emergência/kill switch, definido nesta mesma missão por reconciliação de CURRENT), mesma revisão pendente** (21/09/2026, ver `docs/web/15_CERTIFICACAO_WP08_PARADA_EMERGENCIA.md`), **WP-09 implementado (desconectar conta e ver capacidades da conexão, definido nesta mesma missão por reconciliação de CURRENT, sob nova autorização do Diretor de construir mais 3 blocos), mesma revisão pendente** (21/09/2026, ver `docs/web/16_CERTIFICACAO_WP09_DESCONECTAR_E_CAPACIDADES.md`) e **WP-10 implementado (trilha de auditoria, definido nesta mesma missão por reconciliação de CURRENT, mesma autorização), mesma revisão pendente** (21/09/2026, ver `docs/web/17_CERTIFICACAO_WP10_TRILHA_AUDITORIA.md`). WP-11 está definido (mesma autorização) mas ainda não implementado.
 
 ---
 
@@ -471,6 +471,8 @@ WP-04. Nenhuma rota nova de backend esperada.
 
 ### WP-10 — Trilha de auditoria
 
+**IMPLEMENTADO (21/09/2026)**
+
 **Definido em 21/09/2026, por reconciliação de CURRENT**, mesma autorização do WP-09.
 CURRENT reconstruído por leitura direta de `backend/api/routes_audit.py`
 (`list_audit_events`) e de `contracts/bff-openapi.yaml` antes de qualquer código: `GET
@@ -505,11 +507,48 @@ histórico. Nenhuma rota nova de backend esperada.
   descoberto; Vitest para a página nova; E2E de fumaça sem backend; E2E cross-stack real
   (idealmente reaproveitando eventos já gerados por outro spec, confirmando que a trilha
   reflete ações reais de outros blocos).
-- **Riscos**: baixos — nenhuma rota nova de backend esperada; nenhum achado real de contrato
-  conhecido de antemão (a leitura direta do schema `AuditEvent` contra `AuditEventResponse`
-  não revelou divergência, diferente dos achados dos WP-06/07/09).
+- **Confirmado: nenhum achado de contrato** — a leitura direta do schema `AuditEvent`
+  (`contracts/bff-openapi.yaml`) contra `AuditEventResponse`/`AuditEvent` (`api/models.py`)
+  não revelou divergência, ao contrário dos achados reais dos WP-06/07/09. Único bloco desta
+  sequência (WP-08 a WP-11) sem correção aditiva de contrato.
+- **Achado real, confirmado por teste de backend via sessão Web real**
+  (`test_audit_trail_web_session.py`, 3 testes): a trilha realmente reflete ações reais de
+  outro bloco — conectar uma conta pelo fluxo do WP-04 produz `OAUTH_START` e
+  `CONNECTION_CREATE` reais, visíveis em `GET /audit-events` com `actor_id`, `target` e
+  `actor_kind` corretos; o filtro `campaign_id` realmente restringe a trilha aos eventos
+  daquela campanha (evento `OAUTH_START`, cujo `target` é o nome do provedor, nunca aparece
+  quando o filtro está ativo); identidade sem `AUDIT_VIEW` recebe `403 PERMISSION_DENIED`
+  real do servidor.
+- **Achado real de bug pré-existente, encontrado durante a regressão E2E deste bloco**:
+  `web/src/app/onboarding/page.tsx` calculava `canFinishOnboarding` a partir de
+  `connections.length > 0` — a lista bruta de conexões, incluindo revogadas. Antes do WP-09
+  introduzir desconexão, toda conexão na lista era sempre `ACTIVE`, então essa contagem
+  equivalia a contar conexões ativas; o WP-09 quebrou essa equivalência ao introduzir o
+  status `REVOKED` real. Uma conexão existente apenas em forma revogada habilitava
+  incorretamente "Concluir Onboarding" com zero canais de fato conectados. Encontrado porque
+  a limpeza de estado do novo spec `audit-trail.spec.ts` (conectar e desconectar `WHATSAPP`
+  ao final, necessária para não poluir `onboarding.spec.ts`, que roda depois no mesmo
+  processo de backend, `workers: 1`) foi o primeiro cenário desta missão a exercitar "existe
+  uma conexão revogada, nenhuma ativa" contra a asserção do WP-04 de que nada está conectado.
+  Corrigido usando `activeConnections.length > 0` (já calculado na mesma página para a busca
+  de capacidades do WP-09), com um novo teste Vitest de regressão cobrindo exatamente esse
+  estado. Bug de interação WP-04/WP-09, não introduzido por este bloco — registrado e
+  corrigido de forma aditiva, por investigação de causa raiz, não mascarado.
+- **Testes executados**: backend — 3 novos (`test_audit_trail_web_session.py`, acima).
+  Frontend — 6 novos Vitest (`audit-page.test.tsx`) + 1 novo Vitest de regressão
+  (`onboarding-page.test.tsx`, achado do bug acima) + 1 E2E cross-stack real
+  (`audit-trail.spec.ts`). Regressão completa, HEAD `cceb331`: 267 domínio (inalterado) +
+  176 API (173 + 3) + 24/24 AsyncAPI (inalterado) + 132 Vitest (125 + 6 da página nova + 1 da
+  regressão do onboarding) + build de produção limpo + fronteiras de segurança limpas
+  (`/audit` é Server Component puro, zero chamada de rede client-side, sem nova entrada na
+  allowlist) + 12 E2E cross-stack (11 + 1) — todos verdes, confirmado apenas após a correção
+  do bug acima (os dois primeiros testes de `onboarding.spec.ts` falharam contra a página não
+  corrigida, exatamente como a causa raiz foi encontrada).
+- **Riscos**: baixos — nenhuma rota nova de backend foi necessária; o achado real foi um bug
+  de UI pré-existente (interação WP-04/WP-09), não um gap de contrato ou de segurança.
 - **Rollback**: reverter para o estado do WP-09; página nova isolada em `/audit`, nenhuma
-  outra tela depende dela.
+  outra tela depende dela. A correção do bug de `canFinishOnboarding` é independente e pode
+  ser revertida separadamente se necessário, mas reintroduziria o bug real documentado acima.
 - **Gate**: nenhum gate formal do roadmap original cobre este bloco — tratado como extensão
   do Gate 5.
 - **Definição de pronto**: trilha de auditoria real visível ponta a ponta, com permissão
@@ -568,11 +607,11 @@ próprio código-fonte). Nenhuma rota nova de backend esperada.
 
 ## 3. Blocos além do WP-11 (não detalhados como Work Package nesta missão)
 
-**Nota (21/09/2026): WP-01 a WP-08 estão implementados**, e o Diretor autorizou explicitamente
+**Nota (21/09/2026): WP-01 a WP-10 estão implementados**, e o Diretor autorizou explicitamente
 construir mais 3 blocos ("pode sim construa mais 3 blocos"), reafirmando a autorização contínua
 de continuar a construção enquanto a cota do CI do GitHub Actions está esgotada. WP-09, WP-10 e
 WP-11 (acima) foram definidos sob essa autorização, cada um por reconciliação de CURRENT própria,
-antes de qualquer código. Nenhum bloco além do WP-11 foi definido; qualquer bloco seguinte exige
-a mesma disciplina de reconciliação de CURRENT.
+antes de qualquer código; WP-11 permanece o único ainda não implementado. Nenhum bloco além do
+WP-11 foi definido; qualquer bloco seguinte exige a mesma disciplina de reconciliação de CURRENT.
 
 Publicação sandbox (depende de credenciais reais de sandbox de ao menos 1 provider — bloqueio externo, não técnico), reconciliação, recomendações/otimização limitada, hardening, acessibilidade formal, observabilidade formal, segurança formal, staging, produção controlada — todos dependem de decisões e Work Packages anteriores não executados nesta missão até 21/09/2026. Orçamento, autonomia e parada de emergência, os três primeiros candidatos tecnicamente desbloqueados encontrados, foram promovidos a WP-06/07/08 respectivamente; desconectar conta/capacidades, trilha de auditoria e métricas honestas, três novos candidatos tecnicamente desbloqueados (rotas já prontas e testadas, achados reais de contrato encontrados em pelo menos duas delas), foram promovidos a WP-09/10/11 (ver acima). Retomar campanha pausada (resume) e seletor de unidade de negócio (nenhuma rota de troca de unidade existe, só de tenant) permanecem candidatos reais, mas bloqueados por lacunas arquiteturais genuínas — não promovidos, registrados como achados reais (P-40 e um novo achado a registrar no painel).

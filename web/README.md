@@ -1,4 +1,4 @@
-# CampaIA Web — Fundação, sessão real, shell autenticado, primeira jornada, orçamento, autonomia, kill switch e ciclo de vida de conexões (WP-01 a WP-09)
+# CampaIA Web — Fundação, sessão real, shell autenticado, primeira jornada, orçamento, autonomia, kill switch, ciclo de vida de conexões e trilha de auditoria (WP-01 a WP-10)
 
 Fundação técnica do frontend Web do CampaIA. Este diretório implementa o
 **WP-01 — Fundação do frontend Web** (aprovado pela ADR-0017), o
@@ -32,7 +32,12 @@ capacidades da conexão** (ver
 `docs/web/16_CERTIFICACAO_WP09_DESCONECTAR_E_CAPACIDADES.md`; bloco também
 não previsto no roadmap original, definido nesta mesma missão por
 reconciliação de CURRENT, sob autorização do Diretor para construir mais
-3 blocos; mesma revisão de FM QA Engineer ainda pendente).
+3 blocos; mesma revisão de FM QA Engineer ainda pendente) e o **WP-10 —
+Trilha de auditoria** (ver
+`docs/web/17_CERTIFICACAO_WP10_TRILHA_AUDITORIA.md`; bloco também não
+previsto no roadmap original, definido nesta mesma missão por
+reconciliação de CURRENT, mesma autorização do WP-09; mesma revisão de FM
+QA Engineer ainda pendente).
 
 **Não é** um produto comercial concluído. WP-01 (a tela `/`) permanece
 inteiramente fixture-based, sem nenhuma chamada de rede — essa garantia
@@ -50,9 +55,11 @@ reutiliza a fila de aprovação — o próprio domínio dispensa aprovação par
 o kill switch, já que a ação só reduz efeito, nunca amplia. WP-09 completa
 o ciclo de vida de uma conexão em `/onboarding` (desconectar e ver
 capacidades reais), sem introduzir nenhuma chamada de rede GET
-client-side — as capacidades são buscadas no servidor. Publicação real em
-um provedor de verdade continua fora do escopo (nenhum bloco além do
-WP-11 foi definido — ver WP-10/WP-11 abaixo).
+client-side — as capacidades são buscadas no servidor. WP-10 adiciona a
+página `/audit` (trilha de auditoria real do tenant), um Server Component
+puro, sem nenhuma chamada de rede client-side. Publicação real em um
+provedor de verdade continua fora do escopo (WP-11 está definido mas
+ainda não implementado — ver seções abaixo).
 
 ## Requisitos
 
@@ -414,12 +421,45 @@ vida de uma conexão que o WP-04 começou (conectar, listar).
   antes de qualquer commit: toda leitura desta aplicação passa por
   `session.ts`, server-side, e este bloco mantém essa mesma disciplina.
 
-## O que ainda não existe (fora do escopo do WP-01 a WP-09)
+## Trilha de auditoria (WP-10)
 
-- Publicação real em um provedor de verdade, reconciliação, métricas,
-  otimização, hardening, acessibilidade formal, observabilidade — nenhum
-  bloco além do WP-11 foi definido (WP-10/WP-11 em execução sob a mesma
-  autorização de "mais 3 blocos").
+Bloco também **não previsto no roadmap original**, definido nesta mesma
+missão por reconciliação de CURRENT (ver
+`docs/web/06_ROADMAP_WORK_PACKAGES.md` §"WP-10"). `GET /audit-events` já
+existia desde antes deste bloco, já testada, e já era escrita por
+praticamente todo bloco desde o WP-04 — mas nenhuma tela jamais exibiu
+esse histórico.
+
+- **Visualizar**: `/audit` (Server Component puro, sem nenhum Client
+  Component) lista os eventos reais do tenant via `getServerAuditEvents`
+  — quando, quem (`actor_kind`/`actor_id`), qual ação, qual alvo (`target`,
+  exibido em texto bruto, nunca traduzido — o significado depende da
+  ação), mais recente primeiro (reordenação apenas de exibição; a API
+  devolve em ordem cronológica crescente). Sem paginação real
+  (`next_cursor` sempre `null`) — a tela exibe honestamente a lista
+  completa devolvida.
+- **Filtro**: `?campaign_id=` opcional, já suportado pela API, restringe a
+  trilha aos eventos daquela campanha.
+- **Acesso a partir do dashboard**: novo link "Trilha de auditoria" no
+  card de navegação já existente em `/dashboard`.
+
+Achado real de bug pré-existente corrigido durante a regressão E2E deste
+bloco: `web/src/app/onboarding/page.tsx` habilitava "Concluir Onboarding"
+contando qualquer conexão na lista (`connections.length > 0`), incluindo
+revogadas — um bug de interação com o WP-09 (que introduziu o status
+`REVOKED`), invisível até este bloco exercitar o cenário "existe uma
+conexão revogada, nenhuma ativa". Corrigido usando
+`activeConnections.length > 0` — ver
+`docs/web/17_CERTIFICACAO_WP10_TRILHA_AUDITORIA.md` §2.
+
+## O que ainda não existe (fora do escopo do WP-01 a WP-10)
+
+- Publicação real em um provedor de verdade, reconciliação, otimização,
+  hardening, acessibilidade formal, observabilidade — nenhum bloco além do
+  WP-11 foi definido (WP-11, métricas honestas de campanha, definido mas
+  ainda não implementado, sob a mesma autorização de "mais 3 blocos").
+- Paginação real da trilha de auditoria — `next_cursor` de
+  `GET /audit-events` é sempre `null` (achado pré-existente).
 - Alterar `total_amount` (orçamento total) — só `daily_cap` é editável.
 - Alterar `max_level_allowed` (teto contratado de autonomia) — é
   configuração comercial/plano, fora desta tela.
@@ -439,10 +479,10 @@ vida de uma conexão que o WP-04 começou (conectar, listar).
 - Revisão de segurança humana (FM Security Engineer) da superfície de
   autenticação — pendência explícita, ver certificação do WP-02 (segue
   pendente; nenhuma revisão humana ocorreu em nenhuma execução até
-  agora). Revisão de FM QA Engineer do WP-04/WP-05/WP-06/WP-07/WP-08/WP-09
-  — também pendente.
+  agora). Revisão de FM QA Engineer do
+  WP-04/WP-05/WP-06/WP-07/WP-08/WP-09/WP-10 — também pendente.
 
-## Fronteiras de segurança (WP-01 a WP-09)
+## Fronteiras de segurança (WP-01 a WP-10)
 
 Verificadas automaticamente por `npm run boundary:check` (e por
 `tests/boundaries.test.ts`, que roda a mesma lógica sem subprocesso) a
@@ -465,13 +505,15 @@ cada execução local e no CI:
   orçamento, WP-06), `src/components/AutonomyPanel.tsx` (alteração de
   nível de autonomia, WP-07) e `src/components/KillSwitchPanel.tsx`
   (parada de emergência, WP-08) — os doze únicos pontos legítimos, todos
-  protegidos por CSRF. WP-09 não adiciona um décimo terceiro: desconectar
-  reutiliza `ConnectAccountCard.tsx`, já na lista, e capacidades são lidas
-  no servidor, não no cliente. Todo o resto de `web/src`, incluindo a
-  tela `/` e os componentes do WP-01, permanece em zero chamadas de rede.
+  protegidos por CSRF. Nem WP-09 nem WP-10 adicionam um décimo terceiro:
+  desconectar (WP-09) reutiliza `ConnectAccountCard.tsx`, já na lista, e
+  capacidades são lidas no servidor; `/audit` (WP-10) é um Server
+  Component puro, zero chamada de rede client-side. Todo o resto de
+  `web/src`, incluindo a tela `/` e os componentes do WP-01, permanece em
+  zero chamadas de rede.
 
 Este script **não certifica segurança formal do produto** — apenas as
-proibições explícitas de escopo do WP-01 a WP-09.
+proibições explícitas de escopo do WP-01 a WP-10.
 
 ## Próximo gate
 
@@ -507,6 +549,12 @@ mais 3 blocos"), reafirmando a continuidade da construção durante o
 bloqueio de cota do CI. WP-09 (desconectar conta/capacidades da conexão,
 definido por reconciliação de CURRENT) **implementado e autotestado** —
 ver `docs/web/16_CERTIFICACAO_WP09_DESCONECTAR_E_CAPACIDADES.md`, mesma
-revisão pendente. WP-10 e WP-11 seguem em execução sob a mesma
-autorização; nenhum bloco além do WP-11 foi definido; qualquer trabalho
-futuro exige a mesma disciplina de reconciliação de CURRENT.
+revisão pendente. WP-10 (trilha de auditoria, definido por reconciliação
+de CURRENT, mesma autorização) **implementado e autotestado**, incluindo
+a correção de um bug real pré-existente de interação WP-04/WP-09
+encontrado pela própria regressão E2E deste bloco — ver
+`docs/web/17_CERTIFICACAO_WP10_TRILHA_AUDITORIA.md`, mesma revisão
+pendente. WP-11 (métricas honestas de campanha) está definido sob a mesma
+autorização, mas ainda não implementado; nenhum bloco além do WP-11 foi
+definido; qualquer trabalho futuro exige a mesma disciplina de
+reconciliação de CURRENT.
