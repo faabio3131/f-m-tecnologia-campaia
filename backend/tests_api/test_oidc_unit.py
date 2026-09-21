@@ -197,5 +197,80 @@ class TestVerifyIdToken(unittest.TestCase):
         self.assertIn("SOME_ROLE_THAT_DOES_NOT_EXIST", verified.roles)
 
 
+class TestMemberships(unittest.TestCase):
+    """WP-03: `campaia_memberships` is optional and, when present, is validated against
+    the token's own required flat claims -- see api/oidc.py's _parse_memberships."""
+
+    setUp = TestVerifyIdToken.setUp
+    _make_token = TestVerifyIdToken._make_token
+
+    def test_absent_claim_yields_single_active_membership(self) -> None:
+        token = self._make_token()
+        verified = verify_id_token(token, config=self.config, expected_nonce=self.nonce, jwks=self.jwks)
+        self.assertEqual(len(verified.memberships), 1)
+        m = verified.memberships[0]
+        self.assertEqual(m.tenant_id, "demo-tenant")
+        self.assertEqual(m.business_unit_id, "bu-1")
+        self.assertEqual(m.roles, ("OWNER",))
+
+    def test_present_claim_including_active_is_accepted(self) -> None:
+        token = self._make_token(
+            campaia_memberships=[
+                {"tenant_id": "demo-tenant", "business_unit_id": "bu-1", "roles": ["OWNER"]},
+                {"tenant_id": "other-tenant", "business_unit_id": "bu-2", "roles": ["VIEWER"]},
+            ]
+        )
+        verified = verify_id_token(token, config=self.config, expected_nonce=self.nonce, jwks=self.jwks)
+        self.assertEqual(len(verified.memberships), 2)
+        by_tenant = {m.tenant_id: m for m in verified.memberships}
+        self.assertEqual(by_tenant["other-tenant"].roles, ("VIEWER",))
+
+    def test_claim_missing_the_active_membership_is_rejected(self) -> None:
+        """Defence in depth: a token claiming memberships that do NOT include the tenant
+        it just authenticated the user into is malformed/malicious, not silently trusted."""
+        token = self._make_token(
+            campaia_memberships=[
+                {"tenant_id": "other-tenant", "business_unit_id": "bu-2", "roles": ["VIEWER"]},
+            ]
+        )
+        with self.assertRaises(IdTokenVerificationError):
+            verify_id_token(token, config=self.config, expected_nonce=self.nonce, jwks=self.jwks)
+
+    def test_empty_list_claim_is_rejected(self) -> None:
+        token = self._make_token(campaia_memberships=[])
+        with self.assertRaises(IdTokenVerificationError):
+            verify_id_token(token, config=self.config, expected_nonce=self.nonce, jwks=self.jwks)
+
+    def test_non_list_claim_is_rejected(self) -> None:
+        token = self._make_token(campaia_memberships="not-a-list")
+        with self.assertRaises(IdTokenVerificationError):
+            verify_id_token(token, config=self.config, expected_nonce=self.nonce, jwks=self.jwks)
+
+    def test_entry_missing_roles_is_rejected(self) -> None:
+        token = self._make_token(
+            campaia_memberships=[
+                {"tenant_id": "demo-tenant", "business_unit_id": "bu-1", "roles": ["OWNER"]},
+                {"tenant_id": "other-tenant", "business_unit_id": "bu-2", "roles": []},
+            ]
+        )
+        with self.assertRaises(IdTokenVerificationError):
+            verify_id_token(token, config=self.config, expected_nonce=self.nonce, jwks=self.jwks)
+
+    def test_entry_missing_tenant_id_is_rejected(self) -> None:
+        token = self._make_token(
+            campaia_memberships=[
+                {"tenant_id": "demo-tenant", "business_unit_id": "bu-1", "roles": ["OWNER"]},
+                {"business_unit_id": "bu-2", "roles": ["VIEWER"]},
+            ]
+        )
+        with self.assertRaises(IdTokenVerificationError):
+            verify_id_token(token, config=self.config, expected_nonce=self.nonce, jwks=self.jwks)
+
+    def test_entry_that_is_not_an_object_is_rejected(self) -> None:
+        token = self._make_token(campaia_memberships=["demo-tenant"])
+        with self.assertRaises(IdTokenVerificationError):
+            verify_id_token(token, config=self.config, expected_nonce=self.nonce, jwks=self.jwks)
+
+
 if __name__ == "__main__":
     unittest.main()
