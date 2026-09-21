@@ -290,14 +290,99 @@ domínio — muda de nível SEMPRE exige aprovação humana, em qualquer nível 
 
 ---
 
-## 3. Blocos além do WP-07 (não detalhados como Work Package nesta missão)
+### WP-08 — Parada de emergência (Kill Switch)
 
-**Nota (21/09/2026): WP-01 a WP-07 estão todos implementados**, o WP-07 sob a autorização do
-Diretor de continuar a construção enquanto a cota do CI do GitHub Actions está esgotada
-("vamos continuar trabalhando na construção e fazer tudo que for possível sem atrasar o
-término e no final faremos os testes necessários", 21/09/2026 — os "testes necessários"
-referem-se à confirmação do CI remoto, não aos testes locais, que seguem obrigatórios e
-executados a cada passo). Nenhum bloco além do WP-07 foi definido; qualquer bloco seguinte
-exige a mesma disciplina de reconciliação de CURRENT usada para definir o WP-07.
+**Definido em 21/09/2026, por reconciliação de CURRENT**, sob a mesma autorização do Diretor
+que definiu o WP-07 ("a cota será renovada no dia 31 então vamos continuar trabalhando na
+construção...", reafirmada explicitamente: "vamos continuar a construção eu autorizo
+prosseguir e no final iremos auditar e corrigir o que for necessário"). CURRENT reconstruído
+por leitura direta de `backend/api/routes_campaigns.py` (`kill_switch`),
+`backend/campaia_core/states.py` (`apply_kill_switch`, `PAUSABLE_STATES`) e
+`contracts/bff-openapi.yaml` (`/kill-switch`) antes de qualquer código: a rota já existe, já
+testada (`test_kill_switch_campaign_scope_not_pausable_from_draft`,
+`test_kill_switch_global_scope_crosses_tenants`,
+`test_kill_switch_platform_scope_pauses_matching_channel`,
+`test_kill_switch_rejects_lowercase_scope`, `test_kill_switch_tenant_scope` em
+`tests_api/test_smoke_endpoints.py`) — nenhuma rota nova de backend esperada.
 
-Publicação sandbox (depende de credenciais reais de sandbox de ao menos 1 provider — bloqueio externo, não técnico), reconciliação, métricas, recomendações/otimização limitada, hardening, acessibilidade, observabilidade, segurança formal, staging, produção controlada — todos dependem de decisões e Work Packages anteriores não executados nesta missão até 21/09/2026. Orçamento, único candidato tecnicamente desbloqueado desta lista, foi promovido a WP-06 (ver acima).
+Candidato alternativo considerado e descartado nesta mesma reconciliação: expor
+`POST /campaigns/{id}/pause` (pausa normal, reversível, `Permission.CAMPAIGN_EDIT`) em vez do
+kill switch. Descartado porque, ao investigar o CURRENT, `campaia_core/states.py` mostra que
+`PAUSED → ACTIVE` (retomar) é uma transição real e guardada (`_guard_resume`), mas **nenhuma
+rota HTTP existe para retomar uma campanha pausada**, e `campaia_core/connectors.py`'s
+`AdsConnector` Protocol (o contrato dos adaptadores, "3 de 14 operações canônicas") não define
+nenhuma operação de retomada — apenas `validate_draft`, `publish` e `pause`. Construir "pausar"
+sem "retomar" deixaria o usuário genuinamente travado (uma campanha pausada pela Web nunca
+poderia voltar a ficar ativa pela Web), o que não é um incremento vertical completo; e
+construir "retomar" de verdade exigiria adicionar uma operação canônica nova ao Protocol dos
+conectores — expansão arquitetural real, não coberta por esta reconciliação nem autorizada
+explicitamente. Registrado como achado real, não corrigido (P-40, ver painel). O kill switch,
+ao contrário, é desenhado para ser **unidirecional por definição** ("só reduz efeito, nunca
+amplia" — comentário do próprio domínio) — não sofre desse problema, e é por isso o candidato
+escolhido para este bloco.
+
+- **Objetivo**: permitir a um usuário com a permissão `KILL_SWITCH` acionar uma parada de
+  emergência real, pausando o efeito de uma campanha específica ou de todas as campanhas do
+  tenant, sem depender da fila normal de aprovação (o próprio domínio dispensa isso, porque a
+  ação só reduz efeito, nunca amplia).
+- **Escopo**: painel em `/dashboard` (mesma área do `AutonomyPanel`, tenant-level): seletor de
+  escopo (`CAMPAIGN` ou `TENANT`), campo obrigatório de motivo (`reason`), seletor de campanha
+  quando `CAMPAIGN` (lista de campanhas do tenant, já disponível via `getServerCampaigns`).
+  Aciona `POST /kill-switch` (CSRF + `Idempotency-Key` — **sem** `X-Step-Up-Token`, decisão do
+  próprio domínio: `KILL_SWITCH` está deliberadamente fora de `REQUIRES_STEP_UP` em
+  `permissions.py`, porque emergência não espera reautenticação). Resultado exibido:
+  campanha(s) afetada(s) pelo acionamento.
+- **Fora do escopo, deliberadamente**: os escopos `ACCOUNT`, `PLATFORM` e `GLOBAL` do endpoint
+  real não são expostos nesta tela. `GLOBAL` cruza tenants por desenho documentado do próprio
+  domínio (achado 13/17, ver `routes_campaigns.py`); `ACCOUNT`/`PLATFORM` pausam múltiplas
+  campanhas de uma vez sem seleção individual. Nenhum desses três é apropriado para um
+  dashboard de tenant comum sem uma decisão de produto/segurança explícita sobre uma futura
+  tela de operador de plataforma — decisão que não foi tomada nesta reconciliação. A API
+  continua aceitando os 5 escopos; apenas a Web não os expõe todos.
+- **Achado real de contrato, a corrigir nesta execução**: a resposta `202` de `/kill-switch`
+  não tem `content`/schema definido em `contracts/bff-openapi.yaml`, apesar de sempre devolver
+  `{scope, affected_campaign_ids}` (`routes_campaigns.py _do_kill_switch`, confirmado por
+  leitura direta) — mesma classe de achado das execuções anteriores (campo real, ausente do
+  contrato), desta vez um schema de resposta inteiro, não um campo isolado.
+- **Dependências**: WP-07 (mesma área do `/dashboard`); `getServerCampaigns` (WP-05).
+- **Segurança**: `Permission.KILL_SWITCH` não é universal (apenas OWNER/ADMIN/FINANCE/APPROVER
+  em `permissions.py`, confirmado por leitura direta — nem MARKETER nem VIEWER a possuem);
+  `Idempotency-Key` obrigatório; toda chamada gera evento de auditoria, inclusive quando nada é
+  afetado (comportamento já existente, não alterado); nunca amplia efeito, apenas reduz —
+  invariante do próprio domínio, nunca reimplementado nem contornado na UI.
+- **Critérios de aceitação**: usuário com a permissão aciona a parada para uma campanha
+  específica ou para o tenant inteiro; o resultado (campanhas afetadas) é exibido; a ação fica
+  registrada na auditoria (confirmado por leitura da resposta da API ou de teste de backend,
+  não necessariamente por uma tela de auditoria nesta tela — ver "fora de escopo").
+- **Testes**: mesma disciplina dos WP-05/06/07 — teste de backend via sessão Web real se algum
+  gap real for descoberto; Vitest para o componente novo; E2E de fumaça sem backend; E2E
+  cross-stack real.
+- **Riscos**: baixos — nenhuma rota nova de backend esperada; o único achado real conhecido de
+  antemão é a correção aditiva do schema de resposta do contrato.
+- **Rollback**: reverter para o estado do WP-07; painel novo isolado em `/dashboard`, nenhuma
+  outra tela depende dele.
+- **Gate**: nenhum gate formal do roadmap original cobre este bloco — tratado como extensão do
+  Gate 5, mesma disciplina dos WP-06/07.
+- **Definição de pronto**: parada de emergência funciona ponta a ponta (escopo `CAMPAIGN` e
+  escopo `TENANT`) com dados simulados, e o resultado é visível ao usuário.
+- **Autorização necessária**: autorização do Diretor de continuar a construção sob o mesmo
+  bloqueio de cota do CI, reafirmada em 21/09/2026 ("vamos continuar a construção eu autorizo
+  prosseguir e no final iremos auditar e corrigir o que for necessário"); revisão de FM QA
+  Engineer permanece pendente, como em todo bloco desde o WP-02.
+
+---
+
+## 3. Blocos além do WP-08 (não detalhados como Work Package nesta missão)
+
+**Nota (21/09/2026): WP-01 a WP-08 estão todos implementados** (ou, no caso do WP-08, sendo
+implementado nesta mesma sessão), sob a autorização contínua do Diretor de continuar a
+construção enquanto a cota do CI do GitHub Actions está esgotada ("vamos continuar trabalhando
+na construção e fazer tudo que for possível sem atrasar o término e no final faremos os testes
+necessários", reafirmada em seguida: "vamos continuar a construção eu autorizo prosseguir e no
+final iremos auditar e corrigir o que for necessário" — os "testes necessários"/"auditar e
+corrigir" referem-se à confirmação do CI remoto e a uma auditoria humana formal posteriores,
+não aos testes locais desta execução, que seguem obrigatórios e executados a cada passo).
+Nenhum bloco além do WP-08 foi definido; qualquer bloco seguinte exige a mesma disciplina de
+reconciliação de CURRENT usada para definir o WP-08.
+
+Publicação sandbox (depende de credenciais reais de sandbox de ao menos 1 provider — bloqueio externo, não técnico), reconciliação, métricas, recomendações/otimização limitada, hardening, acessibilidade, observabilidade, segurança formal, staging, produção controlada — todos dependem de decisões e Work Packages anteriores não executados nesta missão até 21/09/2026. Orçamento e autonomia, os dois candidatos tecnicamente desbloqueados encontrados até aqui, foram promovidos a WP-06 e WP-07 respectivamente; parada de emergência (kill switch), um terceiro candidato tecnicamente desbloqueado (rota já pronta e testada), foi promovido a WP-08 (ver acima). Retomar campanha pausada (resume) permanece um candidato real, mas bloqueado por uma lacuna arquitetural genuína (nenhuma operação canônica de retomada existe em `campaia_core/connectors.py`'s `AdsConnector` Protocol) — não promovido, registrado como achado real (P-40).
