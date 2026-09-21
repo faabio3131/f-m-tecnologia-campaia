@@ -405,7 +405,16 @@ export interface paths {
         /** Aprovacoes pendentes do usuario */
         get: operations["listApprovals"];
         put?: never;
-        post?: never;
+        /**
+         * Registra um novo pedido de aprovacao PENDING
+         * @description Nao documentado na paráfrase original do contrato, embora ja implementado e
+         *     exercitado desde o WP-05 (achado corrigido aqui, mesma classe dos achados de
+         *     campo ausente do WP-05/WP-06): sem esta rota, POST .../publish, PATCH .../budget
+         *     e a alteracao de nivel de autonomia nao tem como referenciar uma aprovacao "ja
+         *     registrada", pois nenhuma outra rota cria uma. Nao produz nenhum efeito de
+         *     dominio por si so -- apenas registra um ApprovalRequest PENDING.
+         */
+        post: operations["createApproval"];
         delete?: never;
         options?: never;
         head?: never;
@@ -647,6 +656,16 @@ export interface components {
             id?: string;
             /** Format: uuid */
             campaign_id?: string;
+            /**
+             * @description O que esta aprovacao decide -- campo real, sempre presente na resposta (ver
+             *     api/helpers.py serialize_approval / api/models.py ApprovalResponse, onde ja
+             *     era descrito como "extra, not in the contract"), adicionado formalmente ao
+             *     contrato no WP-06 apos achado de que a Web precisa distinguir pedidos de
+             *     aprovacao por tipo (ex. BUDGET_CHANGE vs. PUBLISH) de forma tipada, nao por
+             *     correspondencia fragil de texto em `reason`.
+             * @enum {string}
+             */
+            kind?: "PUBLISH" | "BUDGET_CHANGE" | "AUTONOMY_CHANGE";
             /** @description Gatilho que exigiu aprovacao humana. */
             reason?: string;
             /**
@@ -662,6 +681,15 @@ export interface components {
             plan_version?: number;
             /** @enum {string} */
             status?: "PENDING" | "APPROVED" | "REJECTED" | "CHANGES_REQUESTED" | "EXPIRED";
+            /**
+             * @description Valor associado a este pedido de aprovacao quando aplicavel (ex.: o novo
+             *     daily_cap proposto para um BUDGET_CHANGE) -- campo real, sempre presente na
+             *     resposta (ver api/helpers.py serialize_approval), ausente do contrato ate
+             *     esta correcao (achado do WP-06, mesma classe do achado requested_by do
+             *     WP-05). Necessario para a Web aplicar de fato uma alteracao de orcamento ja
+             *     aprovada, sem reconstruir o valor de outra origem.
+             */
+            amount?: string | null;
             requires_dual_approval?: boolean;
             decided_by?: string[];
             /** Format: date-time */
@@ -1383,6 +1411,41 @@ export interface operations {
                     "application/json": components["schemas"]["ApprovalRequest"][];
                 };
             };
+        };
+    };
+    createApproval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    campaign_id: string;
+                    /** @enum {string} */
+                    kind: "PUBLISH" | "BUDGET_CHANGE" | "AUTONOMY_CHANGE";
+                    /** @description Valor associado ao pedido quando aplicavel (ex. novo daily_cap para BUDGET_CHANGE). */
+                    amount?: number | null;
+                    /** @default false */
+                    requires_dual_approval?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Aprovacao registrada, PENDING */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalRequest"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
         };
     };
     decideApproval: {

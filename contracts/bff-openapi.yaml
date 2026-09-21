@@ -501,6 +501,39 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/ApprovalRequest' }
+    post:
+      tags: [Governanca]
+      summary: Registra um novo pedido de aprovacao PENDING
+      description: |
+        Nao documentado na paráfrase original do contrato, embora ja implementado e
+        exercitado desde o WP-05 (achado corrigido aqui, mesma classe dos achados de
+        campo ausente do WP-05/WP-06): sem esta rota, POST .../publish, PATCH .../budget
+        e a alteracao de nivel de autonomia nao tem como referenciar uma aprovacao "ja
+        registrada", pois nenhuma outra rota cria uma. Nao produz nenhum efeito de
+        dominio por si so -- apenas registra um ApprovalRequest PENDING.
+      operationId: createApproval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [campaign_id, kind]
+              properties:
+                campaign_id: { type: string, format: uuid }
+                kind: { type: string, enum: [PUBLISH, BUDGET_CHANGE, AUTONOMY_CHANGE] }
+                amount:
+                  type: [number, 'null']
+                  description: Valor associado ao pedido quando aplicavel (ex. novo daily_cap para BUDGET_CHANGE).
+                requires_dual_approval: { type: boolean, default: false }
+      responses:
+        '201':
+          description: Aprovacao registrada, PENDING
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
 
   /approvals/{approvalId}/decision:
     post:
@@ -891,6 +924,16 @@ components:
       properties:
         id: { type: string, format: uuid }
         campaign_id: { type: string, format: uuid }
+        kind:
+          type: string
+          enum: [PUBLISH, BUDGET_CHANGE, AUTONOMY_CHANGE]
+          description: |
+            O que esta aprovacao decide -- campo real, sempre presente na resposta (ver
+            api/helpers.py serialize_approval / api/models.py ApprovalResponse, onde ja
+            era descrito como "extra, not in the contract"), adicionado formalmente ao
+            contrato no WP-06 apos achado de que a Web precisa distinguir pedidos de
+            aprovacao por tipo (ex. BUDGET_CHANGE vs. PUBLISH) de forma tipada, nao por
+            correspondencia fragil de texto em `reason`.
         reason: { type: string, description: Gatilho que exigiu aprovacao humana. }
         requested_by:
           type: string
@@ -904,6 +947,15 @@ components:
             aprova a propria proposta, campaia_core.permissions.can_approve).
         plan_version: { type: integer }
         status: { type: string, enum: [PENDING, APPROVED, REJECTED, CHANGES_REQUESTED, EXPIRED] }
+        amount:
+          type: [string, 'null']
+          description: |
+            Valor associado a este pedido de aprovacao quando aplicavel (ex.: o novo
+            daily_cap proposto para um BUDGET_CHANGE) -- campo real, sempre presente na
+            resposta (ver api/helpers.py serialize_approval), ausente do contrato ate
+            esta correcao (achado do WP-06, mesma classe do achado requested_by do
+            WP-05). Necessario para a Web aplicar de fato uma alteracao de orcamento ja
+            aprovada, sem reconstruir o valor de outra origem.
         requires_dual_approval: { type: boolean }
         decided_by: { type: array, items: { type: string, format: uuid } }
         created_at: { type: string, format: date-time }
