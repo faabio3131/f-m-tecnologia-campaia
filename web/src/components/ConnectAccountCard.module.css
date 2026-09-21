@@ -1,0 +1,32 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-2);
+  padding: var(--campaia-space-4);
+  border: 1px solid var(--campaia-color-border);
+  border-radius: var(--campaia-radius-md);
+  background: var(--campaia-color-surface);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--campaia-space-2);
+}
+
+.label {
+  font-weight: 600;
+}
+
+.accountName {
+  margin: 0;
+  font-size: var(--campaia-font-size-sm);
+  color: var(--campaia-color-text-muted);
+}
+
+.error {
+  margin: 0;
+  color: var(--campaia-color-warning-text);
+  font-size: var(--campaia-font-size-sm);
+}

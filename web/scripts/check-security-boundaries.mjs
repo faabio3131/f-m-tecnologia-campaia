@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// CLI para a verificacao das fronteiras de seguranca do frontend (WP-01 + WP-02 + WP-03).
+// CLI para a verificacao das fronteiras de seguranca do frontend (WP-01 a WP-04).
 // Nao certifica seguranca formal do produto -- apenas confirma que as proibicoes
 // explicitas (sem token/segredo no bundle, sem credencial em storage do navegador, e sem
-// chamada de rede ao BFF fora dos pontos legitimos do WP-02/WP-03 -- leitura de sessao
-// server-side, logout client-side e troca de tenant client-side, ambas protegidas por
-// CSRF) nao foram violadas no codigo-fonte. Logica compartilhada com
+// chamada de rede ao BFF fora dos pontos legitimos do WP-02/WP-03/WP-04 -- leitura de
+// sessao server-side, logout, troca de tenant, Brand Kit e conectar contas client-side,
+// todas protegidas por CSRF) nao foram violadas no codigo-fonte. Logica compartilhada com
 // tests/boundaries.test.ts em scripts/lib/security-boundaries.mjs.
 import { checkSecurityBoundaries } from "./lib/security-boundaries.mjs";
 
@@ -25,5 +25,5 @@ console.log(
   `OK: nenhuma violacao das fronteiras de seguranca em ${scannedFileCount} arquivo(s) verificado(s) sob web/src.`,
 );
 console.log(
-  "Nao certifica seguranca formal do produto -- apenas as fronteiras especificas do WP-01/WP-02/WP-03 (sem token/segredo, sem credencial em storage do navegador, chamadas de rede ao BFF restritas a session.ts/LogoutButton.tsx/TenantSwitcher.tsx).",
+  "Nao certifica seguranca formal do produto -- apenas as fronteiras especificas do WP-01 a WP-04 (sem token/segredo, sem credencial em storage do navegador, chamadas de rede ao BFF restritas a session.ts/LogoutButton.tsx/TenantSwitcher.tsx/BrandKitForm.tsx/ConnectAccountCard.tsx).",
 );

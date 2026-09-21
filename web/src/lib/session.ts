@@ -1,21 +1,17 @@
 import { cookies } from "next/headers";
-import type { Me, SessionMemberships } from "@/contracts/types";
+import type { BrandProfile, Connection, Me, SessionMemberships } from "@/contracts/types";
 
 /**
- * WP-02: server-only session read. Runs on the Next.js server (never shipped to the
- * client bundle -- this file has no "use client" and is only ever imported by Server
- * Components), forwards the browser's HttpOnly `campaia_session` cookie to the BFF's
- * `GET /me`, and returns the real, session-derived principal or null.
+ * WP-02: server-only, session-cookie-authenticated GET. Runs on the Next.js server (never
+ * shipped to the client bundle -- this file has no "use client" and is only ever imported
+ * by Server Components), forwards the browser's HttpOnly `campaia_session` cookie to the
+ * BFF, and returns the parsed JSON or null on any failure (missing config, no session, BFF
+ * error) -- callers must not distinguish those cases beyond what the null already means.
  *
  * The session cookie itself is never readable by client-side JS (HttpOnly) and is never
- * exposed through this function's return value -- only the derived `Me` payload is.
- *
- * The BFF origin is not a secret -- it is the same public origin the browser is directly
- * redirected to for /auth/login -- so a single NEXT_PUBLIC_* variable is used both here
- * (server-side read) and for building browser-facing links, rather than maintaining two
- * variables that could drift apart.
+ * exposed through any of this file's return values -- only the derived JSON payloads are.
  */
-export async function getServerSession(): Promise<Me | null> {
+async function getWithSessionCookie<T>(path: string): Promise<T | null> {
   const bffOrigin = getPublicBffOrigin();
   if (!bffOrigin) {
     return null;
@@ -27,7 +23,7 @@ export async function getServerSession(): Promise<Me | null> {
     return null;
   }
 
-  const response = await fetch(`${bffOrigin}/me`, {
+  const response = await fetch(`${bffOrigin}${path}`, {
     headers: { cookie: `campaia_session=${sessionCookie.value}` },
     cache: "no-store",
   });
@@ -36,39 +32,32 @@ export async function getServerSession(): Promise<Me | null> {
     return null;
   }
 
-  return (await response.json()) as Me;
+  return (await response.json()) as T;
+}
+
+export async function getServerSession(): Promise<Me | null> {
+  return getWithSessionCookie<Me>("/me");
 }
 
 /**
- * WP-03: server-only read of the session's real tenant memberships (GET
- * /session/memberships), same pattern as getServerSession above -- the HttpOnly session
- * cookie is forwarded server-side, never exposed to client-side JS. Returns null on any
- * failure (missing config, no session, BFF error); callers must not distinguish "empty
- * memberships" (impossible -- a real session always has at least its own active tenant)
- * from "could not be read" beyond what the null itself already means.
+ * WP-03: the session's real tenant memberships (GET /session/memberships). A real session
+ * always has at least its own active tenant, so an empty result is impossible here -- null
+ * means the read itself failed, never "no memberships".
  */
 export async function getServerSessionMemberships(): Promise<SessionMemberships | null> {
-  const bffOrigin = getPublicBffOrigin();
-  if (!bffOrigin) {
-    return null;
-  }
+  return getWithSessionCookie<SessionMemberships>("/session/memberships");
+}
 
-  const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get("campaia_session");
-  if (!sessionCookie) {
-    return null;
-  }
+/** WP-04: the tenant's Brand Kits (GET /brand-profiles). Empty array is a real, valid
+ * state (no Brand Kit created yet) -- only null means the read itself failed. */
+export async function getServerBrandProfiles(): Promise<BrandProfile[] | null> {
+  return getWithSessionCookie<BrandProfile[]>("/brand-profiles");
+}
 
-  const response = await fetch(`${bffOrigin}/session/memberships`, {
-    headers: { cookie: `campaia_session=${sessionCookie.value}` },
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    return null;
-  }
-
-  return (await response.json()) as SessionMemberships;
+/** WP-04: the tenant's connected accounts (GET /connections). Empty array is a real, valid
+ * state (nothing connected yet) -- only null means the read itself failed. */
+export async function getServerConnections(): Promise<Connection[] | null> {
+  return getWithSessionCookie<Connection[]>("/connections");
 }
 
 export function getPublicBffOrigin(): string | undefined {
