@@ -5,11 +5,13 @@ const {
   getServerSession,
   getServerBrandProfiles,
   getServerConnections,
+  getServerConnectionCapabilities,
   getPublicBffOrigin,
 } = vi.hoisted(() => ({
   getServerSession: vi.fn(),
   getServerBrandProfiles: vi.fn(),
   getServerConnections: vi.fn(),
+  getServerConnectionCapabilities: vi.fn(),
   getPublicBffOrigin: vi.fn(),
 }));
 
@@ -17,6 +19,7 @@ vi.mock("@/lib/session", () => ({
   getServerSession,
   getServerBrandProfiles,
   getServerConnections,
+  getServerConnectionCapabilities,
   getPublicBffOrigin,
 }));
 
@@ -104,19 +107,49 @@ describe("OnboardingPage", () => {
     expect(screen.queryByRole("link", { name: "Concluir Onboarding" })).not.toBeInTheDocument();
   });
 
-  it("enables 'Concluir Onboarding' once at least one channel is connected", async () => {
+  it("enables 'Concluir Onboarding' once at least one channel is connected, showing its real capabilities", async () => {
     getPublicBffOrigin.mockReturnValue("https://bff.example");
     getServerSession.mockResolvedValue(ME);
     getServerBrandProfiles.mockResolvedValue([]);
     getServerConnections.mockResolvedValue([CONNECTION]);
+    getServerConnectionCapabilities.mockResolvedValue([
+      {
+        provider: "GOOGLE_ADS",
+        capability_key: "PUBLISH:GOOGLE_ADS",
+        country: "BR",
+        api_version: "sim-1",
+        supported: true,
+        requires_approval: false,
+        evidence_url: null,
+        verified_at: "2026-01-01T00:00:00Z",
+        notes: null,
+      },
+    ]);
 
     await renderOnboardingPage();
 
+    expect(getServerConnectionCapabilities).toHaveBeenCalledWith("conn-1");
     expect(screen.getByText("Conectado (simulado)")).toBeInTheDocument();
+    expect(screen.getByText(/PUBLISH:GOOGLE_ADS: suportada/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Desconectar" })).toBeInTheDocument();
     const finishLink = screen.getByRole("link", { name: "Concluir Onboarding" });
     expect(finishLink).toHaveAttribute("href", "/dashboard");
     expect(
       screen.queryByText("Conecte ao menos uma conta para concluir o onboarding."),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows an error note on the card when the capabilities read itself fails", async () => {
+    getPublicBffOrigin.mockReturnValue("https://bff.example");
+    getServerSession.mockResolvedValue(ME);
+    getServerBrandProfiles.mockResolvedValue([]);
+    getServerConnections.mockResolvedValue([CONNECTION]);
+    getServerConnectionCapabilities.mockResolvedValue(null);
+
+    await renderOnboardingPage();
+
+    expect(
+      screen.getByText("Não foi possível carregar as capacidades desta conexão."),
+    ).toBeInTheDocument();
   });
 });

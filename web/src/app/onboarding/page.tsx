@@ -4,9 +4,11 @@ import { Card } from "@/components/Card";
 import { ConnectAccountCard } from "@/components/ConnectAccountCard";
 import { ErrorState } from "@/components/ErrorState";
 import { PageContainer } from "@/components/PageContainer";
+import type { Capability } from "@/contracts/types";
 import {
   getPublicBffOrigin,
   getServerBrandProfiles,
+  getServerConnectionCapabilities,
   getServerConnections,
   getServerSession,
 } from "@/lib/session";
@@ -21,7 +23,10 @@ const CONNECT_PROVIDERS = [
 /**
  * WP-04: primeira jornada funcional real -- Brand Kit (POST/GET /brand-profiles) e conectar
  * contas (POST /connections/oauth/start+complete, GET /connections), conforme
- * docs/product/13_ESPECIFICACAO_TELAS_APP.md §3.4/§4.
+ * docs/product/13_ESPECIFICACAO_TELAS_APP.md §3.4/§4. WP-09 completa o ciclo de vida da
+ * conexão: desconectar (DELETE /connections/{id}) e ver capacidades reais (GET
+ * /connections/{id}/capabilities, buscadas aqui no servidor para cada conexão ativa --
+ * mesmo padrão de toda outra leitura desta aplicação, nunca no cliente).
  *
  * Fora do escopo, deliberadamente: cadastro de empresa/CNPJ e unidade de negócio (§3.2/
  * §3.3 do mesmo documento) -- nenhum endpoint de criação de tenant/unidade existe no
@@ -81,6 +86,19 @@ export default async function OnboardingPage() {
     );
   }
 
+  // WP-09: capabilities only exist for a connection that is actually connected -- fetched
+  // server-side, same as every other read in this app, never client-side. `id` is typed
+  // optional by the generated contract types (same as Campaign.id elsewhere) but always
+  // present in the real response.
+  const activeConnections = connections.filter((c) => c.status === "ACTIVE");
+  const capabilitiesEntries = await Promise.all(
+    activeConnections.map(async (c) => {
+      const connectionId = c.id as string;
+      return [connectionId, await getServerConnectionCapabilities(connectionId)] as const;
+    }),
+  );
+  const capabilitiesByConnectionId = new Map<string, Capability[] | null>(capabilitiesEntries);
+
   // Roadmap WP-04: "Concluir Onboarding habilitada assim que pelo menos um canal estiver
   // conectado" -- the same rule the pre-existing Flutter onboarding used, preserved here as
   // a functional rule, not as ported code. There is no "onboarding_completed" flag to set
@@ -102,15 +120,21 @@ export default async function OnboardingPage() {
           apenas um canal.
         </p>
         <div className={styles.connectGrid}>
-          {CONNECT_PROVIDERS.map(({ provider, label }) => (
-            <ConnectAccountCard
-              key={provider}
-              bffOrigin={bffOrigin}
-              provider={provider}
-              label={label}
-              connection={connections.find((c) => c.provider === provider)}
-            />
-          ))}
+          {CONNECT_PROVIDERS.map(({ provider, label }) => {
+            const connection = connections.find((c) => c.provider === provider);
+            return (
+              <ConnectAccountCard
+                key={provider}
+                bffOrigin={bffOrigin}
+                provider={provider}
+                label={label}
+                connection={connection}
+                capabilities={
+                  connection ? capabilitiesByConnectionId.get(connection.id as string) : undefined
+                }
+              />
+            );
+          })}
         </div>
       </Card>
 

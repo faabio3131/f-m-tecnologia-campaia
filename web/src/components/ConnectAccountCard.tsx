@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
-import type { Connection } from "@/contracts/types";
+import type { Capability, Connection } from "@/contracts/types";
 import styles from "./ConnectAccountCard.module.css";
 
 /**
@@ -24,19 +24,29 @@ import styles from "./ConnectAccountCard.module.css";
  * deps.py's own docstring). This is the first place the Web frontend sends that header;
  * it sends a literal marker naming what actually happened (an explicit click on this
  * button, nothing more) rather than pretending a real MFA step occurred.
+ *
+ * WP-09 completes the connection lifecycle: "Desconectar" (DELETE /connections/{id}, CSRF +
+ * step-up + idempotency-key, same discipline as connecting) and the real capabilities list
+ * (`capabilities` prop, fetched server-side in onboarding/page.tsx via
+ * getServerConnectionCapabilities -- this component never fetches them itself, matching this
+ * app's boundary that every GET runs server-side).
  */
 function readCsrfCookie(): string | null {
   const match = document.cookie.match(/(?:^|; )campaia_csrf=([^;]+)/);
   return match ? decodeURIComponent(match[1]) : null;
 }
 
-const STEP_UP_MARKER = "web-ui-connect-account-button-clicked";
+const CONNECT_STEP_UP_MARKER = "web-ui-connect-account-button-clicked";
+const DISCONNECT_STEP_UP_MARKER = "web-ui-disconnect-account-button-clicked";
 
 export interface ConnectAccountCardProps {
   bffOrigin: string;
   provider: "GOOGLE_ADS" | "META" | "WHATSAPP";
   label: string;
   connection: Connection | undefined;
+  /** WP-09: undefined when not connected; null when the capabilities read itself failed;
+   * an array (always length 2 today, GOOGLE_ADS/META_ADS PUBLISH) when it succeeded. */
+  capabilities?: Capability[] | null;
 }
 
 export function ConnectAccountCard({
@@ -44,6 +54,7 @@ export function ConnectAccountCard({
   provider,
   label,
   connection,
+  capabilities,
 }: ConnectAccountCardProps) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,7 +76,7 @@ export function ConnectAccountCard({
         headers: {
           "content-type": "application/json",
           "x-csrf-token": csrfToken,
-          "x-step-up-token": STEP_UP_MARKER,
+          "x-step-up-token": CONNECT_STEP_UP_MARKER,
         },
         body: JSON.stringify({ provider }),
       });
@@ -82,7 +93,7 @@ export function ConnectAccountCard({
         headers: {
           "content-type": "application/json",
           "x-csrf-token": csrfToken,
-          "x-step-up-token": STEP_UP_MARKER,
+          "x-step-up-token": CONNECT_STEP_UP_MARKER,
           "idempotency-key": crypto.randomUUID(),
         },
         body: JSON.stringify({
@@ -103,6 +114,41 @@ export function ConnectAccountCard({
     }
   }
 
+  async function handleDisconnect() {
+    if (!connection) {
+      return;
+    }
+    setPending(true);
+    setError(null);
+    const csrfToken = readCsrfCookie();
+    if (!csrfToken) {
+      setError("Sessão sem cookie CSRF válido — recarregue a página.");
+      setPending(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${bffOrigin}/connections/${connection.id}`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: {
+          "x-csrf-token": csrfToken,
+          "x-step-up-token": DISCONNECT_STEP_UP_MARKER,
+          "idempotency-key": crypto.randomUUID(),
+        },
+      });
+      if (!response.ok) {
+        setError("Não foi possível desconectar. Tente novamente.");
+        setPending(false);
+        return;
+      }
+      window.location.reload();
+    } catch {
+      setError("Não foi possível desconectar. Tente novamente.");
+      setPending(false);
+    }
+  }
+
   const isConnected = connection !== undefined && connection.status === "ACTIVE";
 
   return (
@@ -116,7 +162,26 @@ export function ConnectAccountCard({
         )}
       </div>
       {isConnected ? (
-        <p className={styles.accountName}>{connection.display_name}</p>
+        <>
+          <p className={styles.accountName}>{connection.display_name}</p>
+          {capabilities === null ? (
+            <p className={styles.error} role="alert">
+              Não foi possível carregar as capacidades desta conexão.
+            </p>
+          ) : capabilities && capabilities.length > 0 ? (
+            <ul className={styles.capabilities}>
+              {capabilities.map((cap) => (
+                <li key={cap.capability_key}>
+                  {cap.capability_key}: {cap.supported ? "suportada" : "não suportada"}
+                  {cap.requires_approval ? " (exige aprovação)" : ""}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <Button onClick={handleDisconnect} disabled={pending} variant="secondary">
+            {pending ? "Desconectando…" : "Desconectar"}
+          </Button>
+        </>
       ) : (
         <Button onClick={handleConnect} disabled={pending} variant="secondary">
           {pending ? "Conectando…" : "Conectar (simulado)"}

@@ -5,6 +5,7 @@ import type {
   BrandProfile,
   Campaign,
   CampaignPlan,
+  Capability,
   Connection,
   Me,
   SessionMemberships,
@@ -67,6 +68,17 @@ export async function getServerBrandProfiles(): Promise<BrandProfile[] | null> {
  * state (nothing connected yet) -- only null means the read itself failed. */
 export async function getServerConnections(): Promise<Connection[] | null> {
   return getWithSessionCookie<Connection[]>("/connections");
+}
+
+/** WP-09: a connection's real, proven capabilities (GET /connections/{id}/capabilities).
+ * Server-side, same as every other read in this file -- kept off the client to match this
+ * app's own boundary (every GET goes through session.ts; only mutations run client-side). */
+export async function getServerConnectionCapabilities(
+  connectionId: string,
+): Promise<Capability[] | null> {
+  return getWithSessionCookie<Capability[]>(
+    `/connections/${encodeURIComponent(connectionId)}/capabilities`,
+  );
 }
 
 /** WP-05: the tenant's campaigns (GET /campaigns). Empty array is a real, valid state (no

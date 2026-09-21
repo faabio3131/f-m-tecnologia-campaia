@@ -30,3 +30,10 @@
   color: var(--campaia-color-warning-text);
   font-size: var(--campaia-font-size-sm);
 }
+
+.capabilities {
+  margin: 0;
+  padding-left: var(--campaia-space-4);
+  font-size: var(--campaia-font-size-sm);
+  color: var(--campaia-color-text-muted);
+}

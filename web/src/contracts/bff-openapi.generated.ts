@@ -601,7 +601,19 @@ export interface components {
             last_synced_at?: string | null;
         };
         Capability: {
+            provider?: components["schemas"]["Provider"];
             capability_key?: string;
+            /**
+             * @description Campo real, sempre presente na resposta (api/models.py CapabilityResponse.country),
+             *     ausente do contrato ate esta correcao (achado do WP-09, mesma classe dos achados
+             *     requested_by/kind/amount/max_level_allowed/business_unit_id dos WP-05 a WP-07).
+             */
+            country?: string;
+            /**
+             * @description Campo real, sempre presente na resposta (CapabilityResponse.api_version), ausente
+             *     do contrato ate esta correcao (achado do WP-09).
+             */
+            api_version?: string;
             supported?: boolean;
             requires_approval?: boolean;
             /** Format: uri */
