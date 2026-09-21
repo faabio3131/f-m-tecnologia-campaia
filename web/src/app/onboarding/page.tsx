@@ -103,8 +103,11 @@ export default async function OnboardingPage() {
   // conectado" -- the same rule the pre-existing Flutter onboarding used, preserved here as
   // a functional rule, not as ported code. There is no "onboarding_completed" flag to set
   // server-side (no such endpoint exists) -- completing onboarding just means the user is
-  // done with this flow and moves on to the authenticated shell.
-  const canFinishOnboarding = connections.length > 0;
+  // done with this flow and moves on to the authenticated shell. Must be `activeConnections`,
+  // not the raw `connections` list: since WP-09 added disconnect, a connection record can
+  // exist with status REVOKED, and a revoked-only history is not "at least one channel
+  // connected."
+  const canFinishOnboarding = activeConnections.length > 0;
 
   return (
     <PageContainer>

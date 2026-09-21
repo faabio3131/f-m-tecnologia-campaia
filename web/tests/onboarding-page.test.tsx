@@ -152,4 +152,24 @@ describe("OnboardingPage", () => {
       screen.getByText("Não foi possível carregar as capacidades desta conexão."),
     ).toBeInTheDocument();
   });
+
+  it("keeps 'Concluir Onboarding' disabled when the only connection on record is revoked (WP-09 regression)", async () => {
+    // Real bug found via the WP-10 cross-stack E2E regression run: before WP-09 added
+    // disconnect, every connection in `connections` was always ACTIVE, so
+    // `connections.length > 0` and `activeConnections.length > 0` were equivalent. WP-09
+    // made that false -- a revoked connection still shows up in `connections`, and the
+    // finish-onboarding rule must only count real active ones.
+    getPublicBffOrigin.mockReturnValue("https://bff.example");
+    getServerSession.mockResolvedValue(ME);
+    getServerBrandProfiles.mockResolvedValue([]);
+    getServerConnections.mockResolvedValue([{ ...CONNECTION, status: "REVOKED" as const }]);
+
+    await renderOnboardingPage();
+
+    expect(getServerConnectionCapabilities).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("Conecte ao menos uma conta para concluir o onboarding."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Concluir Onboarding" })).not.toBeInTheDocument();
+  });
 });
