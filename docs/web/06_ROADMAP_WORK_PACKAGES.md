@@ -1,6 +1,6 @@
 # CampaIA — Ponto Zero Web · 06. Roadmap e Work Packages
 
-**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019) — **WP-01 implementado e validado** (19/09/2026), **WP-02 implementado, com revisão de segurança humana pendente** (20/09/2026, ver `docs/web/09_CERTIFICACAO_WP02_AUTENTICACAO_SESSAO_WEB.md`), **WP-03 implementado, com a mesma revisão de segurança humana pendente** (21/09/2026, ver `docs/web/10_CERTIFICACAO_WP03_TENANCY_SHELL.md`), **WP-04 implementado, revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/11_CERTIFICACAO_WP04_ONBOARDING_BRAND_KIT.md`) e **WP-05 implementado, fechando o Gate 5 (primeira jornada crítica), revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/12_CERTIFICACAO_WP05_BRIEFING_APROVACAO.md`). WP-06 em diante permanecem não iniciados.
+**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019) — **WP-01 implementado e validado** (19/09/2026), **WP-02 implementado, com revisão de segurança humana pendente** (20/09/2026, ver `docs/web/09_CERTIFICACAO_WP02_AUTENTICACAO_SESSAO_WEB.md`), **WP-03 implementado, com a mesma revisão de segurança humana pendente** (21/09/2026, ver `docs/web/10_CERTIFICACAO_WP03_TENANCY_SHELL.md`), **WP-04 implementado, revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/11_CERTIFICACAO_WP04_ONBOARDING_BRAND_KIT.md`), **WP-05 implementado, fechando o Gate 5 (primeira jornada crítica), revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/12_CERTIFICACAO_WP05_BRIEFING_APROVACAO.md`) e **WP-06 implementado (alteração de orçamento, definido nesta mesma missão por reconciliação de CURRENT), mesma revisão pendente** (21/09/2026, ver `docs/web/13_CERTIFICACAO_WP06_ALTERACAO_ORCAMENTO.md`). Nenhum bloco além do WP-06 foi definido.
 
 ---
 
@@ -114,6 +114,8 @@ Esta seção registra a reconciliação de ordem original, anterior a qualquer e
 
 ### WP-06 — Alteração de orçamento (Web sobre API já pronta)
 
+**IMPLEMENTADO (21/09/2026)**
+
 **Definido em 21/09/2026, por reconciliação de CURRENT** (não fazia parte do roadmap
 original — este é o 3º bloco autorizado pelo Diretor, "pode avançar mais 3 blocos",
 depois de WP-04 e WP-05). Escolhido entre os candidatos da Seção 3 (abaixo) por ser o
@@ -152,18 +154,42 @@ como a Seção 3 original descrevia este candidato.
 - **Critérios de aceitação**: usuário propõe uma mudança de orçamento; um segundo usuário
   aprova (ou rejeita) na fila já existente; mudança aprovada é aplicada de verdade e reflete
   no orçamento exibido; mudança fora do limite percentual é recusada visivelmente.
-- **Testes**: mesma disciplina do WP-05 — testes de backend via sessão Web real (não só
-  Bearer fixture) se algum gap real for descoberto; Vitest para o(s) componente(s) novo(s);
-  E2E de fumaça sem backend; E2E cross-stack real.
-- **Riscos**: baixo — nenhuma rota nova de backend esperada (a menos que um gap real seja
-  descoberto durante a implementação, como aconteceu nos WP-04/WP-05).
+- **Achados reais corrigidos durante a execução (contrato, 3)**: `ApprovalRequest.kind` e
+  `.amount` estavam ausentes do contrato apesar de sempre presentes na resposta real
+  (`api/helpers.py serialize_approval`) — `kind` já era descrito no próprio código como
+  "extra, not in the contract"; `amount` nunca fora sequer mencionado. Sem `amount`
+  tipado, a Web não teria como aplicar de fato uma alteração já aprovada (precisaria
+  reconstruir o valor proposto de outra origem); sem `kind` tipado, não haveria forma
+  confiável de distinguir um pedido de `BUDGET_CHANGE` de um de `PUBLISH` na fila de
+  aprovação. Adicionalmente, `POST /approvals` (já implementado e já usado pelo WP-05)
+  nunca estivera documentado no contrato — corrigido aditivamente junto, já que estava
+  sendo tocado nesta mesma área.
+- **Achado real corrigido durante a execução (frontend)**: `Campaign.budget` (`total_amount`,
+  `daily_cap`, `spent_to_date`) é tipado `number` pelo contrato, mas a resposta real
+  serializa esses campos `Decimal` como **string JSON** (confirmado por teste de backend:
+  `"500"`, não `500`). Uma comparação estrita (`!==`) sem coerção nunca teria detectado
+  corretamente "esta aprovação já foi aplicada", escondendo permanentemente o botão
+  "Aplicar alteração". Corrigido coerindo ambos os lados via `Number(...)` no componente;
+  a divergência de tipo em si (contrato × serialização real) não foi corrigida no backend
+  — mudança maior, fora do escopo deste bloco, registrada como pendência.
+- **Testes**: backend — 2 novos (`test_budget_change_web_session.py`: jornada completa
+  propor→aprovar→aplicar via sessão Web real com dois usuários distintos; alteração além do
+  limite percentual recusada visivelmente na aplicação). Frontend — 9 novos Vitest
+  (`BudgetPanel`) + 1 E2E cross-stack real de dois usuários
+  (`e2e-crossstack/budget-change.spec.ts`). Regressão completa: 267 domínio + 166 API
+  (164 + 2) + 24/24 AsyncAPI + 99 Vitest (90 + 9) + 14 E2E de fumaça + 8 E2E cross-stack
+  (7 + 1) — todos verdes, zero regressão.
+- **Riscos**: baixo, como previsto — nenhuma rota nova de backend foi necessária; os
+  achados reais foram todos de contrato (campos ausentes) e de tipo (Decimal serializado
+  como string), nenhum deles bloqueou a execução.
 - **Rollback**: reverter para o estado do WP-05; `PATCH /campaigns/{id}/budget` não é
   chamado por nenhuma outra tela, então o rollback é puramente de frontend.
 - **Gate**: nenhum gate formal do roadmap original cobre este bloco (é um bloco novo,
   definido nesta reconciliação) — tratado como uma extensão do Gate 5, já que reutiliza sua
   infraestrutura de aprovação por completo.
 - **Definição de pronto**: alteração de orçamento funciona ponta a ponta com dois usuários
-  distintos (proponente e aprovador) e dados simulados.
+  distintos (proponente e aprovador) e dados simulados — **atingido**, confirmado por E2E
+  cross-stack real.
 - **Autorização necessária**: mesma autorização já concedida pelo Diretor para o 3º bloco
   ("pode avançar mais 3 blocos"); revisão de FM QA Engineer permanece pendente, como em
   todo bloco desde o WP-02.

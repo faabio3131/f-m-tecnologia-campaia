@@ -1,4 +1,4 @@
-# CampaIA Web — Fundação, sessão real, shell autenticado, onboarding e primeira jornada (WP-01 a WP-05)
+# CampaIA Web — Fundação, sessão real, shell autenticado, primeira jornada e orçamento (WP-01 a WP-06)
 
 Fundação técnica do frontend Web do CampaIA. Este diretório implementa o
 **WP-01 — Fundação do frontend Web** (aprovado pela ADR-0017), o
@@ -10,10 +10,13 @@ segurança humana por um FM Security Engineer ainda pendente), o
 `docs/web/10_CERTIFICACAO_WP03_TENANCY_SHELL.md`), o
 **WP-04 — Onboarding e Brand Kit** (ver
 `docs/web/11_CERTIFICACAO_WP04_ONBOARDING_BRAND_KIT.md`; revisão de FM QA
-Engineer ainda pendente) e o **WP-05 — Briefing, estratégia e aprovação**
+Engineer ainda pendente), o **WP-05 — Briefing, estratégia e aprovação**
 (fecha o Gate 5 — ver
 `docs/web/12_CERTIFICACAO_WP05_BRIEFING_APROVACAO.md`; mesma revisão de FM
-QA Engineer ainda pendente).
+QA Engineer ainda pendente) e o **WP-06 — Alteração de orçamento** (ver
+`docs/web/13_CERTIFICACAO_WP06_ALTERACAO_ORCAMENTO.md`; bloco não previsto
+no roadmap original, definido nesta mesma missão por reconciliação de
+CURRENT; mesma revisão de FM QA Engineer ainda pendente).
 
 **Não é** um produto comercial concluído. WP-01 (a tela `/`) permanece
 inteiramente fixture-based, sem nenhuma chamada de rede — essa garantia
@@ -23,8 +26,10 @@ WP-04 adiciona a página `/onboarding` (Brand Kit real, conexão simulada de
 contas). WP-05 adiciona `/campaigns` e `/approvals` (briefing, estratégia
 por IA, validação e fila de aprovação com segregação de funções real) —
 fechando a primeira jornada crítica ponta a ponta com dados simulados.
-Publicação real em um provedor de verdade continua fora do escopo (WP-06
-em diante, ainda não definido).
+WP-06 adiciona um painel de orçamento em `/campaigns/[id]`, reutilizando
+inteiramente a fila de aprovação do WP-05. Publicação real em um provedor
+de verdade continua fora do escopo (nenhum bloco além do WP-06 foi
+definido).
 
 ## Requisitos
 
@@ -132,7 +137,8 @@ web/
                     # LoadingState, ErrorState, EmptyState (estados padronizados -- WP-03);
                     # BrandKitForm, ConnectAccountCard (client, chamadas de rede -- WP-04);
                     # BriefForm, PlanPanel, ValidationPanel, ApprovalDecisionCard
-                    # (client, chamadas de rede -- WP-05)
+                    # (client, chamadas de rede -- WP-05); BudgetPanel (client, chamadas
+                    # de rede -- WP-06)
     contracts/     # types.ts (import estável) + bff-openapi.generated.ts (gerado, não editar)
     fixtures/       # dado fictício local, tipado a partir do contrato (usado só por /)
     lib/            # session.ts: leitura de sessão (WP-02), memberships (WP-03),
@@ -142,8 +148,9 @@ web/
   tests/           # Vitest: unitários, componentes, acessibilidade, fronteiras de segurança/contrato
   e2e/             # Playwright: smoke de /, /account, /dashboard, /onboarding, /campaigns,
                     # /approvals -- sem backend (CI padrão)
-  e2e-crossstack/  # Playwright: WP-03/04/05, login, troca de tenant, onboarding e jornada de
-                    # briefing/aprovação reais -- com backend (job dedicado)
+  e2e-crossstack/  # Playwright: WP-03/04/05/06, login, troca de tenant, onboarding, jornada
+                    # de briefing/aprovação e alteração de orçamento reais -- com backend
+                    # (job dedicado)
   scripts/         # CLIs de verificação (drift de contrato, fronteiras de segurança) + lógica compartilhada em scripts/lib/
   public/          # ativos estáticos (favicon)
 ```
@@ -268,23 +275,51 @@ Fora de escopo, deliberadamente: publicação real
 (`POST .../publish`) — depende de um adaptador de provider real que não
 existe.
 
-## O que ainda não existe (fora do escopo do WP-01 a WP-05)
+## Alteração de orçamento (WP-06)
+
+Bloco **não previsto no roadmap original**, definido nesta mesma missão
+por reconciliação de CURRENT (ver
+`docs/web/06_ROADMAP_WORK_PACKAGES.md` §"WP-06"). Reutiliza inteiramente
+a fila de aprovação do WP-05 — nenhuma tela nova de decisão.
+
+- **Propor**: `BudgetPanel` (Client Component, em `/campaigns/[id]`)
+  mostra o orçamento atual e, quando não há pedido pendente ou aprovado
+  para aplicar, um formulário para propor um novo teto diário — `POST
+  {BFF_ORIGIN}/approvals` (CSRF) com `kind: BUDGET_CHANGE` e o valor
+  proposto em `amount`.
+- **Decidir**: acontece na fila `/approvals` já existente, sem nenhuma
+  mudança de UI — `ApprovalDecisionCard` já soube decidir qualquer `kind`
+  desde o WP-05.
+- **Aplicar**: uma vez `APPROVED`, `BudgetPanel` mostra o valor aprovado
+  e um botão "Aplicar alteração" — `PATCH
+  {BFF_ORIGIN}/campaigns/{id}/budget` (CSRF + `X-Step-Up-Token` +
+  `Idempotency-Key`) com o `daily_cap` aprovado e o `approval_id`.
+  Variação percentual fora do limite configurado no domínio é recusada
+  com `422 BUDGET_LIMIT`, mostrado ao usuário tal como o servidor o
+  descreve — nunca "ajustada automaticamente".
+
+Fora de escopo, deliberadamente: alterar `total_amount` (orçamento
+total) — só o teto diário é editável por esta tela.
+
+## O que ainda não existe (fora do escopo do WP-01 a WP-06)
 
 - Publicação real em um provedor de verdade, reconciliação, métricas,
-  orçamento, otimização, hardening, acessibilidade formal, observabilidade
-  — WP-06 em diante, escopo ainda não definido.
+  otimização, hardening, acessibilidade formal, observabilidade — nenhum
+  bloco além do WP-06 foi definido.
+- Alterar `total_amount` (orçamento total) — só `daily_cap` é editável.
 - Qualquer chamada ao BFF fora de `session.ts`/`LogoutButton.tsx`/
   `TenantSwitcher.tsx`/`BrandKitForm.tsx`/`ConnectAccountCard.tsx`/
   `BriefForm.tsx`/`PlanPanel.tsx`/`ValidationPanel.tsx`/
-  `ApprovalDecisionCard.tsx` — a tela `/` (WP-01) permanece inteiramente
-  fixture-based.
+  `ApprovalDecisionCard.tsx`/`BudgetPanel.tsx` — a tela `/` (WP-01)
+  permanece inteiramente fixture-based.
 - Deploy, infraestrutura, qualquer configuração de nuvem.
 - Revisão de segurança humana (FM Security Engineer) da superfície de
   autenticação — pendência explícita, ver certificação do WP-02 (segue
   pendente; nenhuma revisão humana ocorreu em nenhuma execução até
-  agora). Revisão de FM QA Engineer do WP-04/WP-05 — também pendente.
+  agora). Revisão de FM QA Engineer do WP-04/WP-05/WP-06 — também
+  pendente.
 
-## Fronteiras de segurança (WP-01 a WP-05)
+## Fronteiras de segurança (WP-01 a WP-06)
 
 Verificadas automaticamente por `npm run boundary:check` (e por
 `tests/boundaries.test.ts`, que roda a mesma lógica sem subprocesso) a
@@ -300,15 +335,16 @@ cada execução local e no CI:
   `src/components/LogoutButton.tsx` (logout client-side, protegido por
   CSRF), `src/components/TenantSwitcher.tsx` (troca de tenant, WP-03),
   `src/components/{BrandKitForm,ConnectAccountCard}.tsx` (Brand Kit e
-  conexão simulada de contas, WP-04) e
+  conexão simulada de contas, WP-04),
   `src/components/{BriefForm,PlanPanel,ValidationPanel,
   ApprovalDecisionCard}.tsx` (briefing, estratégia, validação e decisão
-  de aprovação, WP-05) — os nove únicos pontos legítimos, todos
-  protegidos por CSRF. Todo o resto de `web/src`, incluindo a tela `/` e
-  os componentes do WP-01, permanece em zero chamadas de rede.
+  de aprovação, WP-05) e `src/components/BudgetPanel.tsx` (alteração de
+  orçamento, WP-06) — os dez únicos pontos legítimos, todos protegidos
+  por CSRF. Todo o resto de `web/src`, incluindo a tela `/` e os
+  componentes do WP-01, permanece em zero chamadas de rede.
 
 Este script **não certifica segurança formal do produto** — apenas as
-proibições explícitas de escopo do WP-01 a WP-05.
+proibições explícitas de escopo do WP-01 a WP-06.
 
 ## Próximo gate
 
@@ -326,5 +362,10 @@ autotestado por completo**: onboarding e Brand Kit pelo WP-04 (ver
 estratégia → validação → aprovação pelo WP-05 (ver
 `docs/web/12_CERTIFICACAO_WP05_BRIEFING_APROVACAO.md`) — ambos com
 revisão de FM QA Engineer pendente, portanto o Gate 5 está tecnicamente
-completo mas não formalmente fechado. WP-06 em diante: escopo ainda não
-definido a partir do CURRENT que agora existe.
+completo mas não formalmente fechado. WP-06 (alteração de orçamento,
+definido nesta mesma missão por reconciliação de CURRENT — não estava no
+roadmap original) **implementado e autotestado** — ver
+`docs/web/13_CERTIFICACAO_WP06_ALTERACAO_ORCAMENTO.md`, mesma revisão
+pendente. Com o WP-06, a autorização de 3 blocos do Diretor ("pode
+avançar mais 3 blocos") está integralmente executada; nenhum bloco além
+do WP-06 foi definido.
