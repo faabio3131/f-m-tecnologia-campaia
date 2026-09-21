@@ -22,6 +22,7 @@ from campaia_core.permissions import Principal, Role
 from .oidc import (
     PENDING_LOGIN_TTL_SECONDS,
     SESSION_TTL_SECONDS,
+    Membership,
     OidcIssuerConfig,
     PendingLogin,
     SessionRecord,
@@ -75,19 +76,39 @@ class TokenPrincipal:
         recognize simply grants nothing for that string, rather than failing the whole
         request or being coerced into an unintended role.
         """
-        roles: set[Role] = set()
-        for raw_role in verified.roles:
-            try:
-                roles.add(Role(raw_role))
-            except ValueError:
-                continue
         return TokenPrincipal(
             user_id=verified.subject,
             tenant_id=verified.tenant_id,
-            roles=frozenset(roles),
+            roles=_parse_roles(verified.roles),
             business_unit_id=verified.business_unit_id,
             mfa_enabled=verified.mfa_enabled,
         )
+
+    def with_membership(self, membership: "Membership") -> "TokenPrincipal":
+        """WP-03: same user, different active tenant -- returned by a successful
+        POST /session/switch-tenant. `user_id` and `mfa_enabled` are the user's own and
+        never change across tenants; `tenant_id`/`business_unit_id`/`roles` become whatever
+        the target membership grants (never the roles of the tenant being left).
+        """
+        return TokenPrincipal(
+            user_id=self.user_id,
+            tenant_id=membership.tenant_id,
+            roles=_parse_roles(membership.roles),
+            business_unit_id=membership.business_unit_id,
+            mfa_enabled=self.mfa_enabled,
+        )
+
+
+def _parse_roles(raw_roles: tuple[str, ...] | list[str]) -> frozenset[Role]:
+    """Shared by from_verified_id_token and with_membership: unknown role strings are
+    dropped, never silently granted as a catch-all."""
+    roles: set[Role] = set()
+    for raw_role in raw_roles:
+        try:
+            roles.add(Role(raw_role))
+        except ValueError:
+            continue
+    return frozenset(roles)
 
 
 def _seed_tokens() -> dict[str, TokenPrincipal]:
@@ -351,10 +372,14 @@ class AppState:
 
     # -- WP-02: real Web sessions ---------------------------------------------------
 
-    def create_session(self, principal: TokenPrincipal) -> tuple[str, str]:
+    def create_session(
+        self, principal: TokenPrincipal, *, memberships: tuple[Membership, ...] = ()
+    ) -> tuple[str, str]:
         """Returns (session_id, csrf_token). Always a fresh id and a fresh expiry --
         WP-02's "rotacao de sessao" happens at login, not via silent per-request extension
-        of an existing session.
+        of an existing session. `memberships` defaults to empty for callers that predate
+        WP-03 (fixture-token paths); real logins (api/routes_auth.py) always pass the
+        verified ID token's own memberships.
         """
         session_id = generate_session_id()
         csrf_token = generate_csrf_token()
@@ -362,6 +387,7 @@ class AppState:
             principal=principal,
             csrf_token=csrf_token,
             expires_at=time.time() + SESSION_TTL_SECONDS,
+            memberships=memberships,
         )
         return session_id, csrf_token
 
@@ -378,3 +404,32 @@ class AppState:
 
     def delete_session(self, session_id: str) -> None:
         self.sessions.pop(session_id, None)
+
+    # -- WP-03: tenant switching -----------------------------------------------------
+
+    def switch_tenant(self, session_id: str, target_tenant_id: str) -> tuple[str, str] | None:
+        """Re-issues the session (new id, new CSRF token, new expiry -- same rotation
+        discipline as login) with its active principal switched to `target_tenant_id`.
+        Returns the new (session_id, csrf_token), or None if the current session is
+        unknown/expired OR `target_tenant_id` is not one of its real memberships -- the
+        server is the only source of truth for which tenants a user may switch into, never
+        client-supplied roles.
+
+        Any step-up (recent re-auth for sensitive actions, campaia_core.permissions
+        STEP_UP_MAX_AGE) the user held is invalidated across ALL tenants on switch, not
+        just the one being left -- switching tenant is itself a sensitive change of
+        authority, so the user must re-verify step-up freshly in whichever tenant they act
+        in next, even if that happens to be the tenant they just left.
+        """
+        record = self.get_session(session_id)
+        if record is None:
+            return None
+        target = next((m for m in record.memberships if m.tenant_id == target_tenant_id), None)
+        if target is None:
+            return None
+
+        new_principal = record.principal.with_membership(target)
+        self.delete_session(session_id)
+        for key in [k for k in self.step_up_at if k[1] == new_principal.user_id]:
+            del self.step_up_at[key]
+        return self.create_session(new_principal, memberships=record.memberships)

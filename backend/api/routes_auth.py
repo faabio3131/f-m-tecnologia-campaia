@@ -9,9 +9,11 @@ request is refused rather than silently degraded.
 
 from __future__ import annotations
 
+import os
+
 import httpx
 from starlette.requests import Request
-from starlette.responses import RedirectResponse
+from starlette.responses import RedirectResponse, Response
 
 from .deps import CSRF_COOKIE_NAME, SESSION_COOKIE_NAME, get_state
 from .errors import ApiError
@@ -68,10 +70,32 @@ def _resolve_oidc_config(request: Request) -> tuple[OidcIssuerConfig, bool]:
 def _redirect_target(request: Request) -> str:
     requested = request.query_params.get("redirect_after_login", _DEFAULT_REDIRECT_AFTER_LOGIN)
     # Same-origin-relative only -- never redirect the browser to an external host after
-    # login, regardless of what a caller supplies (open-redirect prevention).
+    # login, regardless of what a caller supplies (open-redirect prevention). "Same
+    # origin" here means the Web frontend's origin (see _frontend_url below), never this
+    # backend's own -- a client-supplied path is never trusted to also carry an origin.
     if not requested.startswith("/") or requested.startswith("//"):
         return _DEFAULT_REDIRECT_AFTER_LOGIN
     return requested
+
+
+def _frontend_url(path: str) -> str:
+    """Resolves a same-origin-relative path (already validated by _redirect_target, or a
+    fixed literal like "/" for logout) against the Web frontend's own origin -- NOT this
+    backend's.
+
+    The BFF and the Web frontend are, by design, different origins (README.md:
+    NEXT_PUBLIC_CAMPAIA_BFF_ORIGIN is "a origem publica do backend", e.g.
+    https://api.campaia.app, distinct from the frontend's own https://app.campaia.app).
+    A bare relative Location header on a 302 issued by THIS backend resolves, per HTTP,
+    against THIS backend's own origin when the browser follows it -- landing the user on
+    the BFF, not the app, which has no route to serve. CAMPAIA_WEB_ORIGIN (optional; unset
+    keeps today's path-relative behaviour, correct only when frontend and backend truly
+    share an origin, e.g. behind a single reverse proxy) is the one trusted, backend-owned
+    source for the frontend's real origin -- never client-supplied, so this cannot become
+    an open redirect.
+    """
+    web_origin = os.environ.get("CAMPAIA_WEB_ORIGIN", "").rstrip("/")
+    return f"{web_origin}{path}" if web_origin else path
 
 
 async def login(request: Request) -> RedirectResponse:
@@ -158,9 +182,9 @@ async def callback(request: Request) -> RedirectResponse:
         raise ApiError("UNAUTHENTICATED", f"ID token verification failed: {exc}") from exc
 
     principal = TokenPrincipal.from_verified_id_token(verified)
-    session_id, csrf_token = state.create_session(principal)
+    session_id, csrf_token = state.create_session(principal, memberships=verified.memberships)
 
-    response = RedirectResponse(url=pending.redirect_after_login, status_code=302)
+    response = RedirectResponse(url=_frontend_url(pending.redirect_after_login), status_code=302)
     _set_session_cookies(response, session_id=session_id, csrf_token=csrf_token)
     return response
 
@@ -171,13 +195,13 @@ async def logout(request: Request) -> RedirectResponse:
     if session_id:
         state.delete_session(session_id)
 
-    response = RedirectResponse(url="/", status_code=302)
+    response = RedirectResponse(url=_frontend_url("/"), status_code=302)
     response.delete_cookie(SESSION_COOKIE_NAME, path="/")
     response.delete_cookie(CSRF_COOKIE_NAME, path="/")
     return response
 
 
-def _set_session_cookies(response: RedirectResponse, *, session_id: str, csrf_token: str) -> None:
+def _set_session_cookies(response: Response, *, session_id: str, csrf_token: str) -> None:
     response.set_cookie(
         SESSION_COOKIE_NAME,
         session_id,

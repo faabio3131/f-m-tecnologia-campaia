@@ -14,6 +14,7 @@ from starlette.requests import Request
 from campaia_core.permissions import Principal
 
 from .errors import ApiError
+from .oidc import SessionRecord
 from .state import AppState, TokenPrincipal
 
 MIN_IDEMPOTENCY_KEY_LEN = 16
@@ -68,6 +69,24 @@ def require_auth(request: Request) -> TokenPrincipal:
     if principal is None:
         raise ApiError("UNAUTHENTICATED", "Unknown or expired token.")
     return principal
+
+
+def require_web_session(request: Request) -> tuple[str, SessionRecord]:
+    """WP-03: like require_auth, but ONLY the real Web session cookie path -- never the
+    fixture Bearer token fallback. /session/memberships and /session/switch-tenant read
+    and mutate AppState.sessions by session id, which a fixture Bearer token (test/local-dev
+    only, never itself a session) simply does not have. Returns (session_id, record) since
+    switch-tenant needs the id to replace the session, not just the principal it currently
+    resolves to.
+    """
+    state = get_state(request)
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_id:
+        raise ApiError("UNAUTHENTICATED", "No Web session cookie present.")
+    record = state.get_session(session_id)
+    if record is None:
+        raise ApiError("UNAUTHENTICATED", "Session is invalid, expired, or revoked.")
+    return session_id, record
 
 
 def note_step_up_header(request: Request, fixture: TokenPrincipal) -> None:

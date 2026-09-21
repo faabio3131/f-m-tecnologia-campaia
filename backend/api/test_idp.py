@@ -86,6 +86,22 @@ TEST_IDENTITIES: dict[str, dict] = {
         "roles": ["OWNER"],
         "mfa_enabled": True,
     },
+    # WP-03: the only identity with more than one real tenant membership -- exercises the
+    # tenant switcher. Active tenant on login is demo-tenant (first membership); the second
+    # membership (other-tenant) is only reachable via a real, authenticated switch, never by
+    # editing this fixture's "active" fields directly.
+    "multi_tenant_owner": {
+        "sub": "user-owner-3",
+        "email": "owner@multi-tenant.test",
+        "tenant_id": "demo-tenant",
+        "business_unit_id": "bu-1",
+        "roles": ["OWNER"],
+        "mfa_enabled": True,
+        "memberships": [
+            {"tenant_id": "demo-tenant", "business_unit_id": "bu-1", "roles": ["OWNER"]},
+            {"tenant_id": "other-tenant", "business_unit_id": "bu-2", "roles": ["VIEWER"]},
+        ],
+    },
 }
 
 
@@ -224,6 +240,8 @@ class TestIdentityProvider:
             "campaia_roles": identity["roles"],
             "campaia_mfa_enabled": identity["mfa_enabled"],
         }
+        if "memberships" in identity:
+            claims["campaia_memberships"] = identity["memberships"]
         return jwt.encode(
             claims, self._private_key, algorithm="RS256", headers={"kid": self._kid}
         )

@@ -31,6 +31,24 @@ class MeResponse(BaseModel):
     mfa_enabled: bool
 
 
+# --------------------------------------------------------------------------- WP-03 tenant membership
+
+
+class MembershipResponse(BaseModel):
+    tenant_id: str
+    business_unit_id: str | None
+    roles: list[str]
+    is_active: bool
+
+
+class SessionMembershipsResponse(BaseModel):
+    memberships: list[MembershipResponse]
+
+
+class SwitchTenantRequest(ApiModel):
+    tenant_id: str
+
+
 # --------------------------------------------------------------------------- brand profiles
 
 

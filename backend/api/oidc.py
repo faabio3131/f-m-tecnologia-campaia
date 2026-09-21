@@ -137,6 +137,23 @@ class SessionRecord:
     principal: "TokenPrincipal"
     csrf_token: str
     expires_at: float
+    #: All real memberships for the user who owns this session (WP-03), always including
+    #: the currently-active tenant (`principal.tenant_id`) as one of its entries. Read by
+    #: GET /session/memberships; POST /session/switch-tenant re-issues the session with a
+    #: different entry as the new active `principal`.
+    memberships: tuple["Membership", ...] = ()
+
+
+@dataclass(frozen=True)
+class Membership:
+    """One tenant a user is a real member of, with the roles/business units that apply
+    within that tenant. A user with more than one of these (WP-03) can switch which one is
+    active for their session -- never simultaneously act in more than one.
+    """
+
+    tenant_id: str
+    business_unit_id: str | None
+    roles: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -147,6 +164,10 @@ class VerifiedIdToken:
     business_unit_id: str | None
     roles: tuple[str, ...]
     mfa_enabled: bool
+    #: All real memberships for this user, always including the active one above as the
+    #: first element. A test/real identity with only one tenant has a single-element tuple
+    #: here -- WP-03's tenant switcher simply has nothing to switch to in that case.
+    memberships: tuple[Membership, ...]
 
 
 class IdTokenVerificationError(Exception):
@@ -204,6 +225,13 @@ def verify_id_token(
     if not isinstance(roles, list) or not roles:
         raise IdTokenVerificationError("ID token is missing or has an empty campaia_roles claim.")
 
+    memberships = _parse_memberships(
+        claims.get("campaia_memberships"),
+        active_tenant_id=str(tenant_id),
+        active_business_unit_id=claims.get("campaia_business_unit_id"),
+        active_roles=tuple(str(r) for r in roles),
+    )
+
     return VerifiedIdToken(
         subject=str(claims["sub"]),
         email=claims.get("email"),
@@ -211,4 +239,54 @@ def verify_id_token(
         business_unit_id=claims.get("campaia_business_unit_id"),
         roles=tuple(str(r) for r in roles),
         mfa_enabled=bool(claims.get("campaia_mfa_enabled", False)),
+        memberships=memberships,
     )
+
+
+def _parse_memberships(
+    raw: object,
+    *,
+    active_tenant_id: str,
+    active_business_unit_id: str | None,
+    active_roles: tuple[str, ...],
+) -> tuple[Membership, ...]:
+    """WP-03: `campaia_memberships` is an optional claim -- most identities belong to
+    exactly one tenant and never set it, in which case the active tenant/roles/business
+    unit (already required claims) are the user's only membership. When present, the
+    active membership above MUST also appear in the list (defence in depth: a malformed
+    or malicious token claiming memberships that don't include the tenant it just
+    authenticated the user into is rejected, not silently trusted).
+    """
+    active = Membership(
+        tenant_id=active_tenant_id,
+        business_unit_id=active_business_unit_id,
+        roles=active_roles,
+    )
+    if raw is None:
+        return (active,)
+    if not isinstance(raw, list) or not raw:
+        raise IdTokenVerificationError("campaia_memberships, when present, must be a non-empty list.")
+
+    parsed: list[Membership] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            raise IdTokenVerificationError("Each campaia_memberships entry must be an object.")
+        entry_tenant_id = entry.get("tenant_id")
+        entry_roles = entry.get("roles")
+        if not entry_tenant_id or not isinstance(entry_roles, list) or not entry_roles:
+            raise IdTokenVerificationError(
+                "Each campaia_memberships entry requires a non-empty tenant_id and roles."
+            )
+        parsed.append(
+            Membership(
+                tenant_id=str(entry_tenant_id),
+                business_unit_id=entry.get("business_unit_id"),
+                roles=tuple(str(r) for r in entry_roles),
+            )
+        )
+
+    if active not in parsed:
+        raise IdTokenVerificationError(
+            "campaia_memberships does not include the token's own active tenant/roles."
+        )
+    return tuple(parsed)

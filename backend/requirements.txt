@@ -4,3 +4,4 @@ httpx==0.28.1
 PyJWT==2.14.0
 cryptography==50.0.1
 python-multipart==0.0.32
+uvicorn==0.34.0

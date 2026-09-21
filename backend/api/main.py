@@ -10,8 +10,11 @@ so this app mirrors the routing/response shape a FastAPI app would have.
 
 from __future__ import annotations
 
+import os
+
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -47,6 +50,7 @@ from .routes_connections import (
     revoke_connection,
 )
 from .routes_me import get_me
+from .routes_session import get_memberships, switch_tenant
 from .state import AppState
 from .test_idp import test_idp_routes
 
@@ -69,6 +73,9 @@ routes = [
     Route("/auth/logout", auth_logout, methods=["POST"]),
 
     Route("/me", get_me, methods=["GET"]),
+
+    Route("/session/memberships", get_memberships, methods=["GET"]),
+    Route("/session/switch-tenant", switch_tenant, methods=["POST"]),
 
     Route("/brand-profiles", list_brand_profiles, methods=["GET"]),
     Route("/brand-profiles", create_brand_profile, methods=["POST"]),
@@ -109,6 +116,38 @@ exception_handlers = {
 }
 
 
+def _build_middleware() -> list[Middleware]:
+    """CORS is opt-in, via the same CAMPAIA_WEB_ORIGIN env var routes_auth.py's
+    _frontend_url reads (WP-03): a single-origin/reverse-proxied deployment (frontend and
+    backend behind the same origin) never needs it -- the browser only enforces CORS across
+    origins in the first place. When the Web frontend genuinely is a different origin (the
+    README's own documented topology, e.g. https://app.campaia.app talking to
+    https://api.campaia.app), the browser's own preflight (OPTIONS) blocks
+    LogoutButton/TenantSwitcher's credentialed fetches unless the server explicitly allows
+    that ONE origin -- never a wildcard, since allow_credentials=True (a wildcard
+    Access-Control-Allow-Origin combined with credentials is refused by browsers anyway,
+    and would be wrong here regardless: only the app's own real origin may read a
+    cookie-authenticated response).
+
+    CORSMiddleware must be OUTERMOST (first in this list) so it can short-circuit an
+    OPTIONS preflight before CSRFMiddleware/routing ever see it.
+    """
+    middleware = [Middleware(CSRFMiddleware)]
+    web_origin = os.environ.get("CAMPAIA_WEB_ORIGIN", "").strip()
+    if web_origin:
+        middleware.insert(
+            0,
+            Middleware(
+                CORSMiddleware,
+                allow_origins=[web_origin],
+                allow_credentials=True,
+                allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+                allow_headers=["content-type", "x-csrf-token", "authorization", "idempotency-key", "x-step-up-token"],
+            ),
+        )
+    return middleware
+
+
 def create_app(db_path: str | None = None, *, enable_test_auth_fixtures: bool = False) -> Starlette:
     """``db_path=None`` (the default) is pure in-memory state, byte-for-byte identical to
     this app before persistence existed -- every pre-existing test relies on that. Passing
@@ -137,10 +176,16 @@ def create_app(db_path: str | None = None, *, enable_test_auth_fixtures: bool = 
     app = Starlette(
         routes=app_routes,
         exception_handlers=exception_handlers,
-        middleware=[Middleware(CSRFMiddleware)],
+        middleware=_build_middleware(),
     )
     app.state.campaia = AppState(db_path=db_path, enable_test_auth_fixtures=enable_test_auth_fixtures)
     return app
 
 
-app = create_app()
+#: Opt-in ONLY, for running this exact app over a real socket (uvicorn) against the test
+#: identity provider -- e.g. cross-stack E2E (web/e2e-crossstack, WP-03), never CI's
+#: backend-tests.yml (which imports create_app() directly, never this module-level `app`)
+#: and never any deployed environment. Still gated by AppState.__post_init__'s own
+#: independent CAMPAIA_ENV=test|local_dev check -- this env var alone is not enough,
+#: exactly like enable_test_auth_fixtures=True passed directly never is either.
+app = create_app(enable_test_auth_fixtures=os.environ.get("CAMPAIA_ENABLE_TEST_AUTH_FIXTURES") == "1")
