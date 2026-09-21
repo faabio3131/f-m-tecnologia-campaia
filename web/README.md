@@ -1,4 +1,4 @@
-# CampaIA Web — Fundação, sessão real, shell autenticado e onboarding (WP-01 a WP-04)
+# CampaIA Web — Fundação, sessão real, shell autenticado, onboarding e primeira jornada (WP-01 a WP-05)
 
 Fundação técnica do frontend Web do CampaIA. Este diretório implementa o
 **WP-01 — Fundação do frontend Web** (aprovado pela ADR-0017), o
@@ -7,18 +7,24 @@ implementado em 20/09/2026 — ver
 `docs/web/09_CERTIFICACAO_WP02_AUTENTICACAO_SESSAO_WEB.md`; revisão de
 segurança humana por um FM Security Engineer ainda pendente), o
 **WP-03 — Contexto de tenant/unidade e shell do dashboard** (ver
-`docs/web/10_CERTIFICACAO_WP03_TENANCY_SHELL.md`) e o
+`docs/web/10_CERTIFICACAO_WP03_TENANCY_SHELL.md`), o
 **WP-04 — Onboarding e Brand Kit** (ver
 `docs/web/11_CERTIFICACAO_WP04_ONBOARDING_BRAND_KIT.md`; revisão de FM QA
-Engineer ainda pendente).
+Engineer ainda pendente) e o **WP-05 — Briefing, estratégia e aprovação**
+(fecha o Gate 5 — ver
+`docs/web/12_CERTIFICACAO_WP05_BRIEFING_APROVACAO.md`; mesma revisão de FM
+QA Engineer ainda pendente).
 
 **Não é** um produto comercial concluído. WP-01 (a tela `/`) permanece
 inteiramente fixture-based, sem nenhuma chamada de rede — essa garantia
 não mudou. WP-02 adiciona a página `/account` (login/logout reais). WP-03
 adiciona a página `/dashboard` (shell autenticado, seletor de tenant).
 WP-04 adiciona a página `/onboarding` (Brand Kit real, conexão simulada de
-contas) — mas nenhum implementa a jornada completa de produto (briefing,
-geração por IA, campanhas, publicação — isso é WP-05 em diante).
+contas). WP-05 adiciona `/campaigns` e `/approvals` (briefing, estratégia
+por IA, validação e fila de aprovação com segregação de funções real) —
+fechando a primeira jornada crítica ponta a ponta com dados simulados.
+Publicação real em um provedor de verdade continua fora do escopo (WP-06
+em diante, ainda não definido).
 
 ## Requisitos
 
@@ -53,7 +59,7 @@ npm run lint                 # ESLint
 npm run typecheck            # gera tipos de rota do Next.js + tsc --noEmit (modo estrito)
 npm run test                 # Vitest: unitários, componentes, acessibilidade, fronteiras
 npm run test:e2e             # Playwright: smoke E2E (desktop + mobile), sem backend
-npm run test:e2e:crossstack  # Playwright: WP-03, login + troca de tenant reais (backend + frontend reais)
+npm run test:e2e:crossstack  # Playwright: WP-03/04/05, login/troca de tenant/onboarding/jornada de briefing reais (backend + frontend reais)
 npm run build                # build de produção (Next.js)
 npm run contracts:generate   # regenera src/contracts/bff-openapi.generated.ts a partir de ../contracts/bff-openapi.yaml
 npm run contracts:check      # falha se o arquivo gerado estiver desatualizado (drift)
@@ -78,7 +84,7 @@ CAMPAIA_CHROMIUM_PATH=/caminho/para/chromium npm run test:e2e
 Se a variável não estiver definida, o Playwright usa o Chromium que ele
 mesmo baixou (`npx playwright install chromium`).
 
-### Executando o E2E cross-stack (WP-03, com backend real)
+### Executando o E2E cross-stack (WP-03/04/05, com backend real)
 
 `npm run test:e2e:crossstack` (config separada,
 `playwright.crossstack.config.ts`, nunca lida por `npm run test:e2e`) sobe
@@ -90,10 +96,15 @@ apontando para o backend), ambos em origens diferentes de `127.0.0.1`
 autoassinado gerado sob demanda (`web/e2e-crossstack/.certs/*.pem`,
 nunca versionado — `*.pem` está no `.gitignore`). Requer `python3`,
 `openssl` e as dependências de `backend/requirements.txt` instaladas.
-Login (OIDC Authorization Code + PKCE contra o provedor de teste) e troca
-de tenant são exercitados ponta a ponta por um navegador real, não por
-`TestClient`. CI roda isso em um job dedicado
-(`.github/workflows/frontend-tests.yml`, job `crossstack-e2e`).
+Login (OIDC Authorization Code + PKCE contra o provedor de teste), troca
+de tenant, onboarding e a jornada completa de briefing → aprovação (com
+dois `BrowserContext` distintos, um por usuário) são exercitados ponta a
+ponta por um navegador real, não por `TestClient`. `fullyParallel: false`
+mais `workers: 1` nesta config (fixado no WP-05 após um achado real: dois
+arquivos de spec rodando em workers separados, contra o mesmo backend
+compartilhado, corrompiam estado de sessão/cookie um do outro — ver
+`docs/web/06_ROADMAP_WORK_PACKAGES.md` WP-05). CI roda isso em um job
+dedicado (`.github/workflows/frontend-tests.yml`, job `crossstack-e2e`).
 
 ## Variáveis de ambiente
 
@@ -113,19 +124,26 @@ frontend.
 web/
   src/
     app/          # App Router: layout, fundação (/), conta (/account, WP-02),
-                    # dashboard (/dashboard, WP-03), onboarding (/onboarding, WP-04)
+                    # dashboard (/dashboard, WP-03), onboarding (/onboarding, WP-04),
+                    # campanhas (/campaigns, /campaigns/[campaignId], WP-05),
+                    # aprovações (/approvals, WP-05)
     components/    # Button, Card, Badge, PageContainer, StatusPanel (WP-01);
                     # LogoutButton, TenantSwitcher (client, chamadas de rede -- WP-02/03);
                     # LoadingState, ErrorState, EmptyState (estados padronizados -- WP-03);
-                    # BrandKitForm, ConnectAccountCard (client, chamadas de rede -- WP-04)
+                    # BrandKitForm, ConnectAccountCard (client, chamadas de rede -- WP-04);
+                    # BriefForm, PlanPanel, ValidationPanel, ApprovalDecisionCard
+                    # (client, chamadas de rede -- WP-05)
     contracts/     # types.ts (import estável) + bff-openapi.generated.ts (gerado, não editar)
     fixtures/       # dado fictício local, tipado a partir do contrato (usado só por /)
     lib/            # session.ts: leitura de sessão (WP-02), memberships (WP-03),
-                    # Brand Kits/conexões (WP-04) real, server-only
+                    # Brand Kits/conexões (WP-04), campanhas/plano/aprovações (WP-05)
+                    # real, server-only
     styles/         # tokens.css — variáveis de design (cor, espaçamento, tipografia, motion)
   tests/           # Vitest: unitários, componentes, acessibilidade, fronteiras de segurança/contrato
-  e2e/             # Playwright: smoke de /, /account, /dashboard, /onboarding -- sem backend (CI padrão)
-  e2e-crossstack/  # Playwright: WP-03/04, login, troca de tenant e onboarding reais -- com backend (job dedicado)
+  e2e/             # Playwright: smoke de /, /account, /dashboard, /onboarding, /campaigns,
+                    # /approvals -- sem backend (CI padrão)
+  e2e-crossstack/  # Playwright: WP-03/04/05, login, troca de tenant, onboarding e jornada de
+                    # briefing/aprovação reais -- com backend (job dedicado)
   scripts/         # CLIs de verificação (drift de contrato, fronteiras de segurança) + lógica compartilhada em scripts/lib/
   public/          # ativos estáticos (favicon)
 ```
@@ -214,20 +232,59 @@ negócio (§3.2/§3.3 do mesmo documento) — nenhum endpoint de criação de
 tenant/unidade existe no backend (o `tenant_id` vem sempre da sessão
 autenticada, WP-02/03); upload de logo (nenhum endpoint de upload existe).
 
-## O que ainda não existe (fora do escopo do WP-01 a WP-04)
+## Briefing, estratégia e aprovação (WP-05)
 
-- Jornada de produto completa (briefing, estratégia por IA, aprovação,
-  campanhas, publicação, conectores reais de provedor) — WP-05 em diante.
+`/campaigns` e `/campaigns/[campaignId]` fecham o Gate 5 (primeira jornada
+crítica): briefing → estratégia (IA) → validação → fila de aprovação, com
+segregação de funções real. Todas as 6 rotas de backend usadas aqui já
+existiam antes deste Work Package — WP-05 construiu inteiramente a
+camada Web sobre elas.
+
+- **Briefing** (`/campaigns`): `BriefForm` (Client Component) submete
+  `POST {BFF_ORIGIN}/briefs` (CSRF + `Idempotency-Key`), criando a
+  campanha em `DRAFT` e redirecionando para sua página de detalhe.
+- **Estratégia** (`/campaigns/[id]`): `PlanPanel` chama
+  `POST {BFF_ORIGIN}/campaigns/{id}/plan/regenerate` (CSRF +
+  `Idempotency-Key`), que aciona o agente `strategist` real (simulado,
+  `campaia_core/ai_simulator.py`) e mostra seu output estruturado
+  (objetivo, funil, canais, justificativa) — nunca texto livre inventado
+  pelo frontend.
+- **Validação**: `ValidationPanel` chama
+  `POST {BFF_ORIGIN}/campaigns/{id}/validate` (CSRF) e mostra o
+  resultado real da política (`outcome`, achados, se exige aprovação
+  humana). Quando exige, um botão "Solicitar aprovação" chama
+  `POST {BFF_ORIGIN}/approvals` (CSRF).
+- **Fila de aprovação** (`/approvals`): `ApprovalDecisionCard` lista cada
+  aprovação e, para as `PENDING`, oferece Aprovar/Rejeitar/Pedir ajustes
+  via `POST {BFF_ORIGIN}/approvals/{id}/decision` (CSRF +
+  `X-Step-Up-Token` + `Idempotency-Key`). Segregação de funções é
+  aplicada inteiramente pelo servidor
+  (`campaia_core.permissions.can_approve`) — o componente nunca esconde
+  os botões achando que "esta é minha própria aprovação"; a rejeição real
+  do servidor (`403 SEPARATION_OF_DUTIES`) é o que fica visível ao
+  usuário.
+
+Fora de escopo, deliberadamente: publicação real
+(`POST .../publish`) — depende de um adaptador de provider real que não
+existe.
+
+## O que ainda não existe (fora do escopo do WP-01 a WP-05)
+
+- Publicação real em um provedor de verdade, reconciliação, métricas,
+  orçamento, otimização, hardening, acessibilidade formal, observabilidade
+  — WP-06 em diante, escopo ainda não definido.
 - Qualquer chamada ao BFF fora de `session.ts`/`LogoutButton.tsx`/
-  `TenantSwitcher.tsx`/`BrandKitForm.tsx`/`ConnectAccountCard.tsx` — a
-  tela `/` (WP-01) permanece inteiramente fixture-based.
+  `TenantSwitcher.tsx`/`BrandKitForm.tsx`/`ConnectAccountCard.tsx`/
+  `BriefForm.tsx`/`PlanPanel.tsx`/`ValidationPanel.tsx`/
+  `ApprovalDecisionCard.tsx` — a tela `/` (WP-01) permanece inteiramente
+  fixture-based.
 - Deploy, infraestrutura, qualquer configuração de nuvem.
 - Revisão de segurança humana (FM Security Engineer) da superfície de
   autenticação — pendência explícita, ver certificação do WP-02 (segue
   pendente; nenhuma revisão humana ocorreu em nenhuma execução até
-  agora). Revisão de FM QA Engineer do WP-04 — também pendente.
+  agora). Revisão de FM QA Engineer do WP-04/WP-05 — também pendente.
 
-## Fronteiras de segurança (WP-01 a WP-04)
+## Fronteiras de segurança (WP-01 a WP-05)
 
 Verificadas automaticamente por `npm run boundary:check` (e por
 `tests/boundaries.test.ts`, que roda a mesma lógica sem subprocesso) a
@@ -241,14 +298,17 @@ cada execução local e no CI:
 - Nenhuma chamada de rede (`fetch`/`axios`/`XMLHttpRequest`) em
   `web/src`, **exceto** `src/lib/session.ts` (leituras server-only),
   `src/components/LogoutButton.tsx` (logout client-side, protegido por
-  CSRF), `src/components/TenantSwitcher.tsx` (troca de tenant, WP-03) e
+  CSRF), `src/components/TenantSwitcher.tsx` (troca de tenant, WP-03),
   `src/components/{BrandKitForm,ConnectAccountCard}.tsx` (Brand Kit e
-  conexão simulada de contas, WP-04) — os cinco únicos pontos legítimos,
-  todos protegidos por CSRF. Todo o resto de `web/src`, incluindo a tela
-  `/` e os componentes do WP-01, permanece em zero chamadas de rede.
+  conexão simulada de contas, WP-04) e
+  `src/components/{BriefForm,PlanPanel,ValidationPanel,
+  ApprovalDecisionCard}.tsx` (briefing, estratégia, validação e decisão
+  de aprovação, WP-05) — os nove únicos pontos legítimos, todos
+  protegidos por CSRF. Todo o resto de `web/src`, incluindo a tela `/` e
+  os componentes do WP-01, permanece em zero chamadas de rede.
 
 Este script **não certifica segurança formal do produto** — apenas as
-proibições explícitas de escopo do WP-01 a WP-04.
+proibições explícitas de escopo do WP-01 a WP-05.
 
 ## Próximo gate
 
@@ -260,8 +320,11 @@ Engineer), ver `docs/web/09_CERTIFICACAO_WP02_AUTENTICACAO_SESSAO_WEB.md`.
 Gate 4 (WP-03, tenancy) **implementado e autotestado** — ver
 `docs/web/10_CERTIFICACAO_WP03_TENANCY_SHELL.md`; também depende de
 aprovação de FM Security Engineer para o teste de isolamento, não
-concedida nesta execução. Gate 5 (Primeira jornada) **parcialmente
-implementado** pelo WP-04 (Onboarding e Brand Kit — ver
-`docs/web/11_CERTIFICACAO_WP04_ONBOARDING_BRAND_KIT.md`, revisão de FM QA
-Engineer pendente); só fecha por completo com o WP-05 (briefing,
-estratégia e aprovação), **não iniciado nesta execução**.
+concedida nesta execução. Gate 5 (Primeira jornada) **implementado e
+autotestado por completo**: onboarding e Brand Kit pelo WP-04 (ver
+`docs/web/11_CERTIFICACAO_WP04_ONBOARDING_BRAND_KIT.md`) e briefing →
+estratégia → validação → aprovação pelo WP-05 (ver
+`docs/web/12_CERTIFICACAO_WP05_BRIEFING_APROVACAO.md`) — ambos com
+revisão de FM QA Engineer pendente, portanto o Gate 5 está tecnicamente
+completo mas não formalmente fechado. WP-06 em diante: escopo ainda não
+definido a partir do CURRENT que agora existe.

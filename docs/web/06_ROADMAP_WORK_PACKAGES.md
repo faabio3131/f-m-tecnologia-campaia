@@ -1,6 +1,6 @@
 # CampaIA — Ponto Zero Web · 06. Roadmap e Work Packages
 
-**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019) — **WP-01 implementado e validado** (19/09/2026), **WP-02 implementado, com revisão de segurança humana pendente** (20/09/2026, ver `docs/web/09_CERTIFICACAO_WP02_AUTENTICACAO_SESSAO_WEB.md`), **WP-03 implementado, com a mesma revisão de segurança humana pendente** (21/09/2026, ver `docs/web/10_CERTIFICACAO_WP03_TENANCY_SHELL.md`) e **WP-04 implementado, revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/11_CERTIFICACAO_WP04_ONBOARDING_BRAND_KIT.md`). WP-05 em diante permanecem não iniciados.
+**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019) — **WP-01 implementado e validado** (19/09/2026), **WP-02 implementado, com revisão de segurança humana pendente** (20/09/2026, ver `docs/web/09_CERTIFICACAO_WP02_AUTENTICACAO_SESSAO_WEB.md`), **WP-03 implementado, com a mesma revisão de segurança humana pendente** (21/09/2026, ver `docs/web/10_CERTIFICACAO_WP03_TENANCY_SHELL.md`), **WP-04 implementado, revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/11_CERTIFICACAO_WP04_ONBOARDING_BRAND_KIT.md`) e **WP-05 implementado, fechando o Gate 5 (primeira jornada crítica), revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/12_CERTIFICACAO_WP05_BRIEFING_APROVACAO.md`). WP-06 em diante permanecem não iniciados.
 
 ---
 
@@ -87,27 +87,33 @@ Esta seção registra a reconciliação de ordem original, anterior a qualquer e
 - **Testes**: backend — 7 novos (`backend/tests_api/test_oauth_complete.py`: cria conexão real, state single-use, state de outro tenant rejeitado, exige step-up, exige idempotency-key, replay não duplica). Frontend — 17 novos Vitest (`BrandKitForm`, `ConnectAccountCard`, `OnboardingPage` em cada estado) + 1 E2E de fumaça sem backend (`e2e/onboarding.spec.ts`) + 3 E2E cross-stack reais (`e2e-crossstack/onboarding.spec.ts`: nada conectado no início, conectar uma conta habilita "Concluir Onboarding", Brand Kit salvo persiste após reload). Regressão completa: 267 domínio + 162 API (155 + 7) + 24/24 AsyncAPI + 53 Vitest + 10 E2E de fumaça + 6 E2E cross-stack — todos verdes, zero regressão.
 - **Riscos**: baixo, como previsto — o único risco real materializado (gap de criação de conexão) foi encontrado e fechado dentro desta própria execução, não deixado como pendência.
 - **Rollback**: reverter para o shell sem `/onboarding`; `/connections/oauth/complete` ausente faz `/onboarding` degradar para "nada conectável", nunca para um estado inconsistente.
-- **Gate**: Gate 5 (Primeira jornada) — parcial, falta briefing/aprovação (WP-05) para completar o gate inteiro.
+- **Gate**: Gate 5 (Primeira jornada) — parcial nesta etapa; completado pelo WP-05 (ver abaixo).
 - **Definição de pronto**: onboarding e Brand Kit funcionais ponta a ponta — **atingido**, incluindo o caminho de conexão real (antes, estruturalmente impossível).
 - **Autorização necessária**: FM QA Engineer. **Autorização de execução recebida do Diretor** (continuação de "PROMPT MESTRE — CAMPAIA SaaS V1 COMPLETO"); a revisão de QA formal não ocorreu nesta execução — pendência real, registrada, não presumida como satisfeita.
 
 ### WP-05 — Briefing, estratégia e aprovação (fecha a primeira jornada crítica)
 
-- **Objetivo**: completar o Gate 5 — briefing → estratégia (IA) → validação → fila de aprovação, com segregação de funções real (usuário distinto aprova).
-- **Escopo**: `POST /briefs`, `GET/POST /campaigns/{id}/plan[/regenerate]`, `POST .../validate`, `GET/POST /approvals`, `POST /approvals/{id}/decision`.
-- **Fora do escopo**: publicação real (depende de adaptador de provider, fora desta lista).
-- **Dependências**: WP-04.
-- **Segurança**: segregação de funções já implementada no domínio (`can_approve`); testar na Web que a UI não permite ao próprio proponente aprovar (a API já recusa; a UI deve refletir isso, não substituí-lo).
-- **Critérios de aceitação**: jornada completa de briefing até aprovação funciona com dois usuários distintos; tentativa de autoaprovação é recusada visivelmente.
-- **Testes**: E2E completo da jornada crítica.
-- **Riscos**: médio.
-- **Rollback**: reverter para o estado do WP-04.
-- **Gate**: Gate 5 (Primeira jornada) — completo.
-- **Definição de pronto**: jornada crítica onboarding → briefing → aprovação funciona ponta a ponta com dados simulados.
-- **Autorização necessária**: FM QA Engineer + Diretor (fecha Gate 5, abre caminho para Gate 6/Sandbox).
+**IMPLEMENTADO (21/09/2026)**
+
+- **Objetivo**: completar o Gate 5 — briefing → estratégia (IA) → validação → fila de aprovação, com segregação de funções real (usuário distinto aprova). **Executado.**
+- **Escopo realizado**: todas as 6 rotas do escopo original já existiam no backend desde blocos anteriores (`POST /briefs`, `GET /campaigns/{id}`, `GET/POST /campaigns/{id}/plan[/regenerate]`, `POST .../validate`, `GET/POST /approvals`, `POST /approvals/{id}/decision`) — CURRENT reconstruído por leitura direta do código confirmou isso antes de qualquer implementação. WP-05 construiu inteiramente a camada Web: `web/src/app/campaigns/page.tsx` (lista + `BriefForm`), `web/src/app/campaigns/[campaignId]/page.tsx` (detalhe: `PlanPanel` gera/regenera estratégia, `ValidationPanel` valida e solicita aprovação), `web/src/app/approvals/page.tsx` (fila de aprovação com `ApprovalDecisionCard`), mais os helpers `getServerCampaigns/getServerCampaign/getServerPlan/getServerApprovals` em `web/src/lib/session.ts`.
+- **Achado real corrigido (contrato)**: `ApprovalRequest` no contrato (`contracts/bff-openapi.yaml`) não listava `requested_by`, embora `api/helpers.py serialize_approval` sempre o retorne — descoberto pelo próprio TypeScript ao tipar `ApprovalDecisionCard.tsx` contra o schema gerado. Corrigido aditivamente no contrato; `requested_by` é exatamente o campo que a UI precisa para comunicar segregação de funções ao usuário.
+- **Achado real corrigido (frontend, 2)**: (a) `ValidationPanel.tsx`'s `handleValidate()` não enviava `X-CSRF-Token` — `CSRFMiddleware` exige o header em toda mutação autenticada por sessão, sem exceção por rota; pego por teste de backend com sessão real antes de qualquer E2E. (b) `PlanPanel.tsx` tentava renderizar `plan.output` como texto simples; o output real do agente `strategist` (`campaia_core/agents.py`) é um objeto estruturado (`objetivo`, `funil`, `canais`, `justificativa`), não texto livre — React lançou "Objects are not valid as a React child" na primeira execução real do E2E cross-stack contra o backend de verdade. Corrigido tipando `StrategistPlanOutput` e renderizando cada campo.
+- **Fora do escopo confirmado**: publicação real (`POST .../publish`) — depende de adaptador de provider real, fora desta lista, nenhuma tela deste WP chama essa rota.
+- **Dependências**: WP-04. Nenhuma alteração em `campaia_core`, `db` ou `permissions.py` — segregação de funções (`can_approve`) já existia e foi apenas exercitada, nunca reimplementada no frontend.
+- **Segurança**: segregação de funções aplicada inteiramente pelo servidor (`campaia_core.permissions.can_approve`, `requester_id` check) — `ApprovalDecisionCard.tsx` nunca esconde ou desabilita os botões de decisão com base em "esta é minha própria aprovação"; a rejeição real do servidor (`403 SEPARATION_OF_DUTIES`) é o que fica visível. Testado tanto via sessão real de backend (`tests_api/test_briefing_approval_web_session.py`) quanto via navegador real em dois `BrowserContext` distintos (E2E cross-stack).
+- **Critérios de aceitação**: jornada completa de briefing até aprovação funciona com dois usuários distintos — **Sim**, testado via E2E cross-stack real (`owner` propõe, `approver` decide); tentativa de autoaprovação é recusada visivelmente — **Sim**, testado nos dois níveis (backend com sessão real, E2E com navegador real).
+- **Testes**: backend — 2 novos (`tests_api/test_briefing_approval_web_session.py`: jornada completa via cookie de sessão real com dois `TestClient` sobre o mesmo `AppState`, e recusa de `viewer` sem `CAMPAIGN_CREATE`). Frontend — 37 novos Vitest (`BriefForm`, `PlanPanel`, `ValidationPanel`, `ApprovalDecisionCard`, `CampaignsPage`, `CampaignDetailPage`, `ApprovalsPage`) + 2 E2E de fumaça sem backend (`e2e/campaigns.spec.ts`, `e2e/approvals.spec.ts`) + 1 E2E cross-stack real de dois usuários (`e2e-crossstack/briefing-approval-journey.spec.ts`). Regressão completa: 267 domínio + 164 API (162 + 2) + 24/24 AsyncAPI + 90 Vitest (53 + 37) + 14 E2E de fumaça (10 + 4, dois specs novos × 2 browsers) + 7 E2E cross-stack (6 + 1) — todos verdes, zero regressão.
+- **Riscos**: médio, como previsto — os 3 achados reais (gap de contrato, CSRF ausente, shape de output do agente) foram todos encontrados e corrigidos dentro desta própria execução, nenhum deixado como pendência silenciosa.
+- **Rollback**: reverter para o shell sem `/campaigns`/`/approvals`; nenhuma rota de backend nova foi criada neste WP (só o contrato foi corrigido aditivamente), então o rollback é puramente de frontend.
+- **Gate**: Gate 5 (Primeira jornada) — **completo**.
+- **Definição de pronto**: jornada crítica onboarding → briefing → aprovação funciona ponta a ponta com dados simulados — **atingido**, confirmado por E2E cross-stack real com dois usuários.
+- **Autorização necessária**: FM QA Engineer + Diretor (fecha Gate 5, abre caminho para Gate 6/Sandbox). **Autorização de execução recebida do Diretor** (continuação de "PROMPT MESTRE — CAMPAIA SaaS V1 COMPLETO", decisão "pode avançar mais 3 blocos"); a revisão de QA formal não ocorreu nesta execução — pendência real, registrada, não presumida como satisfeita.
 
 ---
 
 ## 3. Blocos além do WP-05 (não detalhados como Work Package nesta missão)
 
-Publicação sandbox (depende de credenciais reais de sandbox de ao menos 1 provider — bloqueio externo, não técnico), reconciliação, métricas, orçamento (Web sobre API já pronta), recomendações/otimização limitada, hardening, acessibilidade, observabilidade, segurança formal, staging, produção controlada — todos dependem de decisões e Work Packages anteriores não executados nesta missão. Detalhá-los agora seria antecipar escopo sem o CURRENT que só existirá depois do WP-01 a WP-05.
+**Nota (21/09/2026): WP-01 a WP-05 estão todos implementados** — o CURRENT que esta seção antecipava agora existe de fato. WP-06 ainda não foi definido a partir dele; essa definição é o próximo passo, não este parágrafo.
+
+Publicação sandbox (depende de credenciais reais de sandbox de ao menos 1 provider — bloqueio externo, não técnico), reconciliação, métricas, orçamento (Web sobre API já pronta), recomendações/otimização limitada, hardening, acessibilidade, observabilidade, segurança formal, staging, produção controlada — todos dependem de decisões e Work Packages anteriores não executados nesta missão até 21/09/2026.
