@@ -238,6 +238,39 @@ paths:
                   state: { type: string }
         '403': { $ref: '#/components/responses/StepUpRequired' }
 
+  /connections/oauth/complete:
+    post:
+      tags: [Conexoes]
+      summary: Finaliza o fluxo OAuth iniciado por /connections/oauth/start (WP-04)
+      description: |
+        Simula o que o callback do provedor real devolveria: a conta escolhida pelo usuario
+        apos a autorizacao. `state` precisa ser o valor devolvido por um /connections/oauth/start
+        anterior, ainda nao consumido e do mesmo tenant -- nunca aceito de outra origem.
+        Cria a Connection de fato (o /start sozinho nunca cria uma).
+      operationId: completeOAuth
+      parameters:
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state, external_account_id, display_name]
+              properties:
+                state: { type: string }
+                external_account_id: { type: string }
+                display_name: { type: string }
+      responses:
+        '201':
+          description: Conexao criada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Connection' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+
   /connections/{connectionId}:
     delete:
       tags: [Conexoes]

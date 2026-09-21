@@ -165,6 +165,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/connections/oauth/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Finaliza o fluxo OAuth iniciado por /connections/oauth/start (WP-04)
+         * @description Simula o que o callback do provedor real devolveria: a conta escolhida pelo usuario
+         *     apos a autorizacao. `state` precisa ser o valor devolvido por um /connections/oauth/start
+         *     anterior, ainda nao consumido e do mesmo tenant -- nunca aceito de outra origem.
+         *     Cria a Connection de fato (o /start sozinho nunca cria uma).
+         */
+        post: operations["completeOAuth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/connections/{connectionId}": {
         parameters: {
             query?: never;
@@ -996,6 +1019,41 @@ export interface operations {
                     };
                 };
             };
+            403: components["responses"]["StepUpRequired"];
+        };
+    };
+    completeOAuth: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao. */
+                "X-Step-Up-Token": components["parameters"]["StepUpToken"];
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    state: string;
+                    external_account_id: string;
+                    display_name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Conexao criada */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Connection"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
             403: components["responses"]["StepUpRequired"];
         };
     };
