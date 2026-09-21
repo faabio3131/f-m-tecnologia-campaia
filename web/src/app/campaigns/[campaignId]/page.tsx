@@ -1,4 +1,5 @@
 import { Badge } from "@/components/Badge";
+import { BudgetPanel } from "@/components/BudgetPanel";
 import { Card } from "@/components/Card";
 import { ErrorState } from "@/components/ErrorState";
 import { PageContainer } from "@/components/PageContainer";
@@ -77,8 +78,14 @@ export default async function CampaignDetailPage({
     );
   }
 
+  // WP-06 introduced a second approval kind (BUDGET_CHANGE) per campaign -- this must only
+  // reflect a pending PUBLISH approval, or a pending budget-change request would wrongly
+  // disable ValidationPanel's "Solicitar aprovação" button too.
   const hasPendingApproval = approvals.some(
-    (approval) => approval.campaign_id === campaignId && approval.status === "PENDING",
+    (approval) =>
+      approval.campaign_id === campaignId &&
+      approval.status === "PENDING" &&
+      approval.kind === "PUBLISH",
   );
 
   return (
@@ -110,6 +117,16 @@ export default async function CampaignDetailPage({
           bffOrigin={bffOrigin}
           campaignId={campaignId}
           hasPendingApproval={hasPendingApproval}
+        />
+      </Card>
+
+      <Card>
+        <h2 className={styles.sectionTitle}>Orçamento</h2>
+        <BudgetPanel
+          bffOrigin={bffOrigin}
+          campaignId={campaignId}
+          budget={campaign.budget}
+          approvals={approvals}
         />
       </Card>
     </PageContainer>

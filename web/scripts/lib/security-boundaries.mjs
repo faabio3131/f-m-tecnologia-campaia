@@ -13,12 +13,13 @@ const EXCLUDED_FILES = new Set(["bff-openapi.generated.ts"]);
 // read) and a client-side logout action explicitly protected by the double-submit CSRF
 // token. WP-03 added a client-side tenant-switch action, same CSRF discipline, never a
 // client-typed tenant id. WP-04 added two more (BrandKitForm.tsx, ConnectAccountCard.tsx).
-// WP-05 adds three more, same discipline throughout: BriefForm.tsx (POST /briefs),
-// PlanPanel.tsx (POST /campaigns/{id}/plan/regenerate), ValidationPanel.tsx (POST
-// /campaigns/{id}/validate + POST /approvals), and ApprovalDecisionCard.tsx (POST
-// /approvals/{id}/decision) -- every mutation still goes through the same non-HttpOnly
+// WP-05 added four more: BriefForm.tsx (POST /briefs), PlanPanel.tsx (POST
+// /campaigns/{id}/plan/regenerate), ValidationPanel.tsx (POST /campaigns/{id}/validate +
+// POST /approvals), and ApprovalDecisionCard.tsx (POST /approvals/{id}/decision). WP-06
+// adds one more, same discipline: BudgetPanel.tsx (POST /approvals + PATCH
+// /campaigns/{id}/budget) -- every mutation still goes through the same non-HttpOnly
 // campaia_csrf cookie double-submit check. Every other file in web/src must remain at zero
-// network calls; this allowlist is intentionally nine files, not a blanket rule.
+// network calls; this allowlist is intentionally ten files, not a blanket rule.
 const NETWORK_CALL_ALLOWED_FILES = new Set([
   "session.ts",
   "LogoutButton.tsx",
@@ -29,6 +30,7 @@ const NETWORK_CALL_ALLOWED_FILES = new Set([
   "PlanPanel.tsx",
   "ValidationPanel.tsx",
   "ApprovalDecisionCard.tsx",
+  "BudgetPanel.tsx",
 ]);
 
 /** @type {{name: string, pattern: RegExp, message: string, exemptFiles?: Set<string>}[]} */
@@ -37,7 +39,7 @@ export const FORBIDDEN_PATTERNS = [
     name: "network-call",
     pattern: /\b(fetch|axios|XMLHttpRequest)\s*\(/,
     message:
-      "chamada de rede detectada (fetch/axios/XMLHttpRequest) fora da lista de excecoes do WP-02/WP-03/WP-04/WP-05 (session.ts, LogoutButton.tsx, TenantSwitcher.tsx, BrandKitForm.tsx, ConnectAccountCard.tsx, BriefForm.tsx, PlanPanel.tsx, ValidationPanel.tsx, ApprovalDecisionCard.tsx)",
+      "chamada de rede detectada (fetch/axios/XMLHttpRequest) fora da lista de excecoes do WP-02 a WP-06 (session.ts, LogoutButton.tsx, TenantSwitcher.tsx, BrandKitForm.tsx, ConnectAccountCard.tsx, BriefForm.tsx, PlanPanel.tsx, ValidationPanel.tsx, ApprovalDecisionCard.tsx, BudgetPanel.tsx)",
     exemptFiles: NETWORK_CALL_ALLOWED_FILES,
   },
   {

@@ -77,7 +77,7 @@ export function ApprovalDecisionCard({ bffOrigin, approval }: ApprovalDecisionCa
   }
 
   return (
-    <div className={styles.card}>
+    <div className={styles.card} data-testid={`approval-card-${approval.kind}-${approval.campaign_id}`}>
       <div className={styles.header}>
         <strong>{approval.reason}</strong>
         <Badge tone="neutral">{approval.status}</Badge>
