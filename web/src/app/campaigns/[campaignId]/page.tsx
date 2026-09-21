@@ -1,0 +1,117 @@
+import { Badge } from "@/components/Badge";
+import { Card } from "@/components/Card";
+import { ErrorState } from "@/components/ErrorState";
+import { PageContainer } from "@/components/PageContainer";
+import { PlanPanel } from "@/components/PlanPanel";
+import { ValidationPanel } from "@/components/ValidationPanel";
+import {
+  getPublicBffOrigin,
+  getServerApprovals,
+  getServerCampaign,
+  getServerPlan,
+  getServerSession,
+} from "@/lib/session";
+import styles from "./page.module.css";
+
+/**
+ * WP-05: detalhe da campanha -- estratégia (IA) e validação, os dois passos entre o
+ * briefing (/campaigns) e a fila de aprovação (/approvals). Publicação real fica fora do
+ * escopo deste Work Package (docs/web/06_ROADMAP_WORK_PACKAGES.md: "depende de adaptador de
+ * provider, fora desta lista") -- nada nesta tela chama POST .../publish.
+ */
+export default async function CampaignDetailPage({
+  params,
+}: {
+  params: Promise<{ campaignId: string }>;
+}) {
+  const { campaignId } = await params;
+  const bffOrigin = getPublicBffOrigin();
+
+  if (!bffOrigin) {
+    return (
+      <PageContainer>
+        <Card>
+          <ErrorState
+            title="Não configurado"
+            description="A variável de ambiente NEXT_PUBLIC_CAMPAIA_BFF_ORIGIN não está definida — a tela de campanha não sabe onde está o backend (BFF)."
+          />
+        </Card>
+      </PageContainer>
+    );
+  }
+
+  const me = await getServerSession();
+  if (!me) {
+    const loginUrl = `${bffOrigin}/auth/login?redirect_after_login=${encodeURIComponent(`/campaigns/${campaignId}`)}`;
+    return (
+      <PageContainer>
+        <header className={styles.header}>
+          <Badge tone="neutral">CampaIA Web — Campanha (WP-05)</Badge>
+          <h1 className={styles.title}>Você não está autenticado</h1>
+        </header>
+        <Card>
+          <a className={styles.loginLink} href={loginUrl}>
+            Entrar
+          </a>
+        </Card>
+      </PageContainer>
+    );
+  }
+
+  const [campaign, plan, approvals] = await Promise.all([
+    getServerCampaign(campaignId),
+    getServerPlan(campaignId),
+    getServerApprovals(),
+  ]);
+
+  if (campaign === null || plan === null || approvals === null) {
+    return (
+      <PageContainer>
+        <Card>
+          <ErrorState
+            title="Não foi possível carregar a campanha"
+            description="GET /campaigns/{id}, GET /campaigns/{id}/plan ou GET /approvals falhou, ou esta campanha não existe. Tente recarregar a página."
+          />
+        </Card>
+      </PageContainer>
+    );
+  }
+
+  const hasPendingApproval = approvals.some(
+    (approval) => approval.campaign_id === campaignId && approval.status === "PENDING",
+  );
+
+  return (
+    <PageContainer>
+      <header className={styles.header}>
+        <Badge tone="accent">CampaIA Web — Campanha (WP-05)</Badge>
+        <h1 className={styles.title}>{campaign.name || campaign.objective}</h1>
+        <Badge tone="neutral">{campaign.state}</Badge>
+      </header>
+
+      <Card>
+        <h2 className={styles.sectionTitle}>Briefing</h2>
+        <p className={styles.brief}>{campaign.objective}</p>
+        <p className={styles.briefMeta}>
+          Canais: {(campaign.channels ?? []).join(", ") || "—"} · Orçamento:{" "}
+          {campaign.budget?.currency} {campaign.budget?.total_amount} (diário{" "}
+          {campaign.budget?.daily_cap})
+        </p>
+      </Card>
+
+      <Card>
+        <h2 className={styles.sectionTitle}>Estratégia (IA)</h2>
+        <PlanPanel bffOrigin={bffOrigin} campaignId={campaignId} plan={plan} />
+      </Card>
+
+      <Card>
+        <h2 className={styles.sectionTitle}>Validação e aprovação</h2>
+        <ValidationPanel
+          bffOrigin={bffOrigin}
+          campaignId={campaignId}
+          hasPendingApproval={hasPendingApproval}
+        />
+      </Card>
+    </PageContainer>
+  );
+}

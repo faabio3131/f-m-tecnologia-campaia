@@ -1,0 +1,37 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-3);
+  align-items: flex-start;
+}
+
+.result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-2);
+}
+
+.findings {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-1);
+}
+
+.finding {
+  font-size: var(--campaia-font-size-sm);
+}
+
+.note {
+  margin: 0;
+  color: var(--campaia-color-text-muted);
+  font-size: var(--campaia-font-size-sm);
+}
+
+.error {
+  margin: 0;
+  color: var(--campaia-color-warning-text);
+  font-size: var(--campaia-font-size-sm);
+}
