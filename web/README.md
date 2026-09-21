@@ -1,4 +1,4 @@
-# CampaIA Web — Fundação, sessão real, shell autenticado, primeira jornada, orçamento e autonomia (WP-01 a WP-07)
+# CampaIA Web — Fundação, sessão real, shell autenticado, primeira jornada, orçamento, autonomia e kill switch (WP-01 a WP-08)
 
 Fundação técnica do frontend Web do CampaIA. Este diretório implementa o
 **WP-01 — Fundação do frontend Web** (aprovado pela ADR-0017), o
@@ -22,7 +22,12 @@ Nível de autonomia (Modo Manual/Automático)** (ver
 previsto no roadmap original, definido nesta mesma missão por
 reconciliação de CURRENT, sob nova autorização do Diretor para continuar
 a construção enquanto a cota do CI do GitHub Actions está esgotada; mesma
-revisão de FM QA Engineer ainda pendente).
+revisão de FM QA Engineer ainda pendente) e o **WP-08 — Parada de
+emergência (Kill Switch)** (ver
+`docs/web/15_CERTIFICACAO_WP08_PARADA_EMERGENCIA.md`; bloco também não
+previsto no roadmap original, definido nesta mesma missão por
+reconciliação de CURRENT, mesma autorização do WP-07; mesma revisão de FM
+QA Engineer ainda pendente).
 
 **Não é** um produto comercial concluído. WP-01 (a tela `/`) permanece
 inteiramente fixture-based, sem nenhuma chamada de rede — essa garantia
@@ -34,9 +39,12 @@ por IA, validação e fila de aprovação com segregação de funções real) �
 fechando a primeira jornada crítica ponta a ponta com dados simulados.
 WP-06 adiciona um painel de orçamento em `/campaigns/[id]`, reutilizando
 inteiramente a fila de aprovação do WP-05. WP-07 adiciona um painel de
-nível de autonomia em `/dashboard`, reutilizando a mesma fila. Publicação
+nível de autonomia em `/dashboard`, reutilizando a mesma fila. WP-08
+adiciona um painel de parada de emergência em `/dashboard`, que NÃO
+reutiliza a fila de aprovação — o próprio domínio dispensa aprovação para
+o kill switch, já que a ação só reduz efeito, nunca amplia. Publicação
 real em um provedor de verdade continua fora do escopo (nenhum bloco além
-do WP-07 foi definido).
+do WP-08 foi definido).
 
 ## Requisitos
 
@@ -136,7 +144,8 @@ frontend.
 web/
   src/
     app/          # App Router: layout, fundação (/), conta (/account, WP-02),
-                    # dashboard (/dashboard, WP-03, painel de autonomia adicionado no WP-07),
+                    # dashboard (/dashboard, WP-03, painel de autonomia adicionado no WP-07,
+                    # painel de parada de emergência adicionado no WP-08),
                     # onboarding (/onboarding, WP-04),
                     # campanhas (/campaigns, /campaigns/[campaignId], WP-05),
                     # aprovações (/approvals, WP-05)
@@ -146,7 +155,8 @@ web/
                     # BrandKitForm, ConnectAccountCard (client, chamadas de rede -- WP-04);
                     # BriefForm, PlanPanel, ValidationPanel, ApprovalDecisionCard
                     # (client, chamadas de rede -- WP-05); BudgetPanel (client, chamadas
-                    # de rede -- WP-06); AutonomyPanel (client, chamadas de rede -- WP-07)
+                    # de rede -- WP-06); AutonomyPanel (client, chamadas de rede -- WP-07);
+                    # KillSwitchPanel (client, chamadas de rede -- WP-08)
     contracts/     # types.ts (import estável) + bff-openapi.generated.ts (gerado, não editar)
     fixtures/       # dado fictício local, tipado a partir do contrato (usado só por /)
     lib/            # session.ts: leitura de sessão (WP-02), memberships (WP-03),
@@ -347,27 +357,60 @@ Fora de escopo, deliberadamente: alterar `max_level_allowed` (o teto
 contratado) — nenhuma rota de API expõe essa alteração; é configuração
 comercial/plano.
 
-## O que ainda não existe (fora do escopo do WP-01 a WP-07)
+## Parada de emergência (WP-08)
+
+Bloco também **não previsto no roadmap original**, definido nesta mesma
+missão por reconciliação de CURRENT (ver
+`docs/web/06_ROADMAP_WORK_PACKAGES.md` §"WP-08"). Diferente de todo bloco
+desde o WP-05, este NÃO passa pela fila `/approvals` — o próprio domínio
+dispensa aprovação para o kill switch, porque a ação só reduz efeito,
+nunca amplia.
+
+- **Acionar**: `KillSwitchPanel` (Client Component, em `/dashboard`)
+  oferece dois escopos — uma campanha específica ou o tenant inteiro — com
+  um motivo obrigatório. `POST {BFF_ORIGIN}/kill-switch` (CSRF +
+  `Idempotency-Key`, **sem** `X-Step-Up-Token` — `Permission.KILL_SWITCH`
+  está deliberadamente fora de `REQUIRES_STEP_UP` no backend, porque
+  emergência não espera reautenticação). O resultado (campanhas afetadas)
+  é exibido diretamente a partir da resposta real da API, sem recarregar
+  a página.
+- A API real aceita 5 escopos (`CAMPAIGN`, `ACCOUNT`, `TENANT`,
+  `PLATFORM`, `GLOBAL`); esta tela expõe deliberadamente só `CAMPAIGN` e
+  `TENANT` — `GLOBAL` cruza tenants por desenho do próprio domínio, e
+  `ACCOUNT`/`PLATFORM` pausam múltiplas campanhas de uma vez sem seleção
+  individual. Não é uma limitação da API, é uma escolha do lado Web.
+
+Fora de escopo, deliberadamente: retomar uma campanha pausada — a lacuna é
+real (nenhuma rota HTTP de retomada existe, e o Protocol dos conectores
+não define uma operação canônica para isso), não apenas de UI; expor os
+escopos `ACCOUNT`/`PLATFORM`/`GLOBAL` nesta tela.
+
+## O que ainda não existe (fora do escopo do WP-01 a WP-08)
 
 - Publicação real em um provedor de verdade, reconciliação, métricas,
   otimização, hardening, acessibilidade formal, observabilidade — nenhum
-  bloco além do WP-07 foi definido.
+  bloco além do WP-08 foi definido.
 - Alterar `total_amount` (orçamento total) — só `daily_cap` é editável.
 - Alterar `max_level_allowed` (teto contratado de autonomia) — é
   configuração comercial/plano, fora desta tela.
+- Retomar uma campanha pausada — nenhuma rota HTTP de retomada existe
+  ainda (achado real, ver certificação do WP-08).
+- Escopos `ACCOUNT`, `PLATFORM` e `GLOBAL` do kill switch — a API os
+  aceita, esta tela não os expõe.
 - Qualquer chamada ao BFF fora de `session.ts`/`LogoutButton.tsx`/
   `TenantSwitcher.tsx`/`BrandKitForm.tsx`/`ConnectAccountCard.tsx`/
   `BriefForm.tsx`/`PlanPanel.tsx`/`ValidationPanel.tsx`/
-  `ApprovalDecisionCard.tsx`/`BudgetPanel.tsx`/`AutonomyPanel.tsx` — a
-  tela `/` (WP-01) permanece inteiramente fixture-based.
+  `ApprovalDecisionCard.tsx`/`BudgetPanel.tsx`/`AutonomyPanel.tsx`/
+  `KillSwitchPanel.tsx` — a tela `/` (WP-01) permanece inteiramente
+  fixture-based.
 - Deploy, infraestrutura, qualquer configuração de nuvem.
 - Revisão de segurança humana (FM Security Engineer) da superfície de
   autenticação — pendência explícita, ver certificação do WP-02 (segue
   pendente; nenhuma revisão humana ocorreu em nenhuma execução até
-  agora). Revisão de FM QA Engineer do WP-04/WP-05/WP-06/WP-07 — também
-  pendente.
+  agora). Revisão de FM QA Engineer do WP-04/WP-05/WP-06/WP-07/WP-08 —
+  também pendente.
 
-## Fronteiras de segurança (WP-01 a WP-07)
+## Fronteiras de segurança (WP-01 a WP-08)
 
 Verificadas automaticamente por `npm run boundary:check` (e por
 `tests/boundaries.test.ts`, que roda a mesma lógica sem subprocesso) a
@@ -387,13 +430,14 @@ cada execução local e no CI:
   `src/components/{BriefForm,PlanPanel,ValidationPanel,
   ApprovalDecisionCard}.tsx` (briefing, estratégia, validação e decisão
   de aprovação, WP-05), `src/components/BudgetPanel.tsx` (alteração de
-  orçamento, WP-06) e `src/components/AutonomyPanel.tsx` (alteração de
-  nível de autonomia, WP-07) — os onze únicos pontos legítimos, todos
+  orçamento, WP-06), `src/components/AutonomyPanel.tsx` (alteração de
+  nível de autonomia, WP-07) e `src/components/KillSwitchPanel.tsx`
+  (parada de emergência, WP-08) — os doze únicos pontos legítimos, todos
   protegidos por CSRF. Todo o resto de `web/src`, incluindo a tela `/` e
   os componentes do WP-01, permanece em zero chamadas de rede.
 
 Este script **não certifica segurança formal do produto** — apenas as
-proibições explícitas de escopo do WP-01 a WP-07.
+proibições explícitas de escopo do WP-01 a WP-08.
 
 ## Próximo gate
 
@@ -421,6 +465,9 @@ autonomia, também definido por reconciliação de CURRENT, sob nova
 autorização do Diretor para continuar a construção enquanto a cota do CI
 está esgotada) **implementado e autotestado** — ver
 `docs/web/14_CERTIFICACAO_WP07_NIVEL_AUTONOMIA.md`, mesma revisão
-pendente. Nenhum bloco além do WP-07 foi definido; qualquer trabalho
+pendente. WP-08 (parada de emergência, também definido por reconciliação
+de CURRENT, mesma autorização do WP-07) **implementado e autotestado** —
+ver `docs/web/15_CERTIFICACAO_WP08_PARADA_EMERGENCIA.md`, mesma revisão
+pendente. Nenhum bloco além do WP-08 foi definido; qualquer trabalho
 futuro exige a mesma disciplina de reconciliação de CURRENT usada para
 definir este bloco.

@@ -1,6 +1,6 @@
 # CampaIA — Ponto Zero Web · 06. Roadmap e Work Packages
 
-**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019) — **WP-01 implementado e validado** (19/09/2026), **WP-02 implementado, com revisão de segurança humana pendente** (20/09/2026, ver `docs/web/09_CERTIFICACAO_WP02_AUTENTICACAO_SESSAO_WEB.md`), **WP-03 implementado, com a mesma revisão de segurança humana pendente** (21/09/2026, ver `docs/web/10_CERTIFICACAO_WP03_TENANCY_SHELL.md`), **WP-04 implementado, revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/11_CERTIFICACAO_WP04_ONBOARDING_BRAND_KIT.md`), **WP-05 implementado, fechando o Gate 5 (primeira jornada crítica), revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/12_CERTIFICACAO_WP05_BRIEFING_APROVACAO.md`), **WP-06 implementado (alteração de orçamento, definido nesta mesma missão por reconciliação de CURRENT), mesma revisão pendente** (21/09/2026, ver `docs/web/13_CERTIFICACAO_WP06_ALTERACAO_ORCAMENTO.md`) e **WP-07 implementado (nível de autonomia/Modo Manual-Automático, definido nesta mesma missão por reconciliação de CURRENT, sob nova autorização do Diretor de continuar a construção enquanto a cota do CI está esgotada), mesma revisão pendente** (21/09/2026, ver `docs/web/14_CERTIFICACAO_WP07_NIVEL_AUTONOMIA.md`). Nenhum bloco além do WP-07 foi definido.
+**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019) — **WP-01 implementado e validado** (19/09/2026), **WP-02 implementado, com revisão de segurança humana pendente** (20/09/2026, ver `docs/web/09_CERTIFICACAO_WP02_AUTENTICACAO_SESSAO_WEB.md`), **WP-03 implementado, com a mesma revisão de segurança humana pendente** (21/09/2026, ver `docs/web/10_CERTIFICACAO_WP03_TENANCY_SHELL.md`), **WP-04 implementado, revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/11_CERTIFICACAO_WP04_ONBOARDING_BRAND_KIT.md`), **WP-05 implementado, fechando o Gate 5 (primeira jornada crítica), revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/12_CERTIFICACAO_WP05_BRIEFING_APROVACAO.md`), **WP-06 implementado (alteração de orçamento, definido nesta mesma missão por reconciliação de CURRENT), mesma revisão pendente** (21/09/2026, ver `docs/web/13_CERTIFICACAO_WP06_ALTERACAO_ORCAMENTO.md`) e **WP-07 implementado (nível de autonomia/Modo Manual-Automático, definido nesta mesma missão por reconciliação de CURRENT, sob nova autorização do Diretor de continuar a construção enquanto a cota do CI está esgotada), mesma revisão pendente** (21/09/2026, ver `docs/web/14_CERTIFICACAO_WP07_NIVEL_AUTONOMIA.md`) e **WP-08 implementado (parada de emergência/kill switch, definido nesta mesma missão por reconciliação de CURRENT), mesma revisão pendente** (21/09/2026, ver `docs/web/15_CERTIFICACAO_WP08_PARADA_EMERGENCIA.md`). Nenhum bloco além do WP-08 foi definido.
 
 ---
 
@@ -292,6 +292,8 @@ domínio — muda de nível SEMPRE exige aprovação humana, em qualquer nível 
 
 ### WP-08 — Parada de emergência (Kill Switch)
 
+**IMPLEMENTADO (21/09/2026)**
+
 **Definido em 21/09/2026, por reconciliação de CURRENT**, sob a mesma autorização do Diretor
 que definiu o WP-07 ("a cota será renovada no dia 31 então vamos continuar trabalhando na
 construção...", reafirmada explicitamente: "vamos continuar a construção eu autorizo
@@ -354,11 +356,28 @@ escolhido para este bloco.
   específica ou para o tenant inteiro; o resultado (campanhas afetadas) é exibido; a ação fica
   registrada na auditoria (confirmado por leitura da resposta da API ou de teste de backend,
   não necessariamente por uma tela de auditoria nesta tela — ver "fora de escopo").
-- **Testes**: mesma disciplina dos WP-05/06/07 — teste de backend via sessão Web real se algum
-  gap real for descoberto; Vitest para o componente novo; E2E de fumaça sem backend; E2E
-  cross-stack real.
-- **Riscos**: baixos — nenhuma rota nova de backend esperada; o único achado real conhecido de
-  antemão é a correção aditiva do schema de resposta do contrato.
+- **Achado real de teste, ao investigar o CURRENT do fluxo de publicação**: nenhuma tela do
+  Web app aciona `POST /campaigns/{id}/publish` (comentário do próprio código-fonte em
+  `campaigns/[campaignId]/page.tsx`: "nada nesta tela chama POST .../publish", preexistente
+  ao WP-08). Isso significa que nenhum caminho puramente de navegador consegue levar uma
+  campanha a um estado pausável (`APPROVED`/`PUBLISHING`/`ACTIVE`/`OPTIMIZING`) — o E2E
+  cross-stack deste bloco só pode exercitar de verdade o resultado "nenhuma campanha
+  afetada" (escopo `TENANT` sobre uma campanha `DRAFT`); o caso "campanha realmente pausada"
+  (escopo `CAMPAIGN`) é coberto pelo teste de backend via sessão Web real, que chega a
+  `APPROVED`/`PUBLISHING` diretamente via HTTP (o mesmo fluxo que WP-05 já provou ponta a
+  ponta: brief → plano → validação → aprovação → decisão → publicação).
+- **Testes**: backend — 3 novos (`test_kill_switch_web_session.py`: escopo `CAMPAIGN` pausa
+  de verdade uma campanha `APPROVED`/publicada, sem `X-Step-Up-Token`; escopo `TENANT` sobre
+  campanha `DRAFT` devolve lista vazia, não erro; identidade sem `KILL_SWITCH` é recusada
+  com `403 PERMISSION_DENIED`). Frontend — 9 novos Vitest (`KillSwitchPanel`) + 1 novo em
+  `dashboard-page.test.tsx` + 1 E2E cross-stack real (`e2e-crossstack/kill-switch.spec.ts`).
+  Regressão completa: 267 domínio + 171 API (168 + 3) + 24/24 AsyncAPI + 120 Vitest (110 +
+  10) + build + fronteiras de segurança (12 arquivos) + 10 E2E cross-stack (9 + 1) — todos
+  verdes, zero regressão.
+- **Riscos**: baixos — nenhuma rota nova de backend foi necessária; os achados reais foram de
+  contrato (schema de resposta ausente) e de alcance de teste E2E (nenhum caminho de
+  navegador chega a um estado pausável, achado preexistente confirmado, não introduzido por
+  este bloco).
 - **Rollback**: reverter para o estado do WP-07; painel novo isolado em `/dashboard`, nenhuma
   outra tela depende dele.
 - **Gate**: nenhum gate formal do roadmap original cobre este bloco — tratado como extensão do
@@ -374,8 +393,7 @@ escolhido para este bloco.
 
 ## 3. Blocos além do WP-08 (não detalhados como Work Package nesta missão)
 
-**Nota (21/09/2026): WP-01 a WP-08 estão todos implementados** (ou, no caso do WP-08, sendo
-implementado nesta mesma sessão), sob a autorização contínua do Diretor de continuar a
+**Nota (21/09/2026): WP-01 a WP-08 estão todos implementados**, sob a autorização contínua do Diretor de continuar a
 construção enquanto a cota do CI do GitHub Actions está esgotada ("vamos continuar trabalhando
 na construção e fazer tudo que for possível sem atrasar o término e no final faremos os testes
 necessários", reafirmada em seguida: "vamos continuar a construção eu autorizo prosseguir e no
