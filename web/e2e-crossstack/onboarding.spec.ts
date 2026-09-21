@@ -6,7 +6,9 @@ import { expect, test } from "@playwright/test";
  * POST /connections/oauth/complete, the backend gap this Work Package closed -- see
  * docs/web/06_ROADMAP_WORK_PACKAGES.md WP-04) and a real Brand Kit save (BrandKitForm ->
  * POST /brand-profiles), proving the "Concluir Onboarding" business rule (enabled only once
- * at least one channel is connected) against the real backend, not a mock.
+ * at least one channel is connected) against the real backend, not a mock. WP-09 extends
+ * this same spec (same page, same flow) with the real capabilities list and disconnect
+ * (DELETE /connections/{id}).
  */
 async function loginAsOwner(page: import("@playwright/test").Page) {
   await page.goto("/onboarding");
@@ -52,6 +54,32 @@ test.describe("CampaIA Web /onboarding (WP-04) cross-stack E2E", () => {
     // Meta and WhatsApp remain genuinely unconnected -- the rule is ">= 1 channel", not
     // "all channels", and nothing here should silently mark the other two as connected too.
     await expect(page.getByText("Não conectado")).toHaveCount(2);
+  });
+
+  test("connecting shows real capabilities, and disconnecting returns it to 'Não conectado' (WP-09)", async ({
+    page,
+  }) => {
+    await loginAsOwner(page);
+
+    // Uses META, not GOOGLE_ADS -- the previous test in this file connects GOOGLE_ADS and
+    // never disconnects it, and this spec's backend (one real process for the whole file,
+    // workers: 1) carries that connection across tests. META stays genuinely unconnected
+    // until this test connects it.
+    const metaCard = page.getByTestId("connect-card-META");
+    await metaCard.getByRole("button", { name: "Conectar (simulado)" }).click();
+    await expect(page).toHaveURL(/\/onboarding$/);
+    await expect(metaCard.getByText("Conectado (simulado)")).toBeVisible();
+
+    // Real capabilities (GET /connections/{id}/capabilities), fetched server-side and
+    // rendered directly -- both hardcoded channels this endpoint always evaluates,
+    // regardless of the connection's own provider.
+    await expect(metaCard.getByText(/PUBLISH:GOOGLE_ADS:/)).toBeVisible();
+    await expect(metaCard.getByText(/PUBLISH:META_ADS:/)).toBeVisible();
+
+    await metaCard.getByRole("button", { name: "Desconectar" }).click();
+    await expect(page).toHaveURL(/\/onboarding$/);
+    await expect(metaCard.getByText("Não conectado")).toBeVisible();
+    await expect(metaCard.getByRole("button", { name: "Conectar (simulado)" })).toBeVisible();
   });
 
   test("saving a Brand Kit persists it across reload via the real API", async ({ page }) => {
