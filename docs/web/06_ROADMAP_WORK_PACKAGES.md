@@ -1,6 +1,6 @@
 # CampaIA — Ponto Zero Web · 06. Roadmap e Work Packages
 
-**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019) — **WP-01 implementado e validado** (19/09/2026), **WP-02 implementado, com revisão de segurança humana pendente** (20/09/2026, ver `docs/web/09_CERTIFICACAO_WP02_AUTENTICACAO_SESSAO_WEB.md`), **WP-03 implementado, com a mesma revisão de segurança humana pendente** (21/09/2026, ver `docs/web/10_CERTIFICACAO_WP03_TENANCY_SHELL.md`), **WP-04 implementado, revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/11_CERTIFICACAO_WP04_ONBOARDING_BRAND_KIT.md`), **WP-05 implementado, fechando o Gate 5 (primeira jornada crítica), revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/12_CERTIFICACAO_WP05_BRIEFING_APROVACAO.md`), **WP-06 implementado (alteração de orçamento, definido nesta mesma missão por reconciliação de CURRENT), mesma revisão pendente** (21/09/2026, ver `docs/web/13_CERTIFICACAO_WP06_ALTERACAO_ORCAMENTO.md`) e **WP-07 implementado (nível de autonomia/Modo Manual-Automático, definido nesta mesma missão por reconciliação de CURRENT, sob nova autorização do Diretor de continuar a construção enquanto a cota do CI está esgotada), mesma revisão pendente** (21/09/2026, ver `docs/web/14_CERTIFICACAO_WP07_NIVEL_AUTONOMIA.md`) **WP-08 implementado (parada de emergência/kill switch, definido nesta mesma missão por reconciliação de CURRENT), mesma revisão pendente** (21/09/2026, ver `docs/web/15_CERTIFICACAO_WP08_PARADA_EMERGENCIA.md`), **WP-09 implementado (desconectar conta e ver capacidades da conexão, definido nesta mesma missão por reconciliação de CURRENT, sob nova autorização do Diretor de construir mais 3 blocos), mesma revisão pendente** (21/09/2026, ver `docs/web/16_CERTIFICACAO_WP09_DESCONECTAR_E_CAPACIDADES.md`) e **WP-10 implementado (trilha de auditoria, definido nesta mesma missão por reconciliação de CURRENT, mesma autorização), mesma revisão pendente** (21/09/2026, ver `docs/web/17_CERTIFICACAO_WP10_TRILHA_AUDITORIA.md`). WP-11 está definido (mesma autorização) mas ainda não implementado.
+**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019) — **WP-01 implementado e validado** (19/09/2026), **WP-02 implementado, com revisão de segurança humana pendente** (20/09/2026, ver `docs/web/09_CERTIFICACAO_WP02_AUTENTICACAO_SESSAO_WEB.md`), **WP-03 implementado, com a mesma revisão de segurança humana pendente** (21/09/2026, ver `docs/web/10_CERTIFICACAO_WP03_TENANCY_SHELL.md`), **WP-04 implementado, revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/11_CERTIFICACAO_WP04_ONBOARDING_BRAND_KIT.md`), **WP-05 implementado, fechando o Gate 5 (primeira jornada crítica), revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/12_CERTIFICACAO_WP05_BRIEFING_APROVACAO.md`), **WP-06 implementado (alteração de orçamento, definido nesta mesma missão por reconciliação de CURRENT), mesma revisão pendente** (21/09/2026, ver `docs/web/13_CERTIFICACAO_WP06_ALTERACAO_ORCAMENTO.md`) e **WP-07 implementado (nível de autonomia/Modo Manual-Automático, definido nesta mesma missão por reconciliação de CURRENT, sob nova autorização do Diretor de continuar a construção enquanto a cota do CI está esgotada), mesma revisão pendente** (21/09/2026, ver `docs/web/14_CERTIFICACAO_WP07_NIVEL_AUTONOMIA.md`) **WP-08 implementado (parada de emergência/kill switch, definido nesta mesma missão por reconciliação de CURRENT), mesma revisão pendente** (21/09/2026, ver `docs/web/15_CERTIFICACAO_WP08_PARADA_EMERGENCIA.md`), **WP-09 implementado (desconectar conta e ver capacidades da conexão, definido nesta mesma missão por reconciliação de CURRENT, sob nova autorização do Diretor de construir mais 3 blocos), mesma revisão pendente** (21/09/2026, ver `docs/web/16_CERTIFICACAO_WP09_DESCONECTAR_E_CAPACIDADES.md`) **WP-10 implementado (trilha de auditoria, definido nesta mesma missão por reconciliação de CURRENT, mesma autorização), mesma revisão pendente** (21/09/2026, ver `docs/web/17_CERTIFICACAO_WP10_TRILHA_AUDITORIA.md`) e **WP-11 implementado (métricas honestas da campanha, definido nesta mesma missão por reconciliação de CURRENT, mesma autorização), mesma revisão pendente** (21/09/2026, ver `docs/web/18_CERTIFICACAO_WP11_METRICAS_HONESTAS.md`). Com o WP-11, a autorização do Diretor de construir mais 3 blocos ("pode sim construa mais 3 blocos") está integralmente executada (WP-09, WP-10, WP-11); nenhum bloco além do WP-11 foi definido.
 
 ---
 
@@ -560,6 +560,8 @@ histórico. Nenhuma rota nova de backend esperada.
 
 ### WP-11 — Métricas honestas da campanha
 
+**IMPLEMENTADO (21/09/2026)**
+
 **Definido em 21/09/2026, por reconciliação de CURRENT**, mesma autorização do WP-09/10.
 CURRENT reconstruído por leitura direta de `backend/api/routes_campaigns.py`
 (`get_insights`) e de `contracts/bff-openapi.yaml` antes de qualquer código: `GET
@@ -592,8 +594,26 @@ próprio código-fonte). Nenhuma rota nova de backend esperada.
   real da API explicando a ausência de dados, nunca um erro nem um dado inventado.
 - **Testes**: mesma disciplina — teste de backend via sessão Web real se algum gap real for
   descoberto; Vitest para a seção nova; E2E de fumaça sem backend; E2E cross-stack real.
-- **Riscos**: baixos — nenhuma rota nova de backend esperada; o único achado real conhecido
-  de antemão é a correção aditiva do campo `note`.
+- **Confirmado: achado de contrato corrigido, nenhum outro achado real** — o campo `note`
+  (§ acima) foi o único gap encontrado, confirmado por leitura direta de
+  `InsightSeriesResponse` contra o schema `InsightSeries` antes de qualquer componente.
+  Diferente do WP-10, este bloco não encontrou nenhum bug real adicional na regressão.
+- **Achado real, confirmado por teste de backend via sessão Web real**
+  (`test_insights_web_session.py`, 2 testes): uma sessão real vê o placeholder honesto vazio
+  com um `note` real, não vazio (o campo recém-corrigido no contrato); `Permission
+  .CAMPAIGN_VIEW` é de fato ampla — toda role em `ROLE_PERMISSIONS` a possui, então não há
+  identidade real capaz de exercitar uma recusa de permissão para este bloco (diferente de
+  todo WP anterior, que sempre teve pelo menos um teste de fronteira de permissão).
+- **Testes executados**: backend — 2 novos (`test_insights_web_session.py`, acima). Frontend
+  — 3 novos Vitest (`campaign-detail-page.test.tsx`: nota real exibida quando `points` está
+  vazio, pontos reais exibidos quando não está, estado de erro quando a leitura falha) + 1
+  E2E cross-stack real (`insights.spec.ts`). Regressão completa, HEAD `50fa627`: 267 domínio
+  (inalterado) + 178 API (176 + 2) + 24/24 AsyncAPI (inalterado) + 135 Vitest (132 + 3) +
+  build de produção limpo + fronteiras de segurança limpas (seção nova é markup puro dentro
+  do próprio Server Component de `/campaigns/{id}`, nenhum novo Client Component, sem nova
+  entrada na allowlist) + 13 E2E cross-stack (12 + 1) — todos verdes, zero regressão.
+- **Riscos**: baixos — nenhuma rota nova de backend foi necessária; o único achado real foi a
+  correção aditiva do campo `note`, confirmada.
 - **Rollback**: reverter para o estado do WP-10; seção nova isolada em `/campaigns/{id}`,
   nenhuma outra tela depende dela.
 - **Gate**: nenhum gate formal do roadmap original cobre este bloco — tratado como extensão
@@ -601,17 +621,19 @@ próprio código-fonte). Nenhuma rota nova de backend esperada.
 - **Definição de pronto**: seção de métricas exibe o estado real (vazio, honestamente
   explicado) ponta a ponta.
 - **Autorização necessária**: mesma autorização do WP-09/10 ("pode sim construa mais 3
-  blocos"); revisão de FM QA Engineer permanece pendente.
+  blocos"); revisão de FM QA Engineer permanece pendente. Com este bloco, a autorização de
+  "mais 3 blocos" do Diretor (WP-09, WP-10, WP-11) está integralmente executada.
 
 ---
 
 ## 3. Blocos além do WP-11 (não detalhados como Work Package nesta missão)
 
-**Nota (21/09/2026): WP-01 a WP-10 estão implementados**, e o Diretor autorizou explicitamente
+**Nota (21/09/2026): WP-01 a WP-11 estão implementados.** O Diretor autorizou explicitamente
 construir mais 3 blocos ("pode sim construa mais 3 blocos"), reafirmando a autorização contínua
 de continuar a construção enquanto a cota do CI do GitHub Actions está esgotada. WP-09, WP-10 e
 WP-11 (acima) foram definidos sob essa autorização, cada um por reconciliação de CURRENT própria,
-antes de qualquer código; WP-11 permanece o único ainda não implementado. Nenhum bloco além do
-WP-11 foi definido; qualquer bloco seguinte exige a mesma disciplina de reconciliação de CURRENT.
+antes de qualquer código; **com o WP-11, essa autorização está integralmente executada**. Nenhum
+bloco além do WP-11 foi definido; qualquer bloco seguinte exige nova autorização explícita do
+Diretor E nova disciplina de reconciliação de CURRENT.
 
 Publicação sandbox (depende de credenciais reais de sandbox de ao menos 1 provider — bloqueio externo, não técnico), reconciliação, recomendações/otimização limitada, hardening, acessibilidade formal, observabilidade formal, segurança formal, staging, produção controlada — todos dependem de decisões e Work Packages anteriores não executados nesta missão até 21/09/2026. Orçamento, autonomia e parada de emergência, os três primeiros candidatos tecnicamente desbloqueados encontrados, foram promovidos a WP-06/07/08 respectivamente; desconectar conta/capacidades, trilha de auditoria e métricas honestas, três novos candidatos tecnicamente desbloqueados (rotas já prontas e testadas, achados reais de contrato encontrados em pelo menos duas delas), foram promovidos a WP-09/10/11 (ver acima). Retomar campanha pausada (resume) e seletor de unidade de negócio (nenhuma rota de troca de unidade existe, só de tenant) permanecem candidatos reais, mas bloqueados por lacunas arquiteturais genuínas — não promovidos, registrados como achados reais (P-40 e um novo achado a registrar no painel).

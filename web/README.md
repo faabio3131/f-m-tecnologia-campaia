@@ -1,4 +1,4 @@
-# CampaIA Web — Fundação, sessão real, shell autenticado, primeira jornada, orçamento, autonomia, kill switch, ciclo de vida de conexões e trilha de auditoria (WP-01 a WP-10)
+# CampaIA Web — Fundação, sessão real, shell autenticado, primeira jornada, orçamento, autonomia, kill switch, ciclo de vida de conexões, trilha de auditoria e métricas honestas (WP-01 a WP-11)
 
 Fundação técnica do frontend Web do CampaIA. Este diretório implementa o
 **WP-01 — Fundação do frontend Web** (aprovado pela ADR-0017), o
@@ -37,7 +37,13 @@ Trilha de auditoria** (ver
 `docs/web/17_CERTIFICACAO_WP10_TRILHA_AUDITORIA.md`; bloco também não
 previsto no roadmap original, definido nesta mesma missão por
 reconciliação de CURRENT, mesma autorização do WP-09; mesma revisão de FM
-QA Engineer ainda pendente).
+QA Engineer ainda pendente) e o **WP-11 — Métricas honestas da campanha**
+(ver `docs/web/18_CERTIFICACAO_WP11_METRICAS_HONESTAS.md`; bloco também
+não previsto no roadmap original, definido nesta mesma missão por
+reconciliação de CURRENT, mesma autorização do WP-09/10; mesma revisão de
+FM QA Engineer ainda pendente). Com o WP-11, a autorização do Diretor de
+construir mais 3 blocos ("pode sim construa mais 3 blocos") está
+integralmente executada.
 
 **Não é** um produto comercial concluído. WP-01 (a tela `/`) permanece
 inteiramente fixture-based, sem nenhuma chamada de rede — essa garantia
@@ -57,9 +63,11 @@ o ciclo de vida de uma conexão em `/onboarding` (desconectar e ver
 capacidades reais), sem introduzir nenhuma chamada de rede GET
 client-side — as capacidades são buscadas no servidor. WP-10 adiciona a
 página `/audit` (trilha de auditoria real do tenant), um Server Component
-puro, sem nenhuma chamada de rede client-side. Publicação real em um
-provedor de verdade continua fora do escopo (WP-11 está definido mas
-ainda não implementado — ver seções abaixo).
+puro, sem nenhuma chamada de rede client-side. WP-11 adiciona uma seção
+"Métricas" em `/campaigns/[id]`, exibindo o estado real (hoje honestamente
+vazio) de `GET /campaigns/{id}/insights`, também sem nenhuma chamada de
+rede client-side. Publicação real em um provedor de verdade continua fora
+do escopo — nenhum bloco além do WP-11 foi definido.
 
 ## Requisitos
 
@@ -452,12 +460,39 @@ conexão revogada, nenhuma ativa". Corrigido usando
 `activeConnections.length > 0` — ver
 `docs/web/17_CERTIFICACAO_WP10_TRILHA_AUDITORIA.md` §2.
 
-## O que ainda não existe (fora do escopo do WP-01 a WP-10)
+## Métricas honestas (WP-11)
+
+Bloco também **não previsto no roadmap original**, definido nesta mesma
+missão por reconciliação de CURRENT (ver
+`docs/web/06_ROADMAP_WORK_PACKAGES.md` §"WP-11"). `GET
+/campaigns/{id}/insights` já existia desde antes deste bloco, já testada
+(fixtures Bearer), e devolve deliberadamente uma lista vazia de pontos —
+"não há camada de analytics em `campaia_core` ainda" (comentário do
+próprio código-fonte) — mas nenhuma tela jamais exibiu essa resposta.
+
+- **Visualizar**: nova seção "Métricas" em `/campaigns/{id}` (markup
+  puro dentro do Server Component já existente, sem novo Client
+  Component) exibe a resposta real via `getServerInsights`: quando
+  `points` está vazio (sempre, hoje), mostra o `note` real devolvido pela
+  API, nunca um gráfico vazio nem um placeholder inventado pela Web.
+  Quando `points` não estiver vazio, exibe os pontos reais recebidos.
+
+Achado real de contrato corrigido: o campo `note`
+(`InsightSeriesResponse.note`, `api/models.py`) estava sempre presente na
+resposta real, mas ausente do schema `InsightSeries` em
+`contracts/bff-openapi.yaml` — corrigido aditivamente. Nenhum outro
+achado real neste bloco — ver
+`docs/web/18_CERTIFICACAO_WP11_METRICAS_HONESTAS.md` §2. Com este bloco,
+a autorização do Diretor de construir mais 3 blocos ("pode sim construa
+mais 3 blocos") está integralmente executada.
+
+## O que ainda não existe (fora do escopo do WP-01 a WP-11)
 
 - Publicação real em um provedor de verdade, reconciliação, otimização,
-  hardening, acessibilidade formal, observabilidade — nenhum bloco além do
-  WP-11 foi definido (WP-11, métricas honestas de campanha, definido mas
-  ainda não implementado, sob a mesma autorização de "mais 3 blocos").
+  hardening, acessibilidade formal, observabilidade, camada de analytics
+  real (`points` de `/insights` permanece sempre vazio até essa camada
+  existir) — nenhum bloco além do WP-11 foi definido; qualquer bloco
+  seguinte exige nova autorização explícita do Diretor.
 - Paginação real da trilha de auditoria — `next_cursor` de
   `GET /audit-events` é sempre `null` (achado pré-existente).
 - Alterar `total_amount` (orçamento total) — só `daily_cap` é editável.
@@ -480,9 +515,9 @@ conexão revogada, nenhuma ativa". Corrigido usando
   autenticação — pendência explícita, ver certificação do WP-02 (segue
   pendente; nenhuma revisão humana ocorreu em nenhuma execução até
   agora). Revisão de FM QA Engineer do
-  WP-04/WP-05/WP-06/WP-07/WP-08/WP-09/WP-10 — também pendente.
+  WP-04/WP-05/WP-06/WP-07/WP-08/WP-09/WP-10/WP-11 — também pendente.
 
-## Fronteiras de segurança (WP-01 a WP-10)
+## Fronteiras de segurança (WP-01 a WP-11)
 
 Verificadas automaticamente por `npm run boundary:check` (e por
 `tests/boundaries.test.ts`, que roda a mesma lógica sem subprocesso) a
@@ -505,15 +540,16 @@ cada execução local e no CI:
   orçamento, WP-06), `src/components/AutonomyPanel.tsx` (alteração de
   nível de autonomia, WP-07) e `src/components/KillSwitchPanel.tsx`
   (parada de emergência, WP-08) — os doze únicos pontos legítimos, todos
-  protegidos por CSRF. Nem WP-09 nem WP-10 adicionam um décimo terceiro:
-  desconectar (WP-09) reutiliza `ConnectAccountCard.tsx`, já na lista, e
-  capacidades são lidas no servidor; `/audit` (WP-10) é um Server
-  Component puro, zero chamada de rede client-side. Todo o resto de
-  `web/src`, incluindo a tela `/` e os componentes do WP-01, permanece em
-  zero chamadas de rede.
+  protegidos por CSRF. Nenhum dos WP-09, WP-10 ou WP-11 adiciona um décimo
+  terceiro: desconectar (WP-09) reutiliza `ConnectAccountCard.tsx`, já na
+  lista, e capacidades são lidas no servidor; `/audit` (WP-10) e a seção
+  "Métricas" de `/campaigns/{id}` (WP-11) são markup server-rendered
+  puro, zero chamada de rede client-side. Todo o resto de `web/src`,
+  incluindo a tela `/` e os componentes do WP-01, permanece em zero
+  chamadas de rede.
 
 Este script **não certifica segurança formal do produto** — apenas as
-proibições explícitas de escopo do WP-01 a WP-10.
+proibições explícitas de escopo do WP-01 a WP-11.
 
 ## Próximo gate
 
@@ -554,7 +590,11 @@ de CURRENT, mesma autorização) **implementado e autotestado**, incluindo
 a correção de um bug real pré-existente de interação WP-04/WP-09
 encontrado pela própria regressão E2E deste bloco — ver
 `docs/web/17_CERTIFICACAO_WP10_TRILHA_AUDITORIA.md`, mesma revisão
-pendente. WP-11 (métricas honestas de campanha) está definido sob a mesma
-autorização, mas ainda não implementado; nenhum bloco além do WP-11 foi
-definido; qualquer trabalho futuro exige a mesma disciplina de
-reconciliação de CURRENT.
+pendente. WP-11 (métricas honestas de campanha, definido por
+reconciliação de CURRENT, mesma autorização) **implementado e
+autotestado** — ver `docs/web/18_CERTIFICACAO_WP11_METRICAS_HONESTAS.md`,
+mesma revisão pendente. **Com o WP-11, a autorização do Diretor de
+construir mais 3 blocos ("pode sim construa mais 3 blocos") está
+integralmente executada** (WP-09, WP-10, WP-11); nenhum bloco além do
+WP-11 foi definido; qualquer trabalho futuro exige nova autorização
+explícita do Diretor E a mesma disciplina de reconciliação de CURRENT.
