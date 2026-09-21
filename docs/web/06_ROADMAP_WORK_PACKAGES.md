@@ -393,6 +393,8 @@ escolhido para este bloco.
 
 ### WP-09 — Desconectar conta e ver capacidades da conexão
 
+**IMPLEMENTADO (21/09/2026)**
+
 **Definido em 21/09/2026, por reconciliação de CURRENT**, sob autorização explícita do
 Diretor para construir mais 3 blocos ("pode sim construa mais 3 blocos"), reafirmando a
 autorização de continuar a construção enquanto a cota do CI está esgotada. CURRENT
@@ -427,11 +429,33 @@ WP-04. Nenhuma rota nova de backend esperada.
   "Não conectado" (sem reinventar o texto "(simulado)" já usado pelo WP-04); usuário
   consulta as capacidades reais de uma conta conectada e vê o resultado real da API, nunca
   inventado.
-- **Testes**: mesma disciplina dos WP-05 a WP-08 — teste de backend via sessão Web real se
-  algum gap real for descoberto; Vitest para o componente estendido; E2E de fumaça sem
-  backend; E2E cross-stack real.
-- **Riscos**: baixos — nenhuma rota nova de backend esperada; o único achado real conhecido
-  de antemão é a correção aditiva do schema `Capability`.
+- **Achado real, encontrado ao projetar a consulta de capacidades**: seguir o padrão
+  estabelecido por toda leitura desta aplicação (GET server-side, via `session.ts`, nunca no
+  cliente) — cogitado inicialmente um GET client-side (seria o primeiro desta aplicação,
+  documentado na primeira versão desta seção), descartado em favor de buscar as capacidades
+  no servidor, em `onboarding/page.tsx`, para cada conexão ativa, e passá-las como prop a
+  `ConnectAccountCard.tsx` — mantém o boundary de rede já estabelecido intacto, sem abrir uma
+  segunda forma de o cliente falar com o BFF.
+- **Testes**: backend — 2 novos (`test_connection_lifecycle_web_session.py`: capacidades
+  reais consultadas via sessão Web real após conectar; desconexão real, confirmada por
+  `GET /connections` refletindo `status: REVOKED`; identidade sem `CONNECTION_MANAGE`
+  recusada). Frontend — 4 novos Vitest (`ConnectAccountCard`) + 1 novo em
+  `onboarding-page.test.tsx` + 1 E2E cross-stack real, estendendo o spec já existente do
+  WP-04. Regressão completa: 267 domínio + 173 API (171 + 2) + 24/24 AsyncAPI + 125 Vitest
+  (120 + 5) + build + fronteiras de segurança (12 arquivos, inalterada — `ConnectAccountCard.tsx`
+  já estava na allowlist desde o WP-04) + 11 E2E cross-stack (10 + 1) — todos verdes, zero
+  regressão.
+- **Achado real de teste E2E, encontrado ao escrever o cross-stack**: o spec de E2E deste
+  bloco estende o mesmo arquivo do WP-04 (`onboarding.spec.ts`), que roda sequencialmente
+  contra um único backend real compartilhado por todo o arquivo (`workers: 1`); um teste
+  anterior no mesmo arquivo conecta `GOOGLE_ADS` e nunca desconecta — usar esse mesmo
+  provider no novo teste faria a asserção inicial ("Conectar (simulado)" visível) nunca
+  encontrar o botão, pois a conta já estaria conectada por herança do teste anterior.
+  Corrigido usando `META` (que permanece genuinamente desconectado até este teste), mesma
+  causa raiz já identificada e documentada como P-34 nesta missão.
+- **Riscos**: baixos — nenhuma rota nova de backend foi necessária; os achados reais foram de
+  contrato (schema `Capability`) e de alcance de teste E2E (estado compartilhado entre
+  specs do mesmo arquivo).
 - **Rollback**: reverter para o estado do WP-08; `ConnectAccountCard.tsx` volta a não ter os
   dois botões novos, nenhuma outra tela depende deles.
 - **Gate**: nenhum gate formal do roadmap original cobre este bloco — tratado como extensão

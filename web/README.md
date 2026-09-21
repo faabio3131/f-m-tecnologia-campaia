@@ -1,4 +1,4 @@
-# CampaIA Web — Fundação, sessão real, shell autenticado, primeira jornada, orçamento, autonomia e kill switch (WP-01 a WP-08)
+# CampaIA Web — Fundação, sessão real, shell autenticado, primeira jornada, orçamento, autonomia, kill switch e ciclo de vida de conexões (WP-01 a WP-09)
 
 Fundação técnica do frontend Web do CampaIA. Este diretório implementa o
 **WP-01 — Fundação do frontend Web** (aprovado pela ADR-0017), o
@@ -27,7 +27,12 @@ emergência (Kill Switch)** (ver
 `docs/web/15_CERTIFICACAO_WP08_PARADA_EMERGENCIA.md`; bloco também não
 previsto no roadmap original, definido nesta mesma missão por
 reconciliação de CURRENT, mesma autorização do WP-07; mesma revisão de FM
-QA Engineer ainda pendente).
+QA Engineer ainda pendente) e o **WP-09 — Desconectar conta e ver
+capacidades da conexão** (ver
+`docs/web/16_CERTIFICACAO_WP09_DESCONECTAR_E_CAPACIDADES.md`; bloco também
+não previsto no roadmap original, definido nesta mesma missão por
+reconciliação de CURRENT, sob autorização do Diretor para construir mais
+3 blocos; mesma revisão de FM QA Engineer ainda pendente).
 
 **Não é** um produto comercial concluído. WP-01 (a tela `/`) permanece
 inteiramente fixture-based, sem nenhuma chamada de rede — essa garantia
@@ -42,9 +47,12 @@ inteiramente a fila de aprovação do WP-05. WP-07 adiciona um painel de
 nível de autonomia em `/dashboard`, reutilizando a mesma fila. WP-08
 adiciona um painel de parada de emergência em `/dashboard`, que NÃO
 reutiliza a fila de aprovação — o próprio domínio dispensa aprovação para
-o kill switch, já que a ação só reduz efeito, nunca amplia. Publicação
-real em um provedor de verdade continua fora do escopo (nenhum bloco além
-do WP-08 foi definido).
+o kill switch, já que a ação só reduz efeito, nunca amplia. WP-09 completa
+o ciclo de vida de uma conexão em `/onboarding` (desconectar e ver
+capacidades reais), sem introduzir nenhuma chamada de rede GET
+client-side — as capacidades são buscadas no servidor. Publicação real em
+um provedor de verdade continua fora do escopo (nenhum bloco além do
+WP-11 foi definido — ver WP-10/WP-11 abaixo).
 
 ## Requisitos
 
@@ -146,13 +154,14 @@ web/
     app/          # App Router: layout, fundação (/), conta (/account, WP-02),
                     # dashboard (/dashboard, WP-03, painel de autonomia adicionado no WP-07,
                     # painel de parada de emergência adicionado no WP-08),
-                    # onboarding (/onboarding, WP-04),
+                    # onboarding (/onboarding, WP-04, ciclo de vida de conexão completo no WP-09),
                     # campanhas (/campaigns, /campaigns/[campaignId], WP-05),
                     # aprovações (/approvals, WP-05)
     components/    # Button, Card, Badge, PageContainer, StatusPanel (WP-01);
                     # LogoutButton, TenantSwitcher (client, chamadas de rede -- WP-02/03);
                     # LoadingState, ErrorState, EmptyState (estados padronizados -- WP-03);
-                    # BrandKitForm, ConnectAccountCard (client, chamadas de rede -- WP-04);
+                    # BrandKitForm, ConnectAccountCard (client, chamadas de rede -- WP-04,
+                    # estendido com desconectar no WP-09);
                     # BriefForm, PlanPanel, ValidationPanel, ApprovalDecisionCard
                     # (client, chamadas de rede -- WP-05); BudgetPanel (client, chamadas
                     # de rede -- WP-06); AutonomyPanel (client, chamadas de rede -- WP-07);
@@ -385,11 +394,32 @@ real (nenhuma rota HTTP de retomada existe, e o Protocol dos conectores
 não define uma operação canônica para isso), não apenas de UI; expor os
 escopos `ACCOUNT`/`PLATFORM`/`GLOBAL` nesta tela.
 
-## O que ainda não existe (fora do escopo do WP-01 a WP-08)
+## Desconectar conta e ver capacidades (WP-09)
+
+Bloco também **não previsto no roadmap original**, definido nesta mesma
+missão por reconciliação de CURRENT (ver
+`docs/web/06_ROADMAP_WORK_PACKAGES.md` §"WP-09"). Completa o ciclo de
+vida de uma conexão que o WP-04 começou (conectar, listar).
+
+- **Desconectar**: `ConnectAccountCard.tsx` (já existente desde o WP-04)
+  ganha um botão "Desconectar" quando a conta está conectada — `DELETE
+  {BFF_ORIGIN}/connections/{id}` (CSRF + `X-Step-Up-Token` +
+  `Idempotency-Key`, mesmo padrão do próprio fluxo de conectar).
+- **Capacidades reais**: buscadas no **servidor** (`onboarding/page.tsx`,
+  via `getServerConnectionCapabilities`), para cada conexão ativa, e
+  passadas como prop ao componente — não uma chamada de rede no cliente.
+  Uma versão inicial deste bloco cogitou a primeira chamada GET
+  client-side desta aplicação (`GET`/`HEAD`/`OPTIONS` estão fora do
+  `CSRFMiddleware`, então não precisariam de CSRF), mas isso foi revisto
+  antes de qualquer commit: toda leitura desta aplicação passa por
+  `session.ts`, server-side, e este bloco mantém essa mesma disciplina.
+
+## O que ainda não existe (fora do escopo do WP-01 a WP-09)
 
 - Publicação real em um provedor de verdade, reconciliação, métricas,
   otimização, hardening, acessibilidade formal, observabilidade — nenhum
-  bloco além do WP-08 foi definido.
+  bloco além do WP-11 foi definido (WP-10/WP-11 em execução sob a mesma
+  autorização de "mais 3 blocos").
 - Alterar `total_amount` (orçamento total) — só `daily_cap` é editável.
 - Alterar `max_level_allowed` (teto contratado de autonomia) — é
   configuração comercial/plano, fora desta tela.
@@ -397,6 +427,8 @@ escopos `ACCOUNT`/`PLATFORM`/`GLOBAL` nesta tela.
   ainda (achado real, ver certificação do WP-08).
 - Escopos `ACCOUNT`, `PLATFORM` e `GLOBAL` do kill switch — a API os
   aceita, esta tela não os expõe.
+- `evidence_url` das capacidades — sempre `null`, não há rastreamento de
+  evidência ainda no domínio (achado 7, pré-existente ao WP-09).
 - Qualquer chamada ao BFF fora de `session.ts`/`LogoutButton.tsx`/
   `TenantSwitcher.tsx`/`BrandKitForm.tsx`/`ConnectAccountCard.tsx`/
   `BriefForm.tsx`/`PlanPanel.tsx`/`ValidationPanel.tsx`/
@@ -407,10 +439,10 @@ escopos `ACCOUNT`/`PLATFORM`/`GLOBAL` nesta tela.
 - Revisão de segurança humana (FM Security Engineer) da superfície de
   autenticação — pendência explícita, ver certificação do WP-02 (segue
   pendente; nenhuma revisão humana ocorreu em nenhuma execução até
-  agora). Revisão de FM QA Engineer do WP-04/WP-05/WP-06/WP-07/WP-08 —
-  também pendente.
+  agora). Revisão de FM QA Engineer do WP-04/WP-05/WP-06/WP-07/WP-08/WP-09
+  — também pendente.
 
-## Fronteiras de segurança (WP-01 a WP-08)
+## Fronteiras de segurança (WP-01 a WP-09)
 
 Verificadas automaticamente por `npm run boundary:check` (e por
 `tests/boundaries.test.ts`, que roda a mesma lógica sem subprocesso) a
@@ -433,11 +465,13 @@ cada execução local e no CI:
   orçamento, WP-06), `src/components/AutonomyPanel.tsx` (alteração de
   nível de autonomia, WP-07) e `src/components/KillSwitchPanel.tsx`
   (parada de emergência, WP-08) — os doze únicos pontos legítimos, todos
-  protegidos por CSRF. Todo o resto de `web/src`, incluindo a tela `/` e
-  os componentes do WP-01, permanece em zero chamadas de rede.
+  protegidos por CSRF. WP-09 não adiciona um décimo terceiro: desconectar
+  reutiliza `ConnectAccountCard.tsx`, já na lista, e capacidades são lidas
+  no servidor, não no cliente. Todo o resto de `web/src`, incluindo a
+  tela `/` e os componentes do WP-01, permanece em zero chamadas de rede.
 
 Este script **não certifica segurança formal do produto** — apenas as
-proibições explícitas de escopo do WP-01 a WP-08.
+proibições explícitas de escopo do WP-01 a WP-09.
 
 ## Próximo gate
 
@@ -468,6 +502,11 @@ está esgotada) **implementado e autotestado** — ver
 pendente. WP-08 (parada de emergência, também definido por reconciliação
 de CURRENT, mesma autorização do WP-07) **implementado e autotestado** —
 ver `docs/web/15_CERTIFICACAO_WP08_PARADA_EMERGENCIA.md`, mesma revisão
-pendente. Nenhum bloco além do WP-08 foi definido; qualquer trabalho
-futuro exige a mesma disciplina de reconciliação de CURRENT usada para
-definir este bloco.
+pendente. Diretor autorizou construir mais 3 blocos ("pode sim construa
+mais 3 blocos"), reafirmando a continuidade da construção durante o
+bloqueio de cota do CI. WP-09 (desconectar conta/capacidades da conexão,
+definido por reconciliação de CURRENT) **implementado e autotestado** —
+ver `docs/web/16_CERTIFICACAO_WP09_DESCONECTAR_E_CAPACIDADES.md`, mesma
+revisão pendente. WP-10 e WP-11 seguem em execução sob a mesma
+autorização; nenhum bloco além do WP-11 foi definido; qualquer trabalho
+futuro exige a mesma disciplina de reconciliação de CURRENT.
