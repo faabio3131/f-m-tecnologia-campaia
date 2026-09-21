@@ -1,6 +1,6 @@
 # CampaIA — Ponto Zero Web · 06. Roadmap e Work Packages
 
-**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019) — **WP-01 implementado e validado** (19/09/2026), **WP-02 implementado, com revisão de segurança humana pendente** (20/09/2026, ver `docs/web/09_CERTIFICACAO_WP02_AUTENTICACAO_SESSAO_WEB.md`) e **WP-03 implementado, com a mesma revisão de segurança humana pendente** (21/09/2026, ver `docs/web/10_CERTIFICACAO_WP03_TENANCY_SHELL.md`). WP-04 em diante permanecem não iniciados.
+**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019) — **WP-01 implementado e validado** (19/09/2026), **WP-02 implementado, com revisão de segurança humana pendente** (20/09/2026, ver `docs/web/09_CERTIFICACAO_WP02_AUTENTICACAO_SESSAO_WEB.md`), **WP-03 implementado, com a mesma revisão de segurança humana pendente** (21/09/2026, ver `docs/web/10_CERTIFICACAO_WP03_TENANCY_SHELL.md`) e **WP-04 implementado, revisão de FM QA Engineer pendente** (21/09/2026, ver `docs/web/11_CERTIFICACAO_WP04_ONBOARDING_BRAND_KIT.md`). WP-05 em diante permanecem não iniciados.
 
 ---
 
@@ -74,19 +74,22 @@ Esta seção registra a reconciliação de ordem original, anterior a qualquer e
 - **Definição de pronto**: shell autenticado navega corretamente por tenant/unidade — **atingido**, incluindo o caminho cross-origin real (frontend e backend em origens diferentes), não apenas o caminho same-origin implícito no WP-02.
 - **Autorização necessária**: aprovação de FM Security Engineer no teste de isolamento. **Autorização de execução recebida do Diretor** ("PROMPT MESTRE — CAMPAIA SaaS V1 COMPLETO", 20/09/2026, continuada); **a revisão do FM Security Engineer é uma pendência real, não satisfeita por esta execução** — registrada explicitamente, não presumida como concluída (mesma pendência do WP-02, ainda em aberto).
 
-### WP-04 — Onboarding e Brand Kit
+### WP-04 — Onboarding e Brand Kit — **IMPLEMENTADO (21/09/2026)**
 
-- **Objetivo**: primeira jornada funcional real: cadastro de marca, conexão de contas (via `POST /connections/oauth/start`, ainda sem provider real por trás — usar o simulador já citado no domínio).
-- **Escopo**: telas de onboarding conforme `13_ESPECIFICACAO_TELAS_APP.md` §3 (fonte funcional, não o código Flutter), consumindo `POST/GET /brand-profiles`, `POST /connections/oauth/start`, `GET /connections`.
-- **Fora do escopo**: OAuth real de provider (depende de Work Package de integração, fora desta lista de 5).
-- **Dependências**: WP-03.
-- **Critérios de aceitação**: usuário completa onboarding e vê Brand Kit salvo; regra de negócio "concluir onboarding habilitado assim que 1 canal conectado" (já era regra do onboarding Flutter, preservada como especificação funcional, não como código) é respeitada.
-- **Testes**: E2E de onboarding completo.
-- **Riscos**: baixo — usa rotas já existentes e testadas.
-- **Rollback**: reverter para estado anterior do shell sem onboarding.
-- **Gate**: Gate 5 (Primeira jornada) — parcial, falta briefing/aprovação para completar o gate inteiro.
-- **Definição de pronto**: onboarding e Brand Kit funcionais ponta a ponta.
-- **Autorização necessária**: FM QA Engineer.
+- **Objetivo**: primeira jornada funcional real: cadastro de marca, conexão de contas (via `POST /connections/oauth/start`, ainda sem provider real por trás — usar o simulador já citado no domínio). **Executado.**
+- **Escopo realizado**: `/onboarding` (`web/src/app/onboarding/page.tsx`) — Brand Kit (`BrandKitForm.tsx`, `POST/GET /brand-profiles`) e Conectar Contas (`ConnectAccountCard.tsx`, três cartões — Google Ads/Meta/WhatsApp — `POST /connections/oauth/start` + `POST /connections/oauth/complete`, `GET /connections`), conforme `13_ESPECIFICACAO_TELAS_APP.md` §3.4/§4 (fonte funcional, não o código Flutter). Regra de negócio "Concluir Onboarding habilitada assim que ≥1 canal conectado" implementada e testada.
+- **Achado real, fora do escopo original, corrigido nesta execução**: `POST /connections/oauth/start` nunca criava uma `Connection` — `ConnectionRepository.create()` existia mas só era chamado diretamente em testes (`client.app.state.campaia.connections.create(...)`), nunca por nenhuma rota HTTP real. A descrição do próprio contrato já dizia "o callback é recebido pelo backend" — a metade que faltava. Fechado com uma rota nova, aditiva, `POST /connections/oauth/complete` (`backend/api/routes_connections.py`), que finaliza o `state` emitido por `/oauth/start` (rastreado server-side em `AppState.oauth_pending`, nunca confiado do cliente, mesmo padrão de `PendingLogin` do WP-02) e cria a `Connection` de fato. Sem essa rota, o critério de aceitação deste WP ("concluir onboarding habilitado assim que 1 canal conectado") seria estruturalmente impossível de satisfazer — nenhum canal jamais ficaria conectado de verdade.
+- **Fora do escopo, confirmado não implementado**: cadastro de empresa/CNPJ e unidade de negócio (`13_ESPECIFICACAO_TELAS_APP.md` §3.2/§3.3) — nenhum endpoint de criação de tenant/unidade existe no backend (tenant_id vem sempre da sessão autenticada, nunca é criado via API); essas duas telas descrevem um TARGET que este Work Package deliberadamente não constrói, para não fabricar uma tela sem chamada de rede real por trás. OAuth real de provider (depende de Work Package de integração, fora desta lista).
+- **Dependências**: WP-03 (satisfeita).
+- **Contratos afetados**: `contracts/bff-openapi.yaml` — `POST /connections/oauth/complete`, aditivo; nenhuma rota pré-existente mudou de forma.
+- **Segurança**: `state` do OAuth simulado nunca aceito às cegas — validado contra `AppState.oauth_pending` (tenant + single-use + TTL), mesma disciplina do `PendingLogin`. Achado real corrigido durante o próprio desenvolvimento: o consumo do `state` acontecia fora do bloco protegido por idempotência, fazendo um retry legítimo (mesma `Idempotency-Key`) falhar como se fosse um replay malicioso — corrigido movendo o consumo para dentro do fechamento idempotente, pego por teste antes de qualquer deploy.
+- **Critérios de aceitação**: usuário completa onboarding e vê Brand Kit salvo — **Sim**, testado via E2E cross-stack real; regra "concluir onboarding habilitado assim que 1 canal conectado" — **Sim**, testado.
+- **Testes**: backend — 7 novos (`backend/tests_api/test_oauth_complete.py`: cria conexão real, state single-use, state de outro tenant rejeitado, exige step-up, exige idempotency-key, replay não duplica). Frontend — 17 novos Vitest (`BrandKitForm`, `ConnectAccountCard`, `OnboardingPage` em cada estado) + 1 E2E de fumaça sem backend (`e2e/onboarding.spec.ts`) + 3 E2E cross-stack reais (`e2e-crossstack/onboarding.spec.ts`: nada conectado no início, conectar uma conta habilita "Concluir Onboarding", Brand Kit salvo persiste após reload). Regressão completa: 267 domínio + 162 API (155 + 7) + 24/24 AsyncAPI + 53 Vitest + 10 E2E de fumaça + 6 E2E cross-stack — todos verdes, zero regressão.
+- **Riscos**: baixo, como previsto — o único risco real materializado (gap de criação de conexão) foi encontrado e fechado dentro desta própria execução, não deixado como pendência.
+- **Rollback**: reverter para o shell sem `/onboarding`; `/connections/oauth/complete` ausente faz `/onboarding` degradar para "nada conectável", nunca para um estado inconsistente.
+- **Gate**: Gate 5 (Primeira jornada) — parcial, falta briefing/aprovação (WP-05) para completar o gate inteiro.
+- **Definição de pronto**: onboarding e Brand Kit funcionais ponta a ponta — **atingido**, incluindo o caminho de conexão real (antes, estruturalmente impossível).
+- **Autorização necessária**: FM QA Engineer. **Autorização de execução recebida do Diretor** (continuação de "PROMPT MESTRE — CAMPAIA SaaS V1 COMPLETO"); a revisão de QA formal não ocorreu nesta execução — pendência real, registrada, não presumida como satisfeita.
 
 ### WP-05 — Briefing, estratégia e aprovação (fecha a primeira jornada crítica)
 

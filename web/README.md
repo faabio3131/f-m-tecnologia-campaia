@@ -1,20 +1,24 @@
-# CampaIA Web — Fundação, sessão real e shell autenticado (WP-01 + WP-02 + WP-03)
+# CampaIA Web — Fundação, sessão real, shell autenticado e onboarding (WP-01 a WP-04)
 
 Fundação técnica do frontend Web do CampaIA. Este diretório implementa o
 **WP-01 — Fundação do frontend Web** (aprovado pela ADR-0017), o
 **WP-02 — Autenticação e sessão Web real** (aprovado pela ADR-0018,
 implementado em 20/09/2026 — ver
 `docs/web/09_CERTIFICACAO_WP02_AUTENTICACAO_SESSAO_WEB.md`; revisão de
-segurança humana por um FM Security Engineer ainda pendente) e o
+segurança humana por um FM Security Engineer ainda pendente), o
 **WP-03 — Contexto de tenant/unidade e shell do dashboard** (ver
-`docs/web/10_CERTIFICACAO_WP03_TENANCY_SHELL.md`).
+`docs/web/10_CERTIFICACAO_WP03_TENANCY_SHELL.md`) e o
+**WP-04 — Onboarding e Brand Kit** (ver
+`docs/web/11_CERTIFICACAO_WP04_ONBOARDING_BRAND_KIT.md`; revisão de FM QA
+Engineer ainda pendente).
 
 **Não é** um produto comercial concluído. WP-01 (a tela `/`) permanece
 inteiramente fixture-based, sem nenhuma chamada de rede — essa garantia
 não mudou. WP-02 adiciona a página `/account` (login/logout reais). WP-03
-adiciona a página `/dashboard` (shell autenticado, seletor de tenant) —
-mas nenhum dos dois implementa qualquer tela de produto ou regra de
-negócio (isso é WP-04 em diante).
+adiciona a página `/dashboard` (shell autenticado, seletor de tenant).
+WP-04 adiciona a página `/onboarding` (Brand Kit real, conexão simulada de
+contas) — mas nenhum implementa a jornada completa de produto (briefing,
+geração por IA, campanhas, publicação — isso é WP-05 em diante).
 
 ## Requisitos
 
@@ -32,7 +36,7 @@ negócio (isso é WP-04 em diante).
 | TypeScript | ^5 (modo `strict`) |
 
 Nenhuma dependência de estado global, SDK de provedor de nuvem ou
-analytics foi instalada — deliberadamente fora do escopo do WP-01/02/03.
+analytics foi instalada — deliberadamente fora do escopo do WP-01 a WP-04.
 
 ## Instalação
 
@@ -108,17 +112,20 @@ frontend.
 ```text
 web/
   src/
-    app/          # App Router: layout, fundação (/), conta (/account, WP-02), dashboard (/dashboard, WP-03)
+    app/          # App Router: layout, fundação (/), conta (/account, WP-02),
+                    # dashboard (/dashboard, WP-03), onboarding (/onboarding, WP-04)
     components/    # Button, Card, Badge, PageContainer, StatusPanel (WP-01);
                     # LogoutButton, TenantSwitcher (client, chamadas de rede -- WP-02/03);
-                    # LoadingState, ErrorState, EmptyState (estados padronizados -- WP-03)
+                    # LoadingState, ErrorState, EmptyState (estados padronizados -- WP-03);
+                    # BrandKitForm, ConnectAccountCard (client, chamadas de rede -- WP-04)
     contracts/     # types.ts (import estável) + bff-openapi.generated.ts (gerado, não editar)
     fixtures/       # dado fictício local, tipado a partir do contrato (usado só por /)
-    lib/            # session.ts: leitura de sessão (WP-02) e memberships (WP-03) real, server-only
+    lib/            # session.ts: leitura de sessão (WP-02), memberships (WP-03),
+                    # Brand Kits/conexões (WP-04) real, server-only
     styles/         # tokens.css — variáveis de design (cor, espaçamento, tipografia, motion)
   tests/           # Vitest: unitários, componentes, acessibilidade, fronteiras de segurança/contrato
-  e2e/             # Playwright: smoke de /, /account, /dashboard -- sem backend (CI padrão)
-  e2e-crossstack/  # Playwright: WP-03, login + troca de tenant reais -- com backend (job dedicado)
+  e2e/             # Playwright: smoke de /, /account, /dashboard, /onboarding -- sem backend (CI padrão)
+  e2e-crossstack/  # Playwright: WP-03/04, login, troca de tenant e onboarding reais -- com backend (job dedicado)
   scripts/         # CLIs de verificação (drift de contrato, fronteiras de segurança) + lógica compartilhada em scripts/lib/
   public/          # ativos estáticos (favicon)
 ```
@@ -179,20 +186,48 @@ login) com o tenant escolhido como ativo, e qualquer step-up recente é
 invalidado em TODOS os tenants do usuário (ADR-0018). Um usuário com um
 único membership real nunca vê o seletor — não há nada para trocar.
 
-## O que ainda não existe (fora do escopo do WP-01/WP-02/WP-03)
+## Onboarding e Brand Kit (WP-04)
 
-- Qualquer funcionalidade de negócio (onboarding, Brand Kit, briefing,
-  geração por IA, campanhas, publicação, conectores reais) — WP-04 em
-  diante. `/dashboard` (WP-03) é navegação, nunca produto.
+`/onboarding` implementa a parte de `docs/product/13_ESPECIFICACAO_TELAS_APP.md`
+§3.4/§4 que tem rota real por trás:
+
+- **Conectar contas**: três cartões independentes (Google Ads, Meta,
+  WhatsApp — `ConnectAccountCard`, Client Component). Nenhum provedor real
+  existe ainda, então não há lista real de contas para escolher — clicar
+  em "Conectar (simulado)" encadeia `POST {BFF_ORIGIN}/connections/oauth/
+  start` e `POST {BFF_ORIGIN}/connections/oauth/complete` (ambos
+  protegidos por CSRF; o `complete` também exige `Idempotency-Key`), que
+  juntos criam uma `Connection` real e persistida — tudo rotulado
+  "(simulado)" para nunca ser confundido com uma conexão real. Cada canal
+  é opcional individualmente.
+- **Brand Kit**: formulário (`BrandKitForm`, Client Component) com nome,
+  tom de voz, cores, diferenciais e restrições, via `POST
+  {BFF_ORIGIN}/brand-profiles` (CSRF + `Idempotency-Key`). Estado vazio
+  explica que o Brand Kit não bloqueia a criação de campanhas.
+- **Concluir Onboarding**: habilitado assim que `GET /connections` (lido
+  server-side) retorna pelo menos uma conexão — a mesma regra de negócio
+  do onboarding Flutter original, preservada como especificação
+  funcional, nunca como código portado.
+
+Fora de escopo, deliberadamente: cadastro de empresa/CNPJ e unidade de
+negócio (§3.2/§3.3 do mesmo documento) — nenhum endpoint de criação de
+tenant/unidade existe no backend (o `tenant_id` vem sempre da sessão
+autenticada, WP-02/03); upload de logo (nenhum endpoint de upload existe).
+
+## O que ainda não existe (fora do escopo do WP-01 a WP-04)
+
+- Jornada de produto completa (briefing, estratégia por IA, aprovação,
+  campanhas, publicação, conectores reais de provedor) — WP-05 em diante.
 - Qualquer chamada ao BFF fora de `session.ts`/`LogoutButton.tsx`/
-  `TenantSwitcher.tsx` — a tela `/` (WP-01) permanece inteiramente
-  fixture-based.
+  `TenantSwitcher.tsx`/`BrandKitForm.tsx`/`ConnectAccountCard.tsx` — a
+  tela `/` (WP-01) permanece inteiramente fixture-based.
 - Deploy, infraestrutura, qualquer configuração de nuvem.
 - Revisão de segurança humana (FM Security Engineer) da superfície de
   autenticação — pendência explícita, ver certificação do WP-02 (segue
-  pendente após o WP-03: nenhuma revisão humana ocorreu nesta execução).
+  pendente; nenhuma revisão humana ocorreu em nenhuma execução até
+  agora). Revisão de FM QA Engineer do WP-04 — também pendente.
 
-## Fronteiras de segurança (WP-01 + WP-02 + WP-03)
+## Fronteiras de segurança (WP-01 a WP-04)
 
 Verificadas automaticamente por `npm run boundary:check` (e por
 `tests/boundaries.test.ts`, que roda a mesma lógica sem subprocesso) a
@@ -204,15 +239,16 @@ cada execução local e no CI:
   pública, não sensível.
 - Nenhum uso de `localStorage`/`sessionStorage` para credenciais.
 - Nenhuma chamada de rede (`fetch`/`axios`/`XMLHttpRequest`) em
-  `web/src`, **exceto** `src/lib/session.ts` (leitura de sessão/
-  memberships server-only), `src/components/LogoutButton.tsx` (logout
-  client-side, protegido por CSRF) e `src/components/TenantSwitcher.tsx`
-  (troca de tenant client-side, também protegida por CSRF, WP-03) — os
-  três únicos pontos legítimos. Todo o resto de `web/src`, incluindo a
-  tela `/` e os componentes do WP-01, permanece em zero chamadas de rede.
+  `web/src`, **exceto** `src/lib/session.ts` (leituras server-only),
+  `src/components/LogoutButton.tsx` (logout client-side, protegido por
+  CSRF), `src/components/TenantSwitcher.tsx` (troca de tenant, WP-03) e
+  `src/components/{BrandKitForm,ConnectAccountCard}.tsx` (Brand Kit e
+  conexão simulada de contas, WP-04) — os cinco únicos pontos legítimos,
+  todos protegidos por CSRF. Todo o resto de `web/src`, incluindo a tela
+  `/` e os componentes do WP-01, permanece em zero chamadas de rede.
 
 Este script **não certifica segurança formal do produto** — apenas as
-proibições explícitas de escopo do WP-01/WP-02/WP-03.
+proibições explícitas de escopo do WP-01 a WP-04.
 
 ## Próximo gate
 
@@ -224,5 +260,8 @@ Engineer), ver `docs/web/09_CERTIFICACAO_WP02_AUTENTICACAO_SESSAO_WEB.md`.
 Gate 4 (WP-03, tenancy) **implementado e autotestado** — ver
 `docs/web/10_CERTIFICACAO_WP03_TENANCY_SHELL.md`; também depende de
 aprovação de FM Security Engineer para o teste de isolamento, não
-concedida nesta execução. O próximo passo — WP-04, Onboarding e Brand
-Kit — **não foi iniciado nesta execução**.
+concedida nesta execução. Gate 5 (Primeira jornada) **parcialmente
+implementado** pelo WP-04 (Onboarding e Brand Kit — ver
+`docs/web/11_CERTIFICACAO_WP04_ONBOARDING_BRAND_KIT.md`, revisão de FM QA
+Engineer pendente); só fecha por completo com o WP-05 (briefing,
+estratégia e aprovação), **não iniciado nesta execução**.
