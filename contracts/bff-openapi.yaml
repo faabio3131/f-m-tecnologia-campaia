@@ -112,6 +112,53 @@ paths:
               schema: { $ref: '#/components/schemas/Me' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /session/memberships:
+    get:
+      tags: [Conta]
+      summary: >-
+        Lista os tenants dos quais o usuario autenticado e realmente membro (WP-03),
+        sempre incluindo o tenant ativo da sessao atual. Exige sessao Web real
+        (`cookieAuth`) -- nunca disponivel via o fixture `bearerAuth`, que nao carrega
+        sessao alguma para enumerar.
+      operationId: getSessionMemberships
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionMemberships' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /session/switch-tenant:
+    post:
+      tags: [Conta]
+      summary: >-
+        Troca o tenant ativo da sessao para um dos memberships reais do usuario (WP-03).
+        Reemite a sessao (novo cookie `campaia_session`/`campaia_csrf`, mesma disciplina de
+        rotacao do login) e invalida qualquer step-up recente em TODOS os tenants do
+        usuario, nao apenas no que esta sendo deixado.
+      operationId: switchTenant
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SwitchTenantInput' }
+      responses:
+        '200':
+          description: Sessao trocada com sucesso; cookies reemitidos.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionMemberships' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/PermissionDenied' }
+
   /brand-profiles:
     get:
       tags: [Marca]
@@ -640,6 +687,13 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
+    PermissionDenied:
+      description: >-
+        Operacao recusada pela autorizacao do servidor (ex.: tenant_id que nao e um
+        membership real do usuario autenticado).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
     Provider:
@@ -682,6 +736,34 @@ components:
         roles: { type: array, items: { type: string } }
         permissions: { type: array, items: { type: string } }
         mfa_enabled: { type: boolean }
+
+    Membership:
+      type: object
+      properties:
+        tenant_id: { type: string, format: uuid }
+        business_unit_id: { type: [string, 'null'], format: uuid }
+        roles: { type: array, items: { type: string } }
+        is_active:
+          type: boolean
+          description: True para exatamente um membership -- o tenant ativo da sessao atual.
+
+    SessionMemberships:
+      type: object
+      properties:
+        memberships:
+          type: array
+          items: { $ref: '#/components/schemas/Membership' }
+
+    SwitchTenantInput:
+      type: object
+      required: [tenant_id]
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+          description: >-
+            Deve ser o tenant_id de um dos memberships reais do usuario (ver
+            GET /session/memberships) -- qualquer outro valor recebe 403.
 
     BrandProfileInput:
       type: object

@@ -72,6 +72,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/session/memberships": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lista os tenants dos quais o usuario autenticado e realmente membro (WP-03), sempre incluindo o tenant ativo da sessao atual. Exige sessao Web real (`cookieAuth`) -- nunca disponivel via o fixture `bearerAuth`, que nao carrega sessao alguma para enumerar. */
+        get: operations["getSessionMemberships"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/session/switch-tenant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Troca o tenant ativo da sessao para um dos memberships reais do usuario (WP-03). Reemite a sessao (novo cookie `campaia_session`/`campaia_csrf`, mesma disciplina de rotacao do login) e invalida qualquer step-up recente em TODOS os tenants do usuario, nao apenas no que esta sendo deixado. */
+        post: operations["switchTenant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/brand-profiles": {
         parameters: {
             query?: never;
@@ -489,6 +523,25 @@ export interface components {
             permissions?: string[];
             mfa_enabled?: boolean;
         };
+        Membership: {
+            /** Format: uuid */
+            tenant_id?: string;
+            /** Format: uuid */
+            business_unit_id?: string | null;
+            roles?: string[];
+            /** @description True para exatamente um membership -- o tenant ativo da sessao atual. */
+            is_active?: boolean;
+        };
+        SessionMemberships: {
+            memberships?: components["schemas"]["Membership"][];
+        };
+        SwitchTenantInput: {
+            /**
+             * Format: uuid
+             * @description Deve ser o tenant_id de um dos memberships reais do usuario (ver GET /session/memberships) -- qualquer outro valor recebe 403.
+             */
+            tenant_id: string;
+        };
         BrandProfileInput: {
             name: string;
             tone: string;
@@ -680,6 +733,15 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description Operacao recusada pela autorizacao do servidor (ex.: tenant_id que nao e um membership real do usuario autenticado). */
+        PermissionDenied: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
     };
     parameters: {
         /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
@@ -785,6 +847,54 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    getSessionMemberships: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionMemberships"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    switchTenant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SwitchTenantInput"];
+            };
+        };
+        responses: {
+            /** @description Sessao trocada com sucesso; cookies reemitidos. */
+            200: {
+                headers: {
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionMemberships"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["PermissionDenied"];
         };
     };
     listBrandProfiles: {

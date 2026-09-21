@@ -5,3 +5,5 @@
 import type { components } from "./bff-openapi.generated";
 
 export type Me = components["schemas"]["Me"];
+export type Membership = components["schemas"]["Membership"];
+export type SessionMemberships = components["schemas"]["SessionMemberships"];
