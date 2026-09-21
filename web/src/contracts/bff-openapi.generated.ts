@@ -701,6 +701,14 @@ export interface components {
             level?: number;
             /** @enum {string} */
             level_label?: "ASSISTENTE" | "APROVADO" | "LIMITADO" | "OPERACIONAL";
+            /**
+             * @description Teto contratado (campaia_core/autonomy.py AutonomySettings.max_level_allowed)
+             *     -- campo real, sempre presente na resposta, ausente do contrato ate esta
+             *     correcao (achado do WP-07, mesma classe dos achados requested_by/kind/amount
+             *     dos WP-05/06). O nivel nunca pode ser configurado acima deste teto (invariante
+             *     I-11, guarda contra auto-promocao) -- nao e ajustavel por esta API.
+             */
+            max_level_allowed?: number;
             /** @description Gatilhos que exigem humano em QUALQUER nivel. */
             always_require_human?: string[];
             max_budget_change_pct?: number;

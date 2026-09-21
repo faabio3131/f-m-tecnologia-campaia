@@ -196,10 +196,75 @@ como a Seção 3 original descrevia este candidato.
 
 ---
 
-## 3. Blocos além do WP-06 (não detalhados como Work Package nesta missão)
+### WP-07 — Nível de autonomia (Modo Manual/Automático)
 
-**Nota (21/09/2026): WP-01 a WP-05 estão todos implementados**, e o WP-06 foi definido
+**Definido em 21/09/2026, por reconciliação de CURRENT**, sob nova autorização do Diretor
+("a cota será renovada no dia 31 então vamos continuar trabalhando na construção e fazer
+tudo que for possível sem atrasar o término e no final faremos os testes necessários" —
+autoriza continuar a construção; os "testes necessários" referem-se à confirmação do CI
+remoto do GitHub Actions, bloqueado por cota até o dia 31, não aos testes locais desta
+execução, que seguem obrigatórios a cada passo). CURRENT reconstruído por leitura direta de
+`backend/api/routes_autonomy.py` e `backend/campaia_core/autonomy.py` antes de qualquer
+código: `GET/PUT /autonomy` já existem, já testados (`test_autonomy_get_and_put`,
+`test_autonomy_put_requires_approved_approval`, `test_autonomy_put_rejects_pending_approval`
+em `tests_api/test_smoke_endpoints.py`), e reutilizam a mesma máquina de aprovação dos
+WP-05/06 (`kind: AUTONOMY_CHANGE`) — nenhuma rota nova de backend esperada. Este é o Modo
+Manual/Automático explicitamente decidido pelo Diretor como diferencial competitivo
+(`docs/product/DECISOES_DIRETOR.md` item 5): "vamos ter a opção do cliente querer escolher
+deixar no automático... assim nos coloca à frente da concorrência", com a salvaguarda de que
+a ativação "precisará ser validada por senha de adm" — no sandbox, representada pelo mesmo
+mecanismo honesto de step-up já usado em toda a aplicação (marcador não-vazio, nunca uma
+senha real), e por `AUTONOMY_CHANGE` estar na lista fechada `ALWAYS_REQUIRE_HUMAN` do
+domínio — muda de nível SEMPRE exige aprovação humana, em qualquer nível atual, sem exceção.
+
+- **Objetivo**: permitir visualizar e propor mudança do nível de autonomia do tenant
+  (ASSISTENTE/APROVADO/LIMITADO/OPERACIONAL) pela Web, com aprovação humana obrigatória e
+  respeitando o teto contratado (`max_level_allowed`) já aplicado pelo domínio.
+- **Escopo**: painel em `/dashboard` (shell tenant-level — autonomia é uma configuração do
+  tenant inteiro, `state.tenant_autonomy[tenant_id]`, nunca por campanha) mostrando nível
+  atual, rótulo, teto contratado, lista de gatilhos que sempre exigem humano
+  (`always_require_human`) e data da última alteração; formulário para propor um novo nível,
+  que cria uma aprovação (`POST /approvals`, `kind: AUTONOMY_CHANGE`) — decisão continua na
+  fila `/approvals` já existente, sem tela nova; uma vez aprovada, aplicar (`PUT /autonomy`,
+  `level` + `approval_id`, CSRF + `X-Step-Up-Token` + `Idempotency-Key`).
+- **Achado real de backend, não corrigido nesta definição, registrado como restrição de
+  design**: `POST /approvals` (`create_approval`, `api/routes_approvals.py`) exige
+  `campaign_id` para **qualquer** `kind`, inclusive `AUTONOMY_CHANGE` — mesmo essa mudança
+  sendo conceitualmente tenant-wide, não amarrada a uma campanha específica. A tela precisa
+  de ao menos uma campanha existente para propor uma alteração de autonomia (usa a primeira
+  campanha do tenant só para satisfazer essa exigência real da API, documentado no próprio
+  código, nunca escondido do usuário); sem nenhuma campanha, o formulário fica desabilitado
+  com uma explicação honesta, em vez de inventar uma campanha fictícia ou contornar a API.
+- **Fora do escopo**: alterar `max_level_allowed` (o teto contratado) — nenhuma rota de API
+  expõe essa alteração; é tratado como configuração comercial/plano, fora desta tela.
+- **Dependências**: WP-05/06 (reutiliza `/approvals` inteiramente).
+- **Segurança**: `AUTONOMY_CHANGE` está em `ALWAYS_REQUIRE_HUMAN` no domínio — mudar de nível
+  sempre exige aprovação humana, mesmo já no nível OPERACIONAL; `AutonomySettings.__post_init__`
+  recusa qualquer nível acima do teto contratado (guarda anti-auto-promoção, invariante I-11),
+  nunca reimplementado nem contornado na UI; segregação de funções reutilizada do WP-05.
+- **Critérios de aceitação**: usuário propõe uma mudança de nível; um segundo usuário aprova
+  na fila já existente; mudança aprovada é aplicada de verdade e reflete no painel; tentativa
+  de nível acima do teto contratado é recusada visivelmente.
+- **Testes**: mesma disciplina dos WP-05/06 — testes de backend via sessão Web real se algum
+  gap real for descoberto; Vitest para o componente novo; E2E de fumaça sem backend; E2E
+  cross-stack real com dois usuários.
+- **Riscos**: baixo — nenhuma rota nova de backend esperada.
+- **Rollback**: reverter para o estado do WP-06; painel novo isolado em `/dashboard`, nenhuma
+  outra tela depende dele.
+- **Gate**: nenhum gate formal do roadmap original cobre este bloco — tratado como extensão
+  do Gate 5, mesma infraestrutura de aprovação.
+- **Definição de pronto**: mudança de nível de autonomia funciona ponta a ponta com dois
+  usuários distintos e dados simulados.
+- **Autorização necessária**: autorização do Diretor de continuar a construção enquanto a
+  cota do CI está esgotada ("vamos continuar trabalhando na construção..."), 21/09/2026;
+  revisão de FM QA Engineer permanece pendente.
+
+---
+
+## 3. Blocos além do WP-07 (não detalhados como Work Package nesta missão)
+
+**Nota (21/09/2026): WP-01 a WP-06 estão todos implementados**, e o WP-07 foi definido
 acima por reconciliação de CURRENT — o CURRENT que esta seção antecipava agora existe de
-fato para esses blocos. Nenhum bloco além do WP-06 foi definido.
+fato para esses blocos. Nenhum bloco além do WP-07 foi definido.
 
 Publicação sandbox (depende de credenciais reais de sandbox de ao menos 1 provider — bloqueio externo, não técnico), reconciliação, métricas, recomendações/otimização limitada, hardening, acessibilidade, observabilidade, segurança formal, staging, produção controlada — todos dependem de decisões e Work Packages anteriores não executados nesta missão até 21/09/2026. Orçamento, único candidato tecnicamente desbloqueado desta lista, foi promovido a WP-06 (ver acima).

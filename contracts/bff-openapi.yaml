@@ -966,6 +966,16 @@ components:
       properties:
         level: { type: integer, minimum: 0, maximum: 3 }
         level_label: { type: string, enum: [ASSISTENTE, APROVADO, LIMITADO, OPERACIONAL] }
+        max_level_allowed:
+          type: integer
+          minimum: 0
+          maximum: 3
+          description: |
+            Teto contratado (campaia_core/autonomy.py AutonomySettings.max_level_allowed)
+            -- campo real, sempre presente na resposta, ausente do contrato ate esta
+            correcao (achado do WP-07, mesma classe dos achados requested_by/kind/amount
+            dos WP-05/06). O nivel nunca pode ser configurado acima deste teto (invariante
+            I-11, guarda contra auto-promocao) -- nao e ajustavel por esta API.
         always_require_human:
           type: array
           description: Gatilhos que exigem humano em QUALQUER nivel.
