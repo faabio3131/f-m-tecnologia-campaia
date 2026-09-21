@@ -114,6 +114,9 @@ describe("CampaignDetailPage", () => {
     expect(screen.getByText("Gerar leads qualificados")).toBeInTheDocument();
     expect(screen.getByText("Nenhuma estratégia gerada ainda para esta campanha.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Validar" })).toBeInTheDocument();
+    // WP-06: BudgetPanel renders on the same page, reusing the campaign fetched above.
+    expect(screen.getByText("Orçamento")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Propor alteração" })).toBeInTheDocument();
   });
 
   it("passes hasPendingApproval=true through to ValidationPanel when this campaign has a PENDING approval", async () => {
