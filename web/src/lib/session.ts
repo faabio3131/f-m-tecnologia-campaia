@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import type { Me } from "@/contracts/types";
+import type { Me, SessionMemberships } from "@/contracts/types";
 
 /**
  * WP-02: server-only session read. Runs on the Next.js server (never shipped to the
@@ -37,6 +37,38 @@ export async function getServerSession(): Promise<Me | null> {
   }
 
   return (await response.json()) as Me;
+}
+
+/**
+ * WP-03: server-only read of the session's real tenant memberships (GET
+ * /session/memberships), same pattern as getServerSession above -- the HttpOnly session
+ * cookie is forwarded server-side, never exposed to client-side JS. Returns null on any
+ * failure (missing config, no session, BFF error); callers must not distinguish "empty
+ * memberships" (impossible -- a real session always has at least its own active tenant)
+ * from "could not be read" beyond what the null itself already means.
+ */
+export async function getServerSessionMemberships(): Promise<SessionMemberships | null> {
+  const bffOrigin = getPublicBffOrigin();
+  if (!bffOrigin) {
+    return null;
+  }
+
+  const cookieStore = await cookies();
+  const sessionCookie = cookieStore.get("campaia_session");
+  if (!sessionCookie) {
+    return null;
+  }
+
+  const response = await fetch(`${bffOrigin}/session/memberships`, {
+    headers: { cookie: `campaia_session=${sessionCookie.value}` },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  return (await response.json()) as SessionMemberships;
 }
 
 export function getPublicBffOrigin(): string | undefined {

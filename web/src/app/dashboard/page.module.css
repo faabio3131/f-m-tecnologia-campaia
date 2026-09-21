@@ -1,0 +1,35 @@
+.header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--campaia-space-2);
+}
+
+.title {
+  font-size: var(--campaia-font-size-xl);
+  margin: 0;
+}
+
+.identityRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--campaia-space-4);
+  margin-bottom: var(--campaia-space-4);
+}
+
+.loginLink {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--campaia-space-2) var(--campaia-space-4);
+  border-radius: var(--campaia-radius-sm);
+  background: var(--campaia-color-primary);
+  color: var(--campaia-color-primary-contrast);
+  font-weight: 600;
+  font-size: var(--campaia-font-size-sm);
+}
+
+.loginLink:hover {
+  filter: brightness(1.08);
+}

@@ -8,14 +8,19 @@ const SCAN_EXTENSIONS = new Set([".ts", ".tsx", ".css"]);
 const EXCLUDED_FILES = new Set(["bff-openapi.generated.ts"]);
 
 // WP-01's rule was "no BFF calls anywhere in web/src" because no session existed to call
-// with. WP-02 introduces two, and only two, legitimate real calls to the BFF: a server-only
-// session read (never reaches the client bundle, forwards the HttpOnly cookie the browser
-// itself cannot read) and a client-side logout action explicitly protected by the
-// double-submit CSRF token (the one case where client JS legitimately needs to read a
-// cookie value and send it as a header). Every other file in web/src -- the WP-01
-// foundation page, all 5 shared components, the contract types, the fixture -- must remain
-// at zero network calls; this allowlist is intentionally two files, not a blanket rule.
-const NETWORK_CALL_ALLOWED_FILES = new Set(["session.ts", "LogoutButton.tsx"]);
+// with. WP-02 introduced two legitimate real calls to the BFF: a server-only session read
+// (never reaches the client bundle, forwards the HttpOnly cookie the browser itself cannot
+// read) and a client-side logout action explicitly protected by the double-submit CSRF
+// token. WP-03 adds a third, same discipline: a client-side tenant-switch action, also
+// CSRF-protected via the same non-HttpOnly campaia_csrf cookie, never a client-typed
+// tenant id (see TenantSwitcher.tsx -- it only ever offers tenant ids the server itself
+// returned). Every other file in web/src must remain at zero network calls; this allowlist
+// is intentionally three files, not a blanket rule.
+const NETWORK_CALL_ALLOWED_FILES = new Set([
+  "session.ts",
+  "LogoutButton.tsx",
+  "TenantSwitcher.tsx",
+]);
 
 /** @type {{name: string, pattern: RegExp, message: string, exemptFiles?: Set<string>}[]} */
 export const FORBIDDEN_PATTERNS = [
@@ -23,7 +28,7 @@ export const FORBIDDEN_PATTERNS = [
     name: "network-call",
     pattern: /\b(fetch|axios|XMLHttpRequest)\s*\(/,
     message:
-      "chamada de rede detectada (fetch/axios/XMLHttpRequest) fora da lista de excecoes do WP-02 (session.ts, LogoutButton.tsx)",
+      "chamada de rede detectada (fetch/axios/XMLHttpRequest) fora da lista de excecoes do WP-02/WP-03 (session.ts, LogoutButton.tsx, TenantSwitcher.tsx)",
     exemptFiles: NETWORK_CALL_ALLOWED_FILES,
   },
   {

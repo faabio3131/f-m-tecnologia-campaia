@@ -1,0 +1,25 @@
+.switcher {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-1);
+}
+
+.label {
+  font-size: var(--campaia-font-size-sm);
+  color: var(--campaia-color-text-muted);
+}
+
+.select {
+  padding: var(--campaia-space-2) var(--campaia-space-3);
+  border-radius: var(--campaia-radius-sm);
+  border: 1px solid var(--campaia-color-border);
+  background: var(--campaia-color-surface);
+  color: var(--campaia-color-text);
+  font-size: var(--campaia-font-size-sm);
+}
+
+.error {
+  margin: 0;
+  color: var(--campaia-color-warning-text);
+  font-size: var(--campaia-font-size-sm);
+}
