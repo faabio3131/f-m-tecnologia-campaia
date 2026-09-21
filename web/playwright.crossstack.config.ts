@@ -51,6 +51,14 @@ const FRONTEND_ORIGIN = `https://127.0.0.1:${FRONTEND_PORT}`;
 export default defineConfig({
   testDir: "./e2e-crossstack",
   fullyParallel: false,
+  // Single worker: all spec files in this directory share one real backend process
+  // (webServer above), so two spec files racing on separate workers can interleave
+  // session/cookie state across files. fullyParallel: false only serializes tests
+  // WITHIN a file -- it does not stop Playwright from running separate files on
+  // separate workers by default. Confirmed as a real, reproducible flake (not
+  // hypothetical) once a second spec file (onboarding.spec.ts) joined
+  // tenant-switch.spec.ts in this testDir.
+  workers: 1,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: [["list"]],
