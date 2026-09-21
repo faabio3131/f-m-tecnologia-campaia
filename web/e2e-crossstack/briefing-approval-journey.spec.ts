@@ -31,6 +31,7 @@ test.describe("CampaIA Web briefing -> aprovação (WP-05) cross-stack E2E", () 
     await page.getByRole("button", { name: "Enviar briefing" }).click();
     await expect(page).toHaveURL(/\/campaigns\/[^/]+$/);
     await page.waitForLoadState("networkidle");
+    const campaignId = page.url().split("/").pop();
 
     // 2. Generate the strategy.
     await expect(
@@ -73,20 +74,26 @@ test.describe("CampaIA Web briefing -> aprovação (WP-05) cross-stack E2E", () 
     await expect(approverPage).toHaveURL(/\/approvals$/);
     await approverPage.waitForLoadState("networkidle");
 
-    await approverPage.getByRole("button", { name: "Aprovar" }).click();
+    // data-testid scopes this to its own PUBLISH approval card specifically: by the time
+    // this spec runs alongside other cross-stack specs sharing this backend (single worker,
+    // sequential), an unrelated approval of a different kind may already be APPROVED there
+    // too, and a bare "APPROVED" text match is ambiguous (strict-mode violation) -- same
+    // discipline as budget-change.spec.ts (WP-06) and autonomy-change.spec.ts (WP-07).
+    const publishCard = approverPage.getByTestId(`approval-card-PUBLISH-${campaignId}`);
+    await publishCard.getByRole("button", { name: "Aprovar" }).click();
     await expect(approverPage).toHaveURL(/\/approvals$/);
     await approverPage.waitForLoadState("networkidle");
-    await expect(approverPage.getByText("APPROVED")).toBeVisible();
-    await expect(
-      approverPage.getByRole("button", { name: "Aprovar" }),
-    ).toHaveCount(0);
+    await expect(publishCard.getByText("APPROVED")).toBeVisible();
+    await expect(publishCard.getByRole("button", { name: "Aprovar" })).toHaveCount(0);
 
     await approverContext.close();
 
     // 7. The proposer's own queue, reloaded, reflects the real decision made by the
-    // approver's separate session.
+    // approver's separate session. Scoped for the same reason as publishCard above.
     await page.reload();
     await page.waitForLoadState("networkidle");
-    await expect(page.getByText("APPROVED")).toBeVisible();
+    await expect(
+      page.getByTestId(`approval-card-PUBLISH-${campaignId}`).getByText("APPROVED"),
+    ).toBeVisible();
   });
 });
