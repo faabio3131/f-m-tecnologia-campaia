@@ -24,14 +24,15 @@ import styles from "./BudgetPanel.module.css";
  * backend has no separate "applied" flag on ApprovalRequest -- status stays APPROVED
  * forever). This is the same real value the backend itself would compare, not a guess.
  *
- * Both sides of that comparison are coerced through Number(...) -- the contract types
- * Campaign.budget.daily_cap as `number`, but the real wire response serializes it (and
- * every other Decimal-typed budget field) as a JSON STRING (confirmed by a real backend
- * test asserting `"500"`, not `500`, from GET /campaigns/{id}); a strict `!==` on the raw
- * values would always be true regardless of the actual amounts, permanently hiding the
- * "aplicar" step. This is a real contract-vs-runtime type mismatch, not fixed here (fixing
- * Decimal JSON serialization is a backend-wide change well beyond this Work Package's
- * scope) -- only defended against on this one comparison.
+ * P-36 fix (missão de reconciliação, 22/09/2026): the contract now correctly types every
+ * monetary field here as `string` (decimal-precise, e.g. "500.00"), matching what the
+ * backend always actually sent. Every payload this component sends carries the string
+ * value through unmodified -- never re-serialized via `Number(...)`, which would round-trip
+ * through an IEEE-754 float and risk losing precision on the way back to the backend. The
+ * one exception is the `!==` comparison below, which only decides a boolean UI branch
+ * (never sent over the wire) and still goes through `Number(...)` for a normalized
+ * numeric-equality check (e.g. "500.00" vs "500" would otherwise compare unequal as raw
+ * strings despite being the same amount).
  */
 function readCsrfCookie(): string | null {
   const match = document.cookie.match(/(?:^|; )campaia_csrf=([^;]+)/);
@@ -75,8 +76,10 @@ export function BudgetPanel({ bffOrigin, campaignId, budget, approvals }: Budget
       return;
     }
 
-    const newCap = Number(proposedCap);
-    if (!Number.isFinite(newCap) || newCap <= 0) {
+    // Validate using a numeric parse, but send the original string the user typed --
+    // never a value that passed through Number(...), which would risk precision loss on
+    // the wire (P-36 fix).
+    if (!Number.isFinite(Number(proposedCap)) || Number(proposedCap) <= 0) {
       setError("Informe um teto diário válido, maior que zero.");
       setPending(false);
       return;
@@ -87,7 +90,11 @@ export function BudgetPanel({ bffOrigin, campaignId, budget, approvals }: Budget
         method: "POST",
         credentials: "include",
         headers: { "content-type": "application/json", "x-csrf-token": csrfToken },
-        body: JSON.stringify({ campaign_id: campaignId, kind: "BUDGET_CHANGE", amount: newCap }),
+        body: JSON.stringify({
+          campaign_id: campaignId,
+          kind: "BUDGET_CHANGE",
+          amount: proposedCap,
+        }),
       });
       if (!response.ok) {
         setError("Não foi possível propor a alteração de orçamento. Tente novamente.");
@@ -123,7 +130,8 @@ export function BudgetPanel({ bffOrigin, campaignId, budget, approvals }: Budget
           "idempotency-key": crypto.randomUUID(),
         },
         body: JSON.stringify({
-          daily_cap: Number(approvedUnapplied.amount),
+          // The original decimal string, never coerced through Number(...) (P-36 fix).
+          daily_cap: approvedUnapplied.amount,
           approval_id: approvedUnapplied.id,
         }),
       });

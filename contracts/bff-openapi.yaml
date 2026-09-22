@@ -481,9 +481,20 @@ paths:
               type: object
               required: [daily_cap, approval_id]
               properties:
-                daily_cap: { type: number, exclusiveMinimum: 0 }
-                total_amount: { type: number, exclusiveMinimum: 0 }
+                daily_cap:
+                  type: string
+                  description: |
+                    Valor monetario como string decimal (ex. "1500.00"), nunca number --
+                    preserva precisao ponta a ponta (achado P-36, missao de reconciliacao,
+                    22/09/2026). O backend real (BudgetPatchRequest) aceita o campo real
+                    (`new_daily_cap: Decimal`, alias `daily_cap`).
                 approval_id: { type: string, format: uuid }
+              # `total_amount` removido: o backend real (BudgetPatchRequest, extra="forbid")
+              # nunca aceitou esse campo -- so `daily_cap` e ajustavel por esta rota, por
+              # desenho deliberado (ver docs/web/13_CERTIFICACAO_WP06_ALTERACAO_ORCAMENTO.md,
+              # "Fora de escopo: alterar total_amount"). O contrato anterior declarava um
+              # campo que o backend sempre rejeitaria (achado P-36, corrigido aditivamente
+              # -- removendo a promessa falsa, nao o comportamento real).
       responses:
         '202': { description: Alteracao aceita }
         '403': { $ref: '#/components/responses/ApprovalRequired' }
@@ -523,8 +534,14 @@ paths:
                 campaign_id: { type: string, format: uuid }
                 kind: { type: string, enum: [PUBLISH, BUDGET_CHANGE, AUTONOMY_CHANGE] }
                 amount:
-                  type: [number, 'null']
-                  description: Valor associado ao pedido quando aplicavel (ex. novo daily_cap para BUDGET_CHANGE).
+                  type: [string, 'null']
+                  description: |
+                    Valor associado ao pedido quando aplicavel (ex. novo daily_cap para
+                    BUDGET_CHANGE), como string decimal -- nunca number, mesma correcao de
+                    precisao monetaria do achado P-36 (missao de reconciliacao, 22/09/2026).
+                    O backend real (ApprovalCreateRequest.amount: Decimal) aceita tanto
+                    string quanto number no corpo JSON, mas string preserva precisao exata
+                    sem passar por um float intermediario no cliente.
                 requires_dual_approval: { type: boolean, default: false }
       responses:
         '201':
@@ -939,9 +956,21 @@ components:
           type: object
           properties:
             currency: { type: string }
-            total_amount: { type: number }
-            daily_cap: { type: number }
-            spent_to_date: { type: number }
+            total_amount:
+              type: string
+              description: |
+                Valor monetario como string decimal (ex. "10000.00"), nunca number. O
+                schema anterior declarava `number`, mas a resposta real sempre serializa
+                Decimal como string JSON (Pydantic v2, sem perda de precisao) -- achado
+                P-36, corrigido nesta missao de reconciliacao (22/09/2026). O backend
+                (BudgetResponse) agora tipa o campo explicitamente `str`, mesmo padrao ja
+                usado por ApprovalRequest.amount desde o WP-06.
+            daily_cap:
+              type: string
+              description: Mesma correcao P-36 de total_amount -- string decimal, nunca number.
+            spent_to_date:
+              type: string
+              description: Mesma correcao P-36 de total_amount -- string decimal, nunca number.
         last_synced_at:
           type: [string, 'null']
           format: date-time

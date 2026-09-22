@@ -666,9 +666,19 @@ export interface components {
             }[];
             budget?: {
                 currency?: string;
-                total_amount?: number;
-                daily_cap?: number;
-                spent_to_date?: number;
+                /**
+                 * @description Valor monetario como string decimal (ex. "10000.00"), nunca number. O
+                 *     schema anterior declarava `number`, mas a resposta real sempre serializa
+                 *     Decimal como string JSON (Pydantic v2, sem perda de precisao) -- achado
+                 *     P-36, corrigido nesta missao de reconciliacao (22/09/2026). O backend
+                 *     (BudgetResponse) agora tipa o campo explicitamente `str`, mesmo padrao ja
+                 *     usado por ApprovalRequest.amount desde o WP-06.
+                 */
+                total_amount?: string;
+                /** @description Mesma correcao P-36 de total_amount -- string decimal, nunca number. */
+                daily_cap?: string;
+                /** @description Mesma correcao P-36 de total_amount -- string decimal, nunca number. */
+                spent_to_date?: string;
             };
             /**
              * Format: date-time
@@ -1439,8 +1449,13 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    daily_cap: number;
-                    total_amount?: number;
+                    /**
+                     * @description Valor monetario como string decimal (ex. "1500.00"), nunca number --
+                     *     preserva precisao ponta a ponta (achado P-36, missao de reconciliacao,
+                     *     22/09/2026). O backend real (BudgetPatchRequest) aceita o campo real
+                     *     (`new_daily_cap: Decimal`, alias `daily_cap`).
+                     */
+                    daily_cap: string;
                     /** Format: uuid */
                     approval_id: string;
                 };
@@ -1491,8 +1506,15 @@ export interface operations {
                     campaign_id: string;
                     /** @enum {string} */
                     kind: "PUBLISH" | "BUDGET_CHANGE" | "AUTONOMY_CHANGE";
-                    /** @description Valor associado ao pedido quando aplicavel (ex. novo daily_cap para BUDGET_CHANGE). */
-                    amount?: number | null;
+                    /**
+                     * @description Valor associado ao pedido quando aplicavel (ex. novo daily_cap para
+                     *     BUDGET_CHANGE), como string decimal -- nunca number, mesma correcao de
+                     *     precisao monetaria do achado P-36 (missao de reconciliacao, 22/09/2026).
+                     *     O backend real (ApprovalCreateRequest.amount: Decimal) aceita tanto
+                     *     string quanto number no corpo JSON, mas string preserva precisao exata
+                     *     sem passar por um float intermediario no cliente.
+                     */
+                    amount?: string | null;
                     /** @default false */
                     requires_dual_approval?: boolean;
                 };

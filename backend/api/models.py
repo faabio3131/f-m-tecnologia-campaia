@@ -155,10 +155,16 @@ class ExternalResourceResponse(BaseModel):
 
 
 class BudgetResponse(BaseModel):
+    # Explicitly `str`, not `Decimal` -- same pattern already established by
+    # ApprovalResponse.amount (achado P-36 fix, missão de reconciliação, 22/09/2026).
+    # Pydantic v2 already serializes a Decimal field to this exact same JSON string by
+    # default (no wire-format change), but declaring the type as `str` makes the real,
+    # precision-preserving contract explicit rather than implicit, and matches
+    # contracts/bff-openapi.yaml's corresponding `type: string` fix.
     currency: str
-    total_amount: Decimal
-    daily_cap: Decimal
-    spent_to_date: Decimal
+    total_amount: str
+    daily_cap: str
+    spent_to_date: str
 
 
 class CampaignResponse(BaseModel):
