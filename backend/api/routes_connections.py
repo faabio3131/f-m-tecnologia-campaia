@@ -68,7 +68,11 @@ async def oauth_start(request: Request) -> JSONResponse:
         actor=fixture.user_id,
         action="OAUTH_START",
         target=body.provider,
-        details={"note": "simulated, no real provider contacted", "state": oauth_state},
+        # Missão de fechamento integral (A3, 22/09/2026): the anti-replay `state` value
+        # itself has no place in a human-readable audit trail even though it is already
+        # returned to the caller in this same response -- an audit log is for reviewing
+        # actions, not for storing security-relevant tokens.
+        details={"note": "simulated, no real provider contacted"},
     )
     return json_response(OAuthStartResponse(authorization_url=fake_url, state=oauth_state))
 
