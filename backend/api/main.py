@@ -50,6 +50,7 @@ from .routes_connections import (
     oauth_start,
     revoke_connection,
 )
+from .routes_health import health
 from .routes_me import get_me
 from .routes_session import get_memberships, switch_tenant
 from .state import AppState
@@ -69,6 +70,11 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> JSONRespo
 
 
 routes = [
+    # Missão de fechamento integral (Etapa A17): infra-only, unauthenticated liveness
+    # probe -- deliberately outside contracts/bff-openapi.yaml, same precedent as
+    # /test-idp/* (real but not part of the client-facing BFF contract).
+    Route("/health", health, methods=["GET"]),
+
     Route("/auth/login", auth_login, methods=["GET"]),
     Route("/auth/callback", auth_callback, methods=["GET"]),
     Route("/auth/logout", auth_logout, methods=["POST"]),

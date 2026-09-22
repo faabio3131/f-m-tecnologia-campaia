@@ -422,6 +422,20 @@ class Database:
     def table(self, name: str) -> RecordTable:
         return RecordTable(self._conn, self._lock, name)
 
+    def ping(self) -> bool:
+        """Missão de fechamento integral (Etapa A17, 22/09/2026): a genuine liveness
+        check for /health -- executes a trivial real query rather than only checking that
+        the connection object exists, per docs/nova-fm/02-PADROES-DE-CONSTRUCAO-NOVA-FM.md
+        §46 ("Evitar health check que retorna sucesso mesmo quando dependência crítica
+        está indisponível"). Returns False (never raises) on any failure, so the caller can
+        report a real, honest 503 instead of crashing the health endpoint itself."""
+        try:
+            with self._lock:
+                self._conn.execute("SELECT 1").fetchone()
+            return True
+        except Exception:
+            return False
+
     def close(self) -> None:
         try:
             self._conn.close()
