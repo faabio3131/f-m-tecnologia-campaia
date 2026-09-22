@@ -684,6 +684,11 @@ paths:
           schema: { type: string, format: uuid }
         - name: cursor
           in: query
+          description: >-
+            Opaque cursor from a previous response's `next_cursor` -- pass it back
+            unchanged to fetch the next page (fixed page size, server-controlled). An
+            unknown or stale cursor is rejected with VALIDATION_FAILED rather than
+            silently restarting at page 1.
           schema: { type: string }
       responses:
         '200':
@@ -696,7 +701,9 @@ paths:
                   items:
                     type: array
                     items: { $ref: '#/components/schemas/AuditEvent' }
-                  next_cursor: { type: [string, 'null'] }
+                  next_cursor:
+                    type: [string, 'null']
+                    description: Present only when a further page exists; pass to `cursor` to fetch it.
 
 components:
   securitySchemes:

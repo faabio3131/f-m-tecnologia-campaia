@@ -1693,6 +1693,7 @@ export interface operations {
         parameters: {
             query?: {
                 campaign_id?: string;
+                /** @description Opaque cursor from a previous response's `next_cursor` -- pass it back unchanged to fetch the next page (fixed page size, server-controlled). An unknown or stale cursor is rejected with VALIDATION_FAILED rather than silently restarting at page 1. */
                 cursor?: string;
             };
             header?: never;
@@ -1709,6 +1710,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         items?: components["schemas"]["AuditEvent"][];
+                        /** @description Present only when a further page exists; pass to `cursor` to fetch it. */
                         next_cursor?: string | null;
                     };
                 };

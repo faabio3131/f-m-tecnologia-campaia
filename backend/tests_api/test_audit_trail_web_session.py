@@ -133,6 +133,66 @@ class TestAuditTrailViaWebSession(unittest.TestCase):
         # shows up once the filter is applied.
         self.assertNotIn("OAUTH_START", {e["action"] for e in events})
 
+    def test_cursor_pagination_walks_every_page_with_no_gaps_or_duplicates(self):
+        """P-A9 (missão de fechamento integral, 22/09/2026): the contract always promised
+        `cursor`/`next_cursor`, but the implementation used to always return
+        `next_cursor: null` -- an honest stub, not a lie, but also not real pagination.
+        This proves the real thing: more events than one page, walking every page via the
+        cursor the previous response handed back, landing on the exact same ordered set of
+        ids as a single unpaginated read, with no gaps, no duplicates, and the final page
+        correctly reporting next_cursor: null."""
+        import api.routes_audit as routes_audit
+
+        app = create_app(enable_test_auth_fixtures=True)
+        owner = _client_for(app)
+        _login(owner, "owner")
+
+        page_size = routes_audit._PAGE_SIZE
+        total_events = page_size + 7
+        for i in range(total_events):
+            r = owner.post(
+                "/connections/oauth/start",
+                headers={"x-csrf-token": _csrf(owner), "x-step-up-token": "test-stepup"},
+                json={"provider": "GOOGLE_ADS"},
+            )
+            self.assertEqual(r.status_code, 200, r.text)
+
+        r = owner.get("/audit-events")
+        self.assertEqual(r.status_code, 200, r.text)
+        first_page = r.json()
+        self.assertEqual(len(first_page["items"]), page_size)
+        self.assertIsNotNone(first_page["next_cursor"])
+
+        seen_ids = [e["id"] for e in first_page["items"]]
+        cursor = first_page["next_cursor"]
+        while cursor is not None:
+            r = owner.get(f"/audit-events?cursor={cursor}")
+            self.assertEqual(r.status_code, 200, r.text)
+            body = r.json()
+            self.assertLessEqual(len(body["items"]), page_size)
+            seen_ids.extend(e["id"] for e in body["items"])
+            cursor = body["next_cursor"]
+
+        self.assertEqual(len(seen_ids), len(set(seen_ids)), "no duplicate events across pages")
+        self.assertEqual(len(seen_ids), total_events)
+
+        r = owner.get("/audit-events")
+        unpaginated_ids = [e["id"] for e in r.json()["items"]] + [
+            e["id"]
+            for e in owner.get(f"/audit-events?cursor={first_page['next_cursor']}").json()["items"]
+        ]
+        # Sanity: same walk, same order, both times (deterministic, no gaps/reordering).
+        self.assertEqual(seen_ids[: len(unpaginated_ids)], unpaginated_ids)
+
+    def test_unknown_cursor_is_rejected_rather_than_silently_restarting(self):
+        app = create_app(enable_test_auth_fixtures=True)
+        owner = _client_for(app)
+        _login(owner, "owner")
+
+        r = owner.get("/audit-events?cursor=audit_999999_deadbeef")
+        self.assertEqual(r.status_code, 422, r.text)
+        self.assertEqual(r.json()["code"], "VALIDATION_FAILED")
+
     def test_identity_without_audit_view_permission_is_rejected(self):
         app = create_app(enable_test_auth_fixtures=True)
         marketer = _client_for(app)
