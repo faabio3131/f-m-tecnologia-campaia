@@ -7,6 +7,8 @@ is persisted across process restarts, and nothing here is a real credential.
 
 from __future__ import annotations
 
+import os
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -17,6 +19,17 @@ from campaia_core.autonomy import AutonomySettings
 from campaia_core.infra import Capability, CapabilityRegistry, IdempotencyStore
 from campaia_core.permissions import Principal, Role
 
+from .oidc import (
+    PENDING_LOGIN_TTL_SECONDS,
+    SESSION_TTL_SECONDS,
+    Membership,
+    OidcIssuerConfig,
+    PendingLogin,
+    SessionRecord,
+    VerifiedIdToken,
+    generate_csrf_token,
+    generate_session_id,
+)
 from .repositories import (
     ApprovalRepository,
     AuditLog,
@@ -24,6 +37,7 @@ from .repositories import (
     CampaignRepository,
     ConnectionRepository,
 )
+from .test_idp import TestIdentityProvider
 
 
 @dataclass(frozen=True)
@@ -51,6 +65,72 @@ class TokenPrincipal:
             mfa_enabled=self.mfa_enabled,
             step_up_at=step_up_at,
         )
+
+    @staticmethod
+    def from_verified_id_token(verified: VerifiedIdToken) -> "TokenPrincipal":
+        """Maps a real, signature-verified ID token's claims to the same TokenPrincipal
+        shape the pre-WP-02 fixture tokens produced -- so require_auth, permissions.py, and
+        every route handler downstream of it are unaware of which mechanism authenticated
+        the request. Unknown role strings are dropped (never silently granted as a
+        catch-all), so a provider claiming a role campaia_core.permissions.Role doesn't
+        recognize simply grants nothing for that string, rather than failing the whole
+        request or being coerced into an unintended role.
+        """
+        return TokenPrincipal(
+            user_id=verified.subject,
+            tenant_id=verified.tenant_id,
+            roles=_parse_roles(verified.roles),
+            business_unit_id=verified.business_unit_id,
+            mfa_enabled=verified.mfa_enabled,
+        )
+
+    def with_membership(self, membership: "Membership") -> "TokenPrincipal":
+        """WP-03: same user, different active tenant -- returned by a successful
+        POST /session/switch-tenant. `user_id` and `mfa_enabled` are the user's own and
+        never change across tenants; `tenant_id`/`business_unit_id`/`roles` become whatever
+        the target membership grants (never the roles of the tenant being left).
+        """
+        return TokenPrincipal(
+            user_id=self.user_id,
+            tenant_id=membership.tenant_id,
+            roles=_parse_roles(membership.roles),
+            business_unit_id=membership.business_unit_id,
+            mfa_enabled=self.mfa_enabled,
+        )
+
+
+def _parse_roles(raw_roles: tuple[str, ...] | list[str]) -> frozenset[Role]:
+    """Shared by from_verified_id_token and with_membership: unknown role strings are
+    dropped, never silently granted as a catch-all."""
+    roles: set[Role] = set()
+    for raw_role in raw_roles:
+        try:
+            roles.add(Role(raw_role))
+        except ValueError:
+            continue
+    return frozenset(roles)
+
+
+#: WP-04: how long a /connections/oauth/start attempt may remain unclaimed before
+#: /connections/oauth/complete no longer accepts it -- same rationale as
+#: PENDING_LOGIN_TTL_SECONDS (oidc.py): bounds a stolen/replayed state's usefulness and
+#: bounds unbounded growth from abandoned connect attempts.
+OAUTH_PENDING_TTL_SECONDS = 600
+
+
+@dataclass(frozen=True)
+class PendingOAuth:
+    """One /connections/oauth/start attempt, held server-side until /connections/oauth/
+    complete finalizes it (WP-04). No real provider exists yet (roadmap WP-04: "ainda sem
+    provider real por tras") -- this models the same shape a real Authorization Code flow's
+    server-side pending state would have (issued at start, consumed exactly once at
+    callback, bound to the tenant that started it), so swapping in a real provider later
+    changes only where the callback's account data comes from, never this state machine.
+    """
+
+    tenant_id: str
+    provider: str
+    created_at: float
 
 
 def _seed_tokens() -> dict[str, TokenPrincipal]:
@@ -96,22 +176,71 @@ def _seed_tokens() -> dict[str, TokenPrincipal]:
     }
 
 
+#: Internal-only: the test identity provider and its "client" (this same backend's
+#: /auth/login and /auth/callback) trust each other by process identity, not by a shared
+#: secret that crosses any real trust boundary -- so this constant is not a credential.
+TEST_IDP_CLIENT_ID = "campaia-web-test"
+TEST_IDP_CLIENT_SECRET = "test-idp-internal-secret-not-a-real-credential"  # noqa: S105
+
+
+def _resolve_real_oidc_config() -> OidcIssuerConfig | None:
+    """A real, commercial OIDC provider is configured purely via environment variables --
+    none of api/oidc.py, api/routes_auth.py, or api/test_idp.py change when one is chosen
+    (ADR-0018: "a escolha do provedor especifico fica para o Work Package de
+    implementacao"). Returns None unless every required variable is present -- a partially
+    configured real provider must not silently fall back to the test IdP.
+    """
+    required = {
+        "issuer": os.environ.get("CAMPAIA_OIDC_ISSUER"),
+        "authorization_endpoint": os.environ.get("CAMPAIA_OIDC_AUTHORIZATION_ENDPOINT"),
+        "token_endpoint": os.environ.get("CAMPAIA_OIDC_TOKEN_ENDPOINT"),
+        "jwks_uri": os.environ.get("CAMPAIA_OIDC_JWKS_URI"),
+        "client_id": os.environ.get("CAMPAIA_OIDC_CLIENT_ID"),
+        "client_secret": os.environ.get("CAMPAIA_OIDC_CLIENT_SECRET"),
+        "redirect_uri": os.environ.get("CAMPAIA_OIDC_REDIRECT_URI"),
+    }
+    if any(value is None for value in required.values()):
+        return None
+    return OidcIssuerConfig(**required)  # type: ignore[arg-type]
+
+
+#: Missão de fechamento integral (Etapa A13, 22/09/2026, achado real): a real public
+#: documentation URL per provider -- not account-specific verification evidence (there is
+#: no real account, this whole registry is a documented simulator), but a genuine, stable
+#: reference backing the capability declaration, same honesty standard as the rest of this
+#: simulator's data (fake OAuth domain, "sim-1" api_version, explicit "Simulated capability"
+#: notes).
+_PROVIDER_DOCS_URL = {
+    "GOOGLE_ADS": "https://developers.google.com/google-ads/api",
+    "META_ADS": "https://developers.facebook.com/docs/marketing-apis",
+}
+
+
 def _seed_capabilities() -> CapabilityRegistry:
     registry = CapabilityRegistry()
     now = datetime.now(timezone.utc)
-    for provider, account_suffix in (("SIMULATOR", "demo-tenant"), ("SIMULATOR", "other-tenant")):
-        for channel in ("GOOGLE_ADS", "META_ADS"):
-            registry.register(
-                Capability(
-                    provider=provider,
-                    capability_key=f"PUBLISH:{channel}",
-                    country="BR",
-                    api_version="sim-1",
-                    supported=True,
-                    verified_at=now,
-                    notes="Simulated capability, verified in-process at startup.",
-                )
+    # Achado real (Etapa A13): this previously registered every entry under
+    # provider="SIMULATOR" (a ConnectionMode value, not a Provider value), while every
+    # real lookup queries by conn.provider ("GOOGLE_ADS"/"META_ADS") -- the two never
+    # matched, so `supported` was silently always False and `evidence_url`/`notes` always
+    # fell back to their None/False defaults for every real connection, not just
+    # evidence_url as achado 7 previously (incompletely) described. The unused
+    # `account_suffix` loop this replaced was vestigial: CapabilityRegistry is documented
+    # as tenant-agnostic config data ("Dado versionado, nao codigo"), so there is nothing
+    # tenant-specific to seed twice.
+    for channel in ("GOOGLE_ADS", "META_ADS"):
+        registry.register(
+            Capability(
+                provider=channel,
+                capability_key=f"PUBLISH:{channel}",
+                country="BR",
+                api_version="sim-1",
+                supported=True,
+                verified_at=now,
+                evidence_url=_PROVIDER_DOCS_URL[channel],
+                notes="Simulated capability, verified in-process at startup.",
             )
+        )
     return registry
 
 
@@ -128,7 +257,38 @@ class AppState:
     #: presence a no-op for every pre-existing (persistence-unaware) caller of AppState().
     db_path: str | None = None
 
-    tokens: dict[str, TokenPrincipal] = field(default_factory=_seed_tokens)
+    #: Fail-closed by construction (WP-02 / ADR-0018 rollback clause): the fixture bearer
+    #: tokens below must never be reachable outside test/local-dev, even by misconfiguration.
+    #: Two independent signals must agree before they are seeded -- this flag AND the
+    #: process environment declaring itself test/local-dev (CAMPAIA_ENV). Neither alone is
+    #: enough: a stray env var in a shared environment can't turn this on by itself, and a
+    #: copy-pasted True in application wiring can't either. See __post_init__.
+    enable_test_auth_fixtures: bool = False
+
+    #: Empty by default -- only ever populated by __post_init__, and only after the
+    #: fail-closed check above passes. Never seeded via field(default_factory=...) here,
+    #: since dataclass field defaults run before enable_test_auth_fixtures is known.
+    tokens: dict[str, TokenPrincipal] = field(default_factory=dict)
+
+    #: Real Web sessions (WP-02). Keyed by opaque session id (the cookie value) -- never a
+    #: JWT or any format that itself carries claims, so a session can be revoked server-side
+    #: by simple dict deletion (logout, expiry sweep) with no token-blacklist needed.
+    sessions: dict[str, SessionRecord] = field(default_factory=dict)
+    #: In-flight /auth/login attempts, keyed by the `state` value handed to the issuer.
+    #: Consumed exactly once by /auth/callback (see pop_pending_login).
+    pending_logins: dict[str, PendingLogin] = field(default_factory=dict)
+    #: In-flight /connections/oauth/start attempts (WP-04), keyed by the `state` value
+    #: returned to the caller. Consumed exactly once by /connections/oauth/complete (see
+    #: pop_pending_oauth).
+    oauth_pending: dict[str, PendingOAuth] = field(default_factory=dict)
+    #: None unless a real OIDC issuer is configured via CAMPAIA_OIDC_* env vars, or the
+    #: fail-closed test-identity-provider gate below is enabled. /auth/login returns a
+    #: clear "not configured" error rather than silently succeeding when this is None.
+    oidc_config: OidcIssuerConfig | None = field(default=None, init=False)
+    #: Only constructed when enable_test_auth_fixtures's fail-closed check passed -- see
+    #: __post_init__. There is deliberately only one fail-closed switch (that check) for
+    #: both the legacy fixture tokens and this test identity provider.
+    test_idp: TestIdentityProvider | None = field(default=None, init=False)
     # Step-up tokens are accepted at face value in this sandbox (no real re-auth flow) --
     # we still track a per-(tenant,user) "recent step-up" timestamp so that
     # campaia_core.permissions.authorize's STEP_UP_MAX_AGE window is honoured for real
@@ -176,6 +336,25 @@ class AppState:
         #: it via app.state.campaia.db, and so __del__ on the Database can run its
         #: best-effort close when this AppState (and everything holding its repositories)
         #: is garbage collected.
+        if self.enable_test_auth_fixtures:
+            env = os.environ.get("CAMPAIA_ENV", "").strip().lower()
+            if env not in {"test", "local_dev"}:
+                raise RuntimeError(
+                    "enable_test_auth_fixtures=True requires CAMPAIA_ENV to be 'test' or "
+                    f"'local_dev' (got {env!r}). Refusing to seed fixture auth tokens "
+                    "outside test/local-dev -- this is a fail-closed safety check, not a "
+                    "bug. Never set CAMPAIA_ENV=test/local_dev in preview, staging or "
+                    "production."
+                )
+            self.tokens = _seed_tokens()
+            self.test_idp = TestIdentityProvider(
+                client_id=TEST_IDP_CLIENT_ID, client_secret=TEST_IDP_CLIENT_SECRET
+            )
+
+        # Independent of the fail-closed test-fixture gate above: a real provider may be
+        # configured (or not) in any environment, including production.
+        self.oidc_config = _resolve_real_oidc_config()
+
         self.db = None
         if self.db_path is not None:
             from .db import Database, PersistentIdempotencyStore, PersistentTenantAutonomy
@@ -211,3 +390,118 @@ class AppState:
 
     def last_step_up(self, tenant_id: str, user_id: str) -> datetime | None:
         return self.step_up_at.get((tenant_id, user_id))
+
+    # -- WP-02: pending /auth/login attempts ---------------------------------------
+
+    def create_pending_login(
+        self, *, nonce: str, code_verifier: str, redirect_after_login: str
+    ) -> str:
+        state_value = generate_session_id()  # same shape requirements as a session id
+        self.pending_logins[state_value] = PendingLogin(
+            nonce=nonce,
+            code_verifier=code_verifier,
+            redirect_after_login=redirect_after_login,
+            created_at=time.time(),
+        )
+        return state_value
+
+    def pop_pending_login(self, state_value: str) -> PendingLogin | None:
+        """Consumes (removes) a pending login by its state value -- single-use, so a
+        replayed /auth/callback request with the same state always fails the second time.
+        Returns None for an unknown OR expired attempt; callers must treat both identically.
+        """
+        pending = self.pending_logins.pop(state_value, None)
+        if pending is None:
+            return None
+        if time.time() - pending.created_at > PENDING_LOGIN_TTL_SECONDS:
+            return None
+        return pending
+
+    # -- WP-04: pending /connections/oauth/start attempts ----------------------------
+
+    def create_pending_oauth(self, *, tenant_id: str, provider: str) -> str:
+        oauth_state = generate_session_id()  # same shape requirements as a session id
+        self.oauth_pending[oauth_state] = PendingOAuth(
+            tenant_id=tenant_id, provider=provider, created_at=time.time()
+        )
+        return oauth_state
+
+    def pop_pending_oauth(self, oauth_state: str, *, tenant_id: str) -> PendingOAuth | None:
+        """Consumes (removes) a pending OAuth attempt by its state value -- single-use, so
+        a replayed /connections/oauth/complete request with the same state always fails the
+        second time. Returns None for an unknown, expired, OR cross-tenant attempt (a state
+        issued while authenticated as tenant A must never complete for tenant B, even if
+        somehow guessed or leaked) -- callers must treat all three identically.
+        """
+        pending = self.oauth_pending.pop(oauth_state, None)
+        if pending is None:
+            return None
+        if time.time() - pending.created_at > OAUTH_PENDING_TTL_SECONDS:
+            return None
+        if pending.tenant_id != tenant_id:
+            return None
+        return pending
+
+    # -- WP-02: real Web sessions ---------------------------------------------------
+
+    def create_session(
+        self, principal: TokenPrincipal, *, memberships: tuple[Membership, ...] = ()
+    ) -> tuple[str, str]:
+        """Returns (session_id, csrf_token). Always a fresh id and a fresh expiry --
+        WP-02's "rotacao de sessao" happens at login, not via silent per-request extension
+        of an existing session. `memberships` defaults to empty for callers that predate
+        WP-03 (fixture-token paths); real logins (api/routes_auth.py) always pass the
+        verified ID token's own memberships.
+        """
+        session_id = generate_session_id()
+        csrf_token = generate_csrf_token()
+        self.sessions[session_id] = SessionRecord(
+            principal=principal,
+            csrf_token=csrf_token,
+            expires_at=time.time() + SESSION_TTL_SECONDS,
+            memberships=memberships,
+        )
+        return session_id, csrf_token
+
+    def get_session(self, session_id: str) -> SessionRecord | None:
+        """Returns None for an unknown, expired, OR revoked (logged-out) session --
+        callers must treat all three identically (WP-02 negative-session tests)."""
+        record = self.sessions.get(session_id)
+        if record is None:
+            return None
+        if record.expires_at <= time.time():
+            del self.sessions[session_id]
+            return None
+        return record
+
+    def delete_session(self, session_id: str) -> None:
+        self.sessions.pop(session_id, None)
+
+    # -- WP-03: tenant switching -----------------------------------------------------
+
+    def switch_tenant(self, session_id: str, target_tenant_id: str) -> tuple[str, str] | None:
+        """Re-issues the session (new id, new CSRF token, new expiry -- same rotation
+        discipline as login) with its active principal switched to `target_tenant_id`.
+        Returns the new (session_id, csrf_token), or None if the current session is
+        unknown/expired OR `target_tenant_id` is not one of its real memberships -- the
+        server is the only source of truth for which tenants a user may switch into, never
+        client-supplied roles.
+
+        Any step-up (recent re-auth for sensitive actions, campaia_core.permissions
+        STEP_UP_MAX_AGE) the user held is invalidated across ALL tenants on switch, not
+        just the one being left -- switching tenant is itself a sensitive change of
+        authority, so the user must re-verify step-up freshly in whichever tenant they act
+        in next, even if that happens to be the tenant they just left.
+        """
+        record = self.get_session(session_id)
+        if record is None:
+            return None
+        target = next((m for m in record.memberships if m.tenant_id == target_tenant_id), None)
+        if target is None:
+            return None
+
+        new_principal = record.principal.with_membership(target)
+        self.delete_session(session_id)
+        for key in [k for k in self.step_up_at if k[1] == new_principal.user_id]:
+            del self.step_up_at[key]
+        return self.create_session(new_principal, memberships=record.memberships)

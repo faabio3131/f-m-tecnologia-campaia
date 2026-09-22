@@ -1,0 +1,18 @@
+.empty {
+  padding: var(--campaia-space-6);
+  border: 1px dashed var(--campaia-color-border);
+  border-radius: var(--campaia-radius-md);
+  color: var(--campaia-color-text-muted);
+  text-align: center;
+}
+
+.title {
+  margin: 0;
+  font-weight: 600;
+  color: var(--campaia-color-text);
+}
+
+.description {
+  margin: var(--campaia-space-2) 0 0;
+  font-size: var(--campaia-font-size-sm);
+}

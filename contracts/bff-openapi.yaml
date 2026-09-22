@@ -25,8 +25,10 @@ servers:
 
 security:
   - bearerAuth: []
+  - cookieAuth: []
 
 tags:
+  - name: Autenticacao
   - name: Conta
   - name: Marca
   - name: Conexoes
@@ -35,6 +37,68 @@ tags:
   - name: Metricas
 
 paths:
+  /auth/login:
+    get:
+      tags: [Autenticacao]
+      summary: >-
+        Inicia o fluxo OIDC Authorization Code + PKCE. Redireciona o navegador ao
+        authorization_endpoint do provedor de identidade configurado (real, via
+        CAMPAIA_OIDC_*, ou o provedor de teste fail-closed em CAMPAIA_ENV=test|local_dev).
+      operationId: startLogin
+      security: []
+      parameters:
+        - name: redirect_after_login
+          in: query
+          required: false
+          schema: { type: string }
+          description: >-
+            Caminho relativo same-origin para redirecionar apos login bem-sucedido
+            (default `/`). Qualquer valor absoluto ou iniciado por `//` e ignorado
+            (protecao contra open redirect).
+      responses:
+        '302':
+          description: Redirecionamento ao authorization_endpoint do provedor de identidade.
+        '503':
+          description: Nenhum provedor de identidade configurado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /auth/callback:
+    get:
+      tags: [Autenticacao]
+      summary: >-
+        Callback do provedor de identidade. Troca o codigo de autorizacao (com PKCE),
+        verifica a assinatura e as claims do ID token, e estabelece uma sessao real
+        (cookies `campaia_session` HttpOnly/Secure e `campaia_csrf`).
+      operationId: authCallback
+      security: []
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema: { type: string }
+        - name: state
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '302':
+          description: Sessao estabelecida; redireciona para `redirect_after_login`.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/logout:
+    post:
+      tags: [Autenticacao]
+      summary: Revoga a sessao atual (se houver) e limpa os cookies de sessao/CSRF.
+      operationId: logout
+      responses:
+        '302':
+          description: Sessao revogada; redireciona para `/`.
+
   /me:
     get:
       tags: [Conta]
@@ -47,6 +111,53 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Me' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /session/memberships:
+    get:
+      tags: [Conta]
+      summary: >-
+        Lista os tenants dos quais o usuario autenticado e realmente membro (WP-03),
+        sempre incluindo o tenant ativo da sessao atual. Exige sessao Web real
+        (`cookieAuth`) -- nunca disponivel via o fixture `bearerAuth`, que nao carrega
+        sessao alguma para enumerar.
+      operationId: getSessionMemberships
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionMemberships' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /session/switch-tenant:
+    post:
+      tags: [Conta]
+      summary: >-
+        Troca o tenant ativo da sessao para um dos memberships reais do usuario (WP-03).
+        Reemite a sessao (novo cookie `campaia_session`/`campaia_csrf`, mesma disciplina de
+        rotacao do login) e invalida qualquer step-up recente em TODOS os tenants do
+        usuario, nao apenas no que esta sendo deixado.
+      operationId: switchTenant
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SwitchTenantInput' }
+      responses:
+        '200':
+          description: Sessao trocada com sucesso; cookies reemitidos.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionMemberships' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/PermissionDenied' }
 
   /brand-profiles:
     get:
@@ -125,6 +236,39 @@ paths:
                 properties:
                   authorization_url: { type: string, format: uri }
                   state: { type: string }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+
+  /connections/oauth/complete:
+    post:
+      tags: [Conexoes]
+      summary: Finaliza o fluxo OAuth iniciado por /connections/oauth/start (WP-04)
+      description: |
+        Simula o que o callback do provedor real devolveria: a conta escolhida pelo usuario
+        apos a autorizacao. `state` precisa ser o valor devolvido por um /connections/oauth/start
+        anterior, ainda nao consumido e do mesmo tenant -- nunca aceito de outra origem.
+        Cria a Connection de fato (o /start sozinho nunca cria uma).
+      operationId: completeOAuth
+      parameters:
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state, external_account_id, display_name]
+              properties:
+                state: { type: string }
+                external_account_id: { type: string }
+                display_name: { type: string }
+      responses:
+        '201':
+          description: Conexao criada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Connection' }
+        '400': { $ref: '#/components/responses/ValidationError' }
         '403': { $ref: '#/components/responses/StepUpRequired' }
 
   /connections/{connectionId}:
@@ -337,9 +481,20 @@ paths:
               type: object
               required: [daily_cap, approval_id]
               properties:
-                daily_cap: { type: number, exclusiveMinimum: 0 }
-                total_amount: { type: number, exclusiveMinimum: 0 }
+                daily_cap:
+                  type: string
+                  description: |
+                    Valor monetario como string decimal (ex. "1500.00"), nunca number --
+                    preserva precisao ponta a ponta (achado P-36, missao de reconciliacao,
+                    22/09/2026). O backend real (BudgetPatchRequest) aceita o campo real
+                    (`new_daily_cap: Decimal`, alias `daily_cap`).
                 approval_id: { type: string, format: uuid }
+              # `total_amount` removido: o backend real (BudgetPatchRequest, extra="forbid")
+              # nunca aceitou esse campo -- so `daily_cap` e ajustavel por esta rota, por
+              # desenho deliberado (ver docs/web/13_CERTIFICACAO_WP06_ALTERACAO_ORCAMENTO.md,
+              # "Fora de escopo: alterar total_amount"). O contrato anterior declarava um
+              # campo que o backend sempre rejeitaria (achado P-36, corrigido aditivamente
+              # -- removendo a promessa falsa, nao o comportamento real).
       responses:
         '202': { description: Alteracao aceita }
         '403': { $ref: '#/components/responses/ApprovalRequired' }
@@ -357,6 +512,45 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/ApprovalRequest' }
+    post:
+      tags: [Governanca]
+      summary: Registra um novo pedido de aprovacao PENDING
+      description: |
+        Nao documentado na paráfrase original do contrato, embora ja implementado e
+        exercitado desde o WP-05 (achado corrigido aqui, mesma classe dos achados de
+        campo ausente do WP-05/WP-06): sem esta rota, POST .../publish, PATCH .../budget
+        e a alteracao de nivel de autonomia nao tem como referenciar uma aprovacao "ja
+        registrada", pois nenhuma outra rota cria uma. Nao produz nenhum efeito de
+        dominio por si so -- apenas registra um ApprovalRequest PENDING.
+      operationId: createApproval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [campaign_id, kind]
+              properties:
+                campaign_id: { type: string, format: uuid }
+                kind: { type: string, enum: [PUBLISH, BUDGET_CHANGE, AUTONOMY_CHANGE] }
+                amount:
+                  type: [string, 'null']
+                  description: |
+                    Valor associado ao pedido quando aplicavel (ex. novo daily_cap para
+                    BUDGET_CHANGE), como string decimal -- nunca number, mesma correcao de
+                    precisao monetaria do achado P-36 (missao de reconciliacao, 22/09/2026).
+                    O backend real (ApprovalCreateRequest.amount: Decimal) aceita tanto
+                    string quanto number no corpo JSON, mas string preserva precisao exata
+                    sem passar por um float intermediario no cliente.
+                requires_dual_approval: { type: boolean, default: false }
+      responses:
+        '201':
+          description: Aprovacao registrada, PENDING
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
 
   /approvals/{approvalId}/decision:
     post:
@@ -453,7 +647,11 @@ paths:
                 target_id: { type: [string, 'null'], format: uuid }
                 reason: { type: string, maxLength: 500 }
       responses:
-        '202': { description: Acionado; pausa propagando }
+        '202':
+          description: Acionado; pausa propagando
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KillSwitchResult' }
 
   /campaigns/{campaignId}/insights:
     get:
@@ -486,6 +684,11 @@ paths:
           schema: { type: string, format: uuid }
         - name: cursor
           in: query
+          description: >-
+            Opaque cursor from a previous response's `next_cursor` -- pass it back
+            unchanged to fetch the next page (fixed page size, server-controlled). An
+            unknown or stale cursor is rejected with VALIDATION_FAILED rather than
+            silently restarting at page 1.
           schema: { type: string }
       responses:
         '200':
@@ -498,7 +701,9 @@ paths:
                   items:
                     type: array
                     items: { $ref: '#/components/schemas/AuditEvent' }
-                  next_cursor: { type: [string, 'null'] }
+                  next_cursor:
+                    type: [string, 'null']
+                    description: Present only when a further page exists; pass to `cursor` to fetch it.
 
 components:
   securitySchemes:
@@ -506,7 +711,20 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Token de sessao. O `tenant_id` e derivado dele e nunca aceito do cliente.
+      description: >-
+        Fixture de teste/desenvolvimento local apenas (WP-01-era). Fail-closed por
+        construcao desde o WP-02 (ADR-0018): nunca disponivel fora de CAMPAIA_ENV=
+        test|local_dev, mesmo por engano de configuracao. O `tenant_id` e derivado dele e
+        nunca aceito do cliente.
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: campaia_session
+      description: >-
+        Sessao Web real (WP-02, ADR-0018). Cookie HttpOnly/Secure/SameSite=Lax, emitido por
+        `GET /auth/callback` apos um fluxo OIDC Authorization Code + PKCE completo e
+        verificado. Mutacoes autenticadas por este cookie exigem tambem o header
+        `X-CSRF-Token` (ver `campaia_csrf`, nao-HttpOnly, mesmo fluxo de emissao).
 
   parameters:
     IdempotencyKey:
@@ -563,6 +781,13 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
+    PermissionDenied:
+      description: >-
+        Operacao recusada pela autorizacao do servidor (ex.: tenant_id que nao e um
+        membership real do usuario autenticado).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
     Provider:
@@ -606,6 +831,34 @@ components:
         permissions: { type: array, items: { type: string } }
         mfa_enabled: { type: boolean }
 
+    Membership:
+      type: object
+      properties:
+        tenant_id: { type: string, format: uuid }
+        business_unit_id: { type: [string, 'null'], format: uuid }
+        roles: { type: array, items: { type: string } }
+        is_active:
+          type: boolean
+          description: True para exatamente um membership -- o tenant ativo da sessao atual.
+
+    SessionMemberships:
+      type: object
+      properties:
+        memberships:
+          type: array
+          items: { $ref: '#/components/schemas/Membership' }
+
+    SwitchTenantInput:
+      type: object
+      required: [tenant_id]
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+          description: >-
+            Deve ser o tenant_id de um dos memberships reais do usuario (ver
+            GET /session/memberships) -- qualquer outro valor recebe 403.
+
     BrandProfileInput:
       type: object
       required: [name, tone]
@@ -641,7 +894,19 @@ components:
     Capability:
       type: object
       properties:
+        provider: { $ref: '#/components/schemas/Provider' }
         capability_key: { type: string }
+        country:
+          type: string
+          description: |
+            Campo real, sempre presente na resposta (api/models.py CapabilityResponse.country),
+            ausente do contrato ate esta correcao (achado do WP-09, mesma classe dos achados
+            requested_by/kind/amount/max_level_allowed/business_unit_id dos WP-05 a WP-07).
+        api_version:
+          type: string
+          description: |
+            Campo real, sempre presente na resposta (CapabilityResponse.api_version), ausente
+            do contrato ate esta correcao (achado do WP-09).
         supported: { type: boolean }
         requires_approval: { type: boolean }
         evidence_url: { type: [string, 'null'], format: uri }
@@ -652,9 +917,35 @@ components:
       type: object
       properties:
         id: { type: string, format: uuid }
+        business_unit_id:
+          type: [string, 'null']
+          format: uuid
+          description: |
+            Campo real, sempre presente na resposta (backend/api/models.py CampaignResponse.
+            business_unit_id), ausente do contrato ate esta correcao (achado do WP-07, mesma
+            classe dos achados requested_by/kind/amount/max_level_allowed dos WP-05/06/07).
         name: { type: string }
         state: { $ref: '#/components/schemas/CampaignState' }
         objective: { type: string }
+        brief:
+          type: object
+          description: |
+            Campo real, sempre presente na resposta (backend/api/models.py CampaignResponse.
+            brief) -- o corpo do briefing original que criou a campanha (POST /briefs),
+            reserializado. Ausente do contrato ate esta correcao (achado do WP-01 a WP-11 mais
+            tardio a ser fechado, mesma classe P-39). Forma nao tipada aqui, como ja acontece
+            com o campo `plan` de GET /campaigns/{id}/plan.
+        plan_version:
+          type: integer
+          description: |
+            Campo real, sempre presente na resposta (backend/api/models.py CampaignResponse.
+            plan_version). Ausente do contrato ate esta correcao (achado P-39).
+        connection_id:
+          type: [string, 'null']
+          format: uuid
+          description: |
+            Campo real, sempre presente na resposta (backend/api/models.py CampaignResponse.
+            connection_id). Ausente do contrato ate esta correcao (achado P-39).
         channels:
           type: array
           items: { $ref: '#/components/schemas/Channel' }
@@ -672,9 +963,27 @@ components:
           type: object
           properties:
             currency: { type: string }
-            total_amount: { type: number }
-            daily_cap: { type: number }
-            spent_to_date: { type: number }
+            total_amount:
+              type: string
+              description: |
+                Valor monetario como string decimal (ex. "10000.00"), nunca number. O
+                schema anterior declarava `number`, mas a resposta real sempre serializa
+                Decimal como string JSON (Pydantic v2, sem perda de precisao) -- achado
+                P-36, corrigido nesta missao de reconciliacao (22/09/2026). O backend
+                (BudgetResponse) agora tipa o campo explicitamente `str`, mesmo padrao ja
+                usado por ApprovalRequest.amount desde o WP-06.
+            daily_cap:
+              type: string
+              description: Mesma correcao P-36 de total_amount -- string decimal, nunca number.
+            spent_to_date:
+              type: string
+              description: Mesma correcao P-36 de total_amount -- string decimal, nunca number.
+        last_synced_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            Campo real, sempre presente na resposta (backend/api/models.py CampaignResponse.
+            last_synced_at). Ausente do contrato ate esta correcao (achado P-39).
         created_at: { type: string, format: date-time }
 
     PolicyDecision:
@@ -699,9 +1008,38 @@ components:
       properties:
         id: { type: string, format: uuid }
         campaign_id: { type: string, format: uuid }
+        kind:
+          type: string
+          enum: [PUBLISH, BUDGET_CHANGE, AUTONOMY_CHANGE]
+          description: |
+            O que esta aprovacao decide -- campo real, sempre presente na resposta (ver
+            api/helpers.py serialize_approval / api/models.py ApprovalResponse, onde ja
+            era descrito como "extra, not in the contract"), adicionado formalmente ao
+            contrato no WP-06 apos achado de que a Web precisa distinguir pedidos de
+            aprovacao por tipo (ex. BUDGET_CHANGE vs. PUBLISH) de forma tipada, nao por
+            correspondencia fragil de texto em `reason`.
         reason: { type: string, description: Gatilho que exigiu aprovacao humana. }
+        requested_by:
+          type: string
+          format: uuid
+          description: |
+            Quem propos a acao que gerou esta aprovacao (campaign_id.created_by ou
+            equivalente) -- campo real, sempre presente na resposta (ver
+            api/helpers.py serialize_approval), adicionado ao contrato no WP-05 apos
+            achado de campo ausente durante a construcao da tela de aprovacoes.
+            Necessario para a UI comunicar segregacao de funcoes (quem propos nao
+            aprova a propria proposta, campaia_core.permissions.can_approve).
         plan_version: { type: integer }
         status: { type: string, enum: [PENDING, APPROVED, REJECTED, CHANGES_REQUESTED, EXPIRED] }
+        amount:
+          type: [string, 'null']
+          description: |
+            Valor associado a este pedido de aprovacao quando aplicavel (ex.: o novo
+            daily_cap proposto para um BUDGET_CHANGE) -- campo real, sempre presente na
+            resposta (ver api/helpers.py serialize_approval), ausente do contrato ate
+            esta correcao (achado do WP-06, mesma classe do achado requested_by do
+            WP-05). Necessario para a Web aplicar de fato uma alteracao de orcamento ja
+            aprovada, sem reconstruir o valor de outra origem.
         requires_dual_approval: { type: boolean }
         decided_by: { type: array, items: { type: string, format: uuid } }
         created_at: { type: string, format: date-time }
@@ -712,12 +1050,35 @@ components:
       properties:
         level: { type: integer, minimum: 0, maximum: 3 }
         level_label: { type: string, enum: [ASSISTENTE, APROVADO, LIMITADO, OPERACIONAL] }
+        max_level_allowed:
+          type: integer
+          minimum: 0
+          maximum: 3
+          description: |
+            Teto contratado (campaia_core/autonomy.py AutonomySettings.max_level_allowed)
+            -- campo real, sempre presente na resposta, ausente do contrato ate esta
+            correcao (achado do WP-07, mesma classe dos achados requested_by/kind/amount
+            dos WP-05/06). O nivel nunca pode ser configurado acima deste teto (invariante
+            I-11, guarda contra auto-promocao) -- nao e ajustavel por esta API.
         always_require_human:
           type: array
           description: Gatilhos que exigem humano em QUALQUER nivel.
           items: { type: string }
         max_budget_change_pct: { type: number }
         updated_at: { type: string, format: date-time }
+
+    KillSwitchResult:
+      type: object
+      description: |
+        Corpo de resposta real do 202 de POST /kill-switch (api/routes_campaigns.py
+        _do_kill_switch) -- ausente do contrato ate esta correcao (achado do WP-08, mesma
+        classe dos achados anteriores: campo/schema real, sempre devolvido, nunca
+        documentado).
+      properties:
+        scope: { type: string, enum: [CAMPAIGN, ACCOUNT, TENANT, PLATFORM, GLOBAL] }
+        affected_campaign_ids:
+          type: array
+          items: { type: string, format: uuid }
 
     InsightSeries:
       type: object
@@ -736,6 +1097,7 @@ components:
               spend: { type: number }
               conversions: { type: integer }
               cpa: { type: [number, 'null'] }
+        note: { type: string }
 
     AuditEvent:
       type: object

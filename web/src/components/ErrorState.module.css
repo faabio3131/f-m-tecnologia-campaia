@@ -1,0 +1,17 @@
+.error {
+  padding: var(--campaia-space-5);
+  border: 1px solid var(--campaia-color-warning-border);
+  border-radius: var(--campaia-radius-md);
+  background: var(--campaia-color-warning-bg);
+  color: var(--campaia-color-warning-text);
+}
+
+.title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.description {
+  margin: var(--campaia-space-2) 0 0;
+  font-size: var(--campaia-font-size-sm);
+}

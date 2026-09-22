@@ -100,11 +100,14 @@ def serialize_campaign(rec: CampaignRecord):
 
     budget = BudgetResponse(
         currency=rec.budget.limits.currency,
-        total_amount=rec.budget.limits.total_amount,
-        daily_cap=rec.budget.limits.daily_cap,
+        # Explicit str(...), same established pattern as ApprovalResponse.amount above --
+        # BudgetResponse's fields are typed `str`, not `Decimal` (achado P-36 fix, missão de
+        # reconciliação, 22/09/2026): precision-preserving, matches the corrected contract.
+        total_amount=str(rec.budget.limits.total_amount),
+        daily_cap=str(rec.budget.limits.daily_cap),
         # BudgetEngine's real attribute is `spent_total` (campaia_core/budget.py) -- the
         # contract's `spent_to_date` is served from it, not a made-up attribute name.
-        spent_to_date=rec.budget.spent_total,
+        spent_to_date=str(rec.budget.spent_total),
     )
 
     external_resources = [

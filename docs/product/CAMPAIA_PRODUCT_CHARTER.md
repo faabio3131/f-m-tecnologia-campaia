@@ -219,12 +219,18 @@ o cliente escolhe qual usar por campanha ou por conta. Nível 3 continua fora do
 
 ## 14. DECISÕES PENDENTES (PARA FÁBIO)
 
-1. **Segmento inicial** — Só restaurantes ou qualquer negócio no MVP?
-2. **Primeiro objetivo** — Leads, vendas, visitas, mensagens?
-3. **Modelo comercial** — Assinatura, pay-per-use, BYOK ou híbrido?
-4. **Marca** — CampaIA branca, co-branding com Kordena, ou standalone?
-5. **Integração Kordena** — Se/quando integrar, como?
-6. **Roadmap** — Prioridade entre Google, Meta, WhatsApp?
+**Reconciliado em 22/09/2026 (missão de auditoria/certificação)**: as 6 decisões abaixo já
+foram tomadas pelo Diretor em 27/08/2026 e formalizadas em evidência própria, mas esta seção
+nunca havia sido atualizada para refletir isso — o mesmo tipo de drift documental já corrigido
+no painel de execução em 05/09/2026 (P-21). Preservado o enunciado original de cada item;
+adicionado o resultado real com sua fonte.
+
+1. ~~**Segmento inicial** — Só restaurantes ou qualquer negócio no MVP?~~ **RESOLVIDA (D-03)**: qualquer pequeno negócio local. Diretor, 27/08/2026 — `docs/evidence/DIRETOR_DECISOES_D03_D05_D06_D09_20260827.md`.
+2. ~~**Primeiro objetivo** — Leads, vendas, visitas, mensagens?~~ **RESOLVIDA (D-05)**: as 4 metas de conversão completas já na v1, não um subconjunto ("os 4 já na primeira versão"). Diretor, 27/08/2026 — mesma evidência.
+3. ~~**Modelo comercial** — Assinatura, pay-per-use, BYOK ou híbrido?~~ **RESOLVIDA (D-06)**: modelo híbrido — franquia inclusa no plano + créditos extras pagos. Diretor, 27/08/2026 — mesma evidência.
+4. **Marca** — CampaIA branca, co-branding com Kordena, ou standalone? **PARCIALMENTE RESOLVIDA**: a direção geral está decidida (produto independente, não co-branded — ver §5 deste documento e D-02 abaixo), mas nenhuma citação direta do Diretor resolve especificamente a nomenclatura/identidade de marca como item isolado. Permanece PENDÊNCIA DE DECISÃO para essa nuance específica.
+5. ~~**Integração Kordena** — Se/quando integrar, como?~~ **RESOLVIDA (D-02)**: independente, com integração futura opcional via API pública. ADR-0002 **APROVADA**.
+6. ~~**Roadmap** — Prioridade entre Google, Meta, WhatsApp?~~ **RESOLVIDA (D-04)**: Google → Meta → conjunto → WhatsApp. ADR-0007 **APROVADA**.
 
 ---
 

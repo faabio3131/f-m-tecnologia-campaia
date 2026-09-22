@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import uuid
 from datetime import datetime, timezone
 
 from starlette.requests import Request
@@ -18,7 +17,13 @@ from .deps import (
 )
 from .errors import ApiError
 from .helpers import json_response, list_response, parse_body, serialize_connection
-from .models import CapabilityResponse, ConnectionResponse, OAuthStartRequest, OAuthStartResponse
+from .models import (
+    CapabilityResponse,
+    ConnectionResponse,
+    OAuthCompleteRequest,
+    OAuthStartRequest,
+    OAuthStartResponse,
+)
 
 
 def _authorize(request: Request, permission: Permission):
@@ -44,13 +49,16 @@ async def oauth_start(request: Request) -> JSONResponse:
 
     This NEVER calls a real OAuth provider. No real network call is made here at all --
     the "authorization_url" is a placeholder string pointing at a domain that does not
-    resolve to anything, purely to exercise the shape of the flow in this sandbox.
+    resolve to anything, purely to exercise the shape of the flow in this sandbox. `state`
+    is tracked server-side (AppState.oauth_pending, WP-04) so /connections/oauth/complete
+    can later verify it against the tenant/provider that actually started this attempt,
+    rather than trusting whatever the client echoes back.
     """
     fixture, state = _authorize(request, Permission.CONNECTION_MANAGE)
     require_step_up(request, fixture)
     body = await parse_body(request, OAuthStartRequest)
 
-    oauth_state = uuid.uuid4().hex
+    oauth_state = state.create_pending_oauth(tenant_id=fixture.tenant_id, provider=body.provider)
     fake_url = (
         f"https://auth.simulated-ads-provider.invalid/oauth/authorize"
         f"?provider={body.provider}&state={oauth_state}&client_id=sandbox-fixture"
@@ -60,9 +68,60 @@ async def oauth_start(request: Request) -> JSONResponse:
         actor=fixture.user_id,
         action="OAUTH_START",
         target=body.provider,
-        details={"note": "simulated, no real provider contacted", "state": oauth_state},
+        # Missão de fechamento integral (A3, 22/09/2026): the anti-replay `state` value
+        # itself has no place in a human-readable audit trail even though it is already
+        # returned to the caller in this same response -- an audit log is for reviewing
+        # actions, not for storing security-relevant tokens.
+        details={"note": "simulated, no real provider contacted"},
     )
     return json_response(OAuthStartResponse(authorization_url=fake_url, state=oauth_state))
+
+
+async def oauth_complete(request: Request) -> JSONResponse:
+    """Finalizes a /connections/oauth/start attempt (WP-04), simulating the account the
+    (nonexistent) real provider would have returned after the user picked one. `state` must
+    match a pending attempt started by THIS tenant -- never trusted at face value, always
+    looked up server-side (AppState.pop_pending_oauth), exactly like /auth/callback's own
+    pending-login check (WP-02). Creates a real, persisted Connection -- unlike
+    /connections/oauth/start, which never did (the contract's own description already says
+    "o callback e recebido pelo backend", i.e. this step was always intended to exist).
+    """
+    fixture, state = _authorize(request, Permission.CONNECTION_MANAGE)
+    require_step_up(request, fixture)
+    idem_key = require_idempotency_key(request)
+    body = await parse_body(request, OAuthCompleteRequest)
+
+    def _do_create():
+        # Consuming the pending OAuth state MUST happen inside the idempotency-guarded
+        # closure, never before it -- IdempotencyStore.execute() never calls this closure
+        # on replay, so a legitimate retry (same Idempotency-Key, e.g. a dropped response)
+        # would otherwise find its own already-consumed state and fail as if it were a
+        # genuine replay attack. A real second attempt (different Idempotency-Key) still
+        # correctly fails, since the state truly is gone by then.
+        pending = state.pop_pending_oauth(body.state, tenant_id=fixture.tenant_id)
+        if pending is None:
+            raise ApiError(
+                "VALIDATION_FAILED", "Unknown, expired, or already-used OAuth state."
+            )
+        conn = state.connections.create(
+            fixture.tenant_id,
+            provider=pending.provider,
+            external_account_id=body.external_account_id,
+            display_name=body.display_name,
+        )
+        state.audit.append(
+            tenant_id=fixture.tenant_id,
+            actor=fixture.user_id,
+            action="CONNECTION_CREATE",
+            target=conn.connection_id,
+            details={"provider": pending.provider, "note": "simulated, no real provider contacted"},
+        )
+        return serialize_connection(conn).model_dump(mode="json")
+
+    result, _replay = state.idempotency.execute(
+        fixture.tenant_id, f"http:oauth_complete:{idem_key}", _do_create
+    )
+    return JSONResponse(result, status_code=201)
 
 
 async def revoke_connection(request: Request) -> Response:
@@ -116,9 +175,13 @@ async def connection_capabilities(request: Request) -> JSONResponse:
                 supported=supported,
                 verified_at=cap.verified_at if cap else now,
                 requires_approval=cap.requires_approval if cap else False,
-                # No evidence-URL source exists yet in campaia_core.infra.Capability
-                # (achado 7) -- always None until that tracking exists.
-                evidence_url=None,
+                # Missão de fechamento integral (Etapa A13, 22/09/2026): achado 7 was
+                # incomplete -- infra.Capability already carries evidence_url; the real bug
+                # was AppState._seed_capabilities() registering under the wrong provider
+                # key (fixed separately), which made `cap` always None here too. Now reads
+                # the same already-fetched `cap` object exactly like notes/requires_approval
+                # do on the lines above/below.
+                evidence_url=cap.evidence_url if cap else None,
                 notes=cap.notes if cap else None,
             )
         )

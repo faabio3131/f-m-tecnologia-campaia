@@ -1,0 +1,64 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-3);
+}
+
+.planBox {
+  border: 1px solid var(--campaia-color-border);
+  border-radius: var(--campaia-radius-sm);
+  background: var(--campaia-color-surface);
+  padding: var(--campaia-space-3);
+}
+
+.planMeta {
+  margin: 0 0 var(--campaia-space-2);
+  color: var(--campaia-color-text-muted);
+  font-size: var(--campaia-font-size-sm);
+}
+
+.planOutput {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--campaia-space-1) var(--campaia-space-3);
+}
+
+.planOutput dt {
+  font-weight: 600;
+  color: var(--campaia-color-text-muted);
+}
+
+.planOutput dd {
+  margin: 0;
+}
+
+.emptyNote {
+  margin: 0;
+  color: var(--campaia-color-text-muted);
+  font-size: var(--campaia-font-size-sm);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-1);
+  font-size: var(--campaia-font-size-sm);
+  color: var(--campaia-color-text-muted);
+}
+
+.field textarea {
+  font: inherit;
+  color: var(--campaia-color-text);
+  padding: var(--campaia-space-2) var(--campaia-space-3);
+  border-radius: var(--campaia-radius-sm);
+  border: 1px solid var(--campaia-color-border);
+  background: var(--campaia-color-surface);
+  resize: vertical;
+}
+
+.error {
+  margin: 0;
+  color: var(--campaia-color-warning-text);
+  font-size: var(--campaia-font-size-sm);
+}

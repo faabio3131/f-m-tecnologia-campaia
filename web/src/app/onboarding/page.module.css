@@ -1,0 +1,51 @@
+.header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--campaia-space-2);
+}
+
+.title {
+  font-size: var(--campaia-font-size-xl);
+  margin: 0;
+}
+
+.sectionTitle {
+  font-size: var(--campaia-font-size-lg);
+  margin: 0 0 var(--campaia-space-2);
+}
+
+.sectionNote {
+  margin: 0 0 var(--campaia-space-3);
+  color: var(--campaia-color-text-muted);
+  font-size: var(--campaia-font-size-sm);
+}
+
+.connectGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--campaia-space-3);
+}
+
+.loginLink,
+.finishLink {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--campaia-space-2) var(--campaia-space-4);
+  border-radius: var(--campaia-radius-sm);
+  background: var(--campaia-color-primary);
+  color: var(--campaia-color-primary-contrast);
+  font-weight: 600;
+  font-size: var(--campaia-font-size-sm);
+}
+
+.loginLink:hover,
+.finishLink:hover {
+  filter: brightness(1.08);
+}
+
+.finishDisabledNote {
+  margin: 0;
+  color: var(--campaia-color-text-muted);
+  font-size: var(--campaia-font-size-sm);
+}

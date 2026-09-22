@@ -319,6 +319,42 @@ class TestCrossTenantIsolation(unittest.TestCase):
         r = client.get("/connections", headers=OTHER_OWNER)
         self.assertEqual(r.json(), [])
 
+    def test_other_tenant_cannot_delete_or_read_capabilities_of_first_tenants_real_connection(
+        self,
+    ):
+        """Missão de fechamento integral (A2, 22/09/2026): the test above never actually
+        exercised DELETE against a real Connection belonging to another tenant, despite its
+        name -- closing that gap here with a real, persisted connection (created directly
+        via the domain state, same technique test_account_scope_only_pauses_matching_
+        connection already uses, to avoid a full OAuth round trip that doesn't matter for
+        this assertion)."""
+        client = make_client()
+        conn = client.app.state.campaia.connections.create(
+            "demo-tenant", provider="GOOGLE_ADS", external_account_id="acct-x2", display_name="X2"
+        )
+
+        # DELETE as the other tenant: must be indistinguishable from a genuinely
+        # nonexistent connection id (404 NOT_FOUND, never 403) -- enumeration resistance,
+        # same pattern already proven for campaigns.
+        r = client.delete(
+            f"/connections/{conn.connection_id}",
+            headers={**with_step_up(OTHER_OWNER), **idem("cross-tenant-conn-delete")},
+        )
+        self.assertEqual(r.status_code, 404, r.text)
+        self.assertEqual(r.json()["code"], "NOT_FOUND")
+
+        # Same for reading capabilities of another tenant's connection.
+        r = client.get(f"/connections/{conn.connection_id}/capabilities", headers=OTHER_OWNER)
+        self.assertEqual(r.status_code, 404, r.text)
+        self.assertEqual(r.json()["code"], "NOT_FOUND")
+
+        # The real connection is untouched: still visible and ACTIVE for its real owner.
+        r = client.get("/connections", headers=OWNER)
+        self.assertEqual(r.status_code, 200)
+        owned = [c for c in r.json() if c["id"] == conn.connection_id]
+        self.assertEqual(len(owned), 1)
+        self.assertEqual(owned[0]["status"], "ACTIVE")
+
 
 class TestKillSwitchNeverWidensEffect(unittest.TestCase):
     """Achado 13: kill switch only ever pauses/reduces effect, and cross-tenant reach is

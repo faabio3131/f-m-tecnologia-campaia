@@ -31,6 +31,24 @@ class MeResponse(BaseModel):
     mfa_enabled: bool
 
 
+# --------------------------------------------------------------------------- WP-03 tenant membership
+
+
+class MembershipResponse(BaseModel):
+    tenant_id: str
+    business_unit_id: str | None
+    roles: list[str]
+    is_active: bool
+
+
+class SessionMembershipsResponse(BaseModel):
+    memberships: list[MembershipResponse]
+
+
+class SwitchTenantRequest(ApiModel):
+    tenant_id: str
+
+
 # --------------------------------------------------------------------------- brand profiles
 
 
@@ -81,6 +99,18 @@ class OAuthStartResponse(BaseModel):
     state: str
 
 
+class OAuthCompleteRequest(ApiModel):
+    """WP-04: finalizes the /connections/oauth/start attempt named by `state`. No real
+    provider exists yet -- this simulates the account-selection step a real callback would
+    receive (contract's own description of /connections/oauth/start: "o callback e recebido
+    pelo backend"), never a client-supplied provider or tenant (both come from the pending
+    attempt `state` references, looked up server-side)."""
+
+    state: str
+    external_account_id: str
+    display_name: str
+
+
 class CapabilityResponse(BaseModel):
     provider: str
     capability_key: str
@@ -125,10 +155,16 @@ class ExternalResourceResponse(BaseModel):
 
 
 class BudgetResponse(BaseModel):
+    # Explicitly `str`, not `Decimal` -- same pattern already established by
+    # ApprovalResponse.amount (achado P-36 fix, missão de reconciliação, 22/09/2026).
+    # Pydantic v2 already serializes a Decimal field to this exact same JSON string by
+    # default (no wire-format change), but declaring the type as `str` makes the real,
+    # precision-preserving contract explicit rather than implicit, and matches
+    # contracts/bff-openapi.yaml's corresponding `type: string` fix.
     currency: str
-    total_amount: Decimal
-    daily_cap: Decimal
-    spent_to_date: Decimal
+    total_amount: str
+    daily_cap: str
+    spent_to_date: str
 
 
 class CampaignResponse(BaseModel):

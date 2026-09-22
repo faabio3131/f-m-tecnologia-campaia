@@ -1,0 +1,59 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-4);
+}
+
+.existingList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-2);
+}
+
+.existingItem {
+  padding: var(--campaia-space-2) var(--campaia-space-3);
+  border: 1px solid var(--campaia-color-border);
+  border-radius: var(--campaia-radius-sm);
+  background: var(--campaia-color-surface);
+  font-size: var(--campaia-font-size-sm);
+}
+
+.emptyNote {
+  margin: 0;
+  color: var(--campaia-color-text-muted);
+  font-size: var(--campaia-font-size-sm);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-3);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-1);
+  font-size: var(--campaia-font-size-sm);
+  color: var(--campaia-color-text-muted);
+}
+
+.field input,
+.field textarea {
+  font: inherit;
+  color: var(--campaia-color-text);
+  padding: var(--campaia-space-2) var(--campaia-space-3);
+  border-radius: var(--campaia-radius-sm);
+  border: 1px solid var(--campaia-color-border);
+  background: var(--campaia-color-surface);
+  resize: vertical;
+}
+
+.error {
+  margin: 0;
+  color: var(--campaia-color-warning-text);
+  font-size: var(--campaia-font-size-sm);
+}

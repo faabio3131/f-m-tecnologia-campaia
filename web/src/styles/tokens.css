@@ -1,0 +1,92 @@
+/**
+ * CampaIA Web — design tokens (WP-01 minimal foundation).
+ * Light theme by default; dark theme via prefers-color-scheme.
+ */
+:root {
+  --campaia-color-bg: #f7f8fb;
+  --campaia-color-surface: #ffffff;
+  --campaia-color-border: #d8dce3;
+  --campaia-color-text: #15181e;
+  --campaia-color-text-muted: #565d6b;
+  --campaia-color-primary: #2f5ce0;
+  --campaia-color-primary-contrast: #ffffff;
+  --campaia-color-accent: #12b886;
+  --campaia-color-warning-bg: #fff6da;
+  --campaia-color-warning-border: #e8c547;
+  --campaia-color-warning-text: #5c4a00;
+  --campaia-color-focus: #2f5ce0;
+
+  --campaia-space-1: 4px;
+  --campaia-space-2: 8px;
+  --campaia-space-3: 12px;
+  --campaia-space-4: 16px;
+  --campaia-space-5: 24px;
+  --campaia-space-6: 32px;
+  --campaia-space-7: 48px;
+
+  --campaia-radius-sm: 6px;
+  --campaia-radius-md: 10px;
+  --campaia-radius-lg: 16px;
+
+  --campaia-shadow-sm: 0 1px 2px rgba(15, 18, 24, 0.08);
+  --campaia-shadow-md: 0 4px 16px rgba(15, 18, 24, 0.10);
+
+  --campaia-font-sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  --campaia-font-size-sm: 0.875rem;
+  --campaia-font-size-md: 1rem;
+  --campaia-font-size-lg: 1.25rem;
+  --campaia-font-size-xl: 1.75rem;
+
+  --campaia-motion-duration: 150ms;
+  --campaia-motion-easing: ease;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --campaia-color-bg: #0f1216;
+    --campaia-color-surface: #171b21;
+    --campaia-color-border: #2b313b;
+    --campaia-color-text: #edf0f4;
+    --campaia-color-text-muted: #a3abb8;
+    --campaia-color-primary: #7fa1ff;
+    --campaia-color-primary-contrast: #0f1216;
+    --campaia-color-accent: #35d6a0;
+    --campaia-color-warning-bg: #3a2f05;
+    --campaia-color-warning-border: #8a6d10;
+    --campaia-color-warning-text: #ffe38a;
+    --campaia-color-focus: #7fa1ff;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --campaia-motion-duration: 0ms;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  background: var(--campaia-color-bg);
+  color: var(--campaia-color-text);
+  font-family: var(--campaia-font-sans);
+  font-size: var(--campaia-font-size-md);
+  line-height: 1.5;
+}
+
+:focus-visible {
+  outline: 3px solid var(--campaia-color-focus);
+  outline-offset: 2px;
+}

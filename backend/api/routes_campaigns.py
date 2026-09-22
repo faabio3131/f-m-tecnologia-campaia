@@ -209,10 +209,18 @@ async def validate_campaign(request: Request) -> JSONResponse:
     if record.campaign.state is CampaignState.STRATEGY_READY:
         record.campaign.transition_to(CampaignState.ASSETS_READY, reason="validate:auto")
 
+    # Missão de fechamento integral (Etapa A13, 22/09/2026): this used to query the
+    # registry by the literal provider key "SIMULATOR" -- a ConnectionMode value, never a
+    # real Provider one (achado real, found while fixing the same registry's other real
+    # caller, routes_connections.connection_capabilities, which queries by the actual
+    # provider). capability_key (f"PUBLISH:{ch}") already fully differentiates by channel,
+    # so this never changed which channels validated as supported -- but it meant this
+    # call site and connection_capabilities' could never share the same seeded entries.
+    # Aligning both onto one convention (provider = the real ads provider name) closes
+    # that inconsistency at its root rather than seeding two parallel copies of the same
+    # data under two different keys.
     channel_support = {
-        ch: state.capabilities.is_supported(
-            "SIMULATOR", f"PUBLISH:{ch}", country="BR", api_version="sim-1"
-        )
+        ch: state.capabilities.is_supported(ch, f"PUBLISH:{ch}", country="BR", api_version="sim-1")
         for ch in record.planned_channels
     }
 
