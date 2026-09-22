@@ -175,9 +175,13 @@ async def connection_capabilities(request: Request) -> JSONResponse:
                 supported=supported,
                 verified_at=cap.verified_at if cap else now,
                 requires_approval=cap.requires_approval if cap else False,
-                # No evidence-URL source exists yet in campaia_core.infra.Capability
-                # (achado 7) -- always None until that tracking exists.
-                evidence_url=None,
+                # Missão de fechamento integral (Etapa A13, 22/09/2026): achado 7 was
+                # incomplete -- infra.Capability already carries evidence_url; the real bug
+                # was AppState._seed_capabilities() registering under the wrong provider
+                # key (fixed separately), which made `cap` always None here too. Now reads
+                # the same already-fetched `cap` object exactly like notes/requires_approval
+                # do on the lines above/below.
+                evidence_url=cap.evidence_url if cap else None,
                 notes=cap.notes if cap else None,
             )
         )

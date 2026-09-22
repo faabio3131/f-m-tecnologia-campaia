@@ -103,6 +103,18 @@ class TestConnectionLifecycleViaWebSession(unittest.TestCase):
             self.assertIn("capability_key", cap)
             self.assertIn("supported", cap)
 
+        # Missão de fechamento integral (Etapa A13, 22/09/2026): the capability actually
+        # matching this connection's own real provider (GOOGLE_ADS) must show up as
+        # genuinely supported with real evidence -- achado real found and fixed in this
+        # same mission (AppState._seed_capabilities previously registered under the wrong
+        # provider key, so this always silently came back unsupported/no evidence for
+        # every real connection, never asserted by name before now).
+        google_publish = next(c for c in capabilities if c["capability_key"] == "PUBLISH:GOOGLE_ADS")
+        self.assertTrue(google_publish["supported"])
+        self.assertEqual(
+            google_publish["evidence_url"], "https://developers.google.com/google-ads/api"
+        )
+
         # Disconnect: CSRF + step-up + idempotency-key, 204 no body.
         r = owner.delete(
             f"/connections/{connection_id}",

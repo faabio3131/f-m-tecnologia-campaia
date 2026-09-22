@@ -204,22 +204,43 @@ def _resolve_real_oidc_config() -> OidcIssuerConfig | None:
     return OidcIssuerConfig(**required)  # type: ignore[arg-type]
 
 
+#: Missão de fechamento integral (Etapa A13, 22/09/2026, achado real): a real public
+#: documentation URL per provider -- not account-specific verification evidence (there is
+#: no real account, this whole registry is a documented simulator), but a genuine, stable
+#: reference backing the capability declaration, same honesty standard as the rest of this
+#: simulator's data (fake OAuth domain, "sim-1" api_version, explicit "Simulated capability"
+#: notes).
+_PROVIDER_DOCS_URL = {
+    "GOOGLE_ADS": "https://developers.google.com/google-ads/api",
+    "META_ADS": "https://developers.facebook.com/docs/marketing-apis",
+}
+
+
 def _seed_capabilities() -> CapabilityRegistry:
     registry = CapabilityRegistry()
     now = datetime.now(timezone.utc)
-    for provider, account_suffix in (("SIMULATOR", "demo-tenant"), ("SIMULATOR", "other-tenant")):
-        for channel in ("GOOGLE_ADS", "META_ADS"):
-            registry.register(
-                Capability(
-                    provider=provider,
-                    capability_key=f"PUBLISH:{channel}",
-                    country="BR",
-                    api_version="sim-1",
-                    supported=True,
-                    verified_at=now,
-                    notes="Simulated capability, verified in-process at startup.",
-                )
+    # Achado real (Etapa A13): this previously registered every entry under
+    # provider="SIMULATOR" (a ConnectionMode value, not a Provider value), while every
+    # real lookup queries by conn.provider ("GOOGLE_ADS"/"META_ADS") -- the two never
+    # matched, so `supported` was silently always False and `evidence_url`/`notes` always
+    # fell back to their None/False defaults for every real connection, not just
+    # evidence_url as achado 7 previously (incompletely) described. The unused
+    # `account_suffix` loop this replaced was vestigial: CapabilityRegistry is documented
+    # as tenant-agnostic config data ("Dado versionado, nao codigo"), so there is nothing
+    # tenant-specific to seed twice.
+    for channel in ("GOOGLE_ADS", "META_ADS"):
+        registry.register(
+            Capability(
+                provider=channel,
+                capability_key=f"PUBLISH:{channel}",
+                country="BR",
+                api_version="sim-1",
+                supported=True,
+                verified_at=now,
+                evidence_url=_PROVIDER_DOCS_URL[channel],
+                notes="Simulated capability, verified in-process at startup.",
             )
+        )
     return registry
 
 
