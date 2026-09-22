@@ -4,14 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BudgetPanel } from "@/components/BudgetPanel";
 import type { ApprovalRequest, Campaign } from "@/contracts/types";
 
-// Real wire shape: budget.daily_cap (and every other Decimal-typed budget field)
-// serializes as a JSON string despite the contract declaring `number` -- see
-// BudgetPanel.tsx's own comment and docs/web/13_CERTIFICACAO_WP06_ALTERACAO_ORCAMENTO.md.
+// Real wire shape: budget.daily_cap (and every other monetary budget field) is a decimal
+// string, matching the contract as corrected by the P-36 fix (missão de reconciliação,
+// 22/09/2026) -- see BudgetPanel.tsx's own comment.
 const BUDGET = {
   currency: "BRL",
-  total_amount: "5000" as unknown as number,
-  daily_cap: "500" as unknown as number,
-  spent_to_date: "0" as unknown as number,
+  total_amount: "5000",
+  daily_cap: "500",
+  spent_to_date: "0",
 } satisfies Campaign["budget"];
 
 function approval(overrides: Partial<ApprovalRequest>): ApprovalRequest {
@@ -125,7 +125,7 @@ describe("BudgetPanel", () => {
         method: "POST",
         credentials: "include",
         headers: { "content-type": "application/json", "x-csrf-token": "real-csrf-token-value" },
-        body: JSON.stringify({ campaign_id: "camp-1", kind: "BUDGET_CHANGE", amount: 550 }),
+        body: JSON.stringify({ campaign_id: "camp-1", kind: "BUDGET_CHANGE", amount: "550" }),
       }),
     );
   });
@@ -156,7 +156,7 @@ describe("BudgetPanel", () => {
           "x-step-up-token": "web-ui-apply-budget-change-button-clicked",
           "idempotency-key": "fixed-idempotency-key",
         },
-        body: JSON.stringify({ daily_cap: 550, approval_id: "appr-1" }),
+        body: JSON.stringify({ daily_cap: "550", approval_id: "appr-1" }),
       }),
     );
   });

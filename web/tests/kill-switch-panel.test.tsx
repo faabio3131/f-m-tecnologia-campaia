@@ -12,7 +12,7 @@ const CAMPAIGN_1: Campaign = {
   state: "ACTIVE",
   channels: ["GOOGLE_ADS"],
   external_resources: [],
-  budget: { currency: "BRL", total_amount: 5000, daily_cap: 500, spent_to_date: 0 },
+  budget: { currency: "BRL", total_amount: "5000", daily_cap: "500", spent_to_date: "0" },
   created_at: "2026-01-01T00:00:00Z",
 };
 
