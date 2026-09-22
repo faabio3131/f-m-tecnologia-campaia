@@ -635,6 +635,25 @@ export interface components {
             name?: string;
             state?: components["schemas"]["CampaignState"];
             objective?: string;
+            /**
+             * @description Campo real, sempre presente na resposta (backend/api/models.py CampaignResponse.
+             *     brief) -- o corpo do briefing original que criou a campanha (POST /briefs),
+             *     reserializado. Ausente do contrato ate esta correcao (achado do WP-01 a WP-11 mais
+             *     tardio a ser fechado, mesma classe P-39). Forma nao tipada aqui, como ja acontece
+             *     com o campo `plan` de GET /campaigns/{id}/plan.
+             */
+            brief?: Record<string, never>;
+            /**
+             * @description Campo real, sempre presente na resposta (backend/api/models.py CampaignResponse.
+             *     plan_version). Ausente do contrato ate esta correcao (achado P-39).
+             */
+            plan_version?: number;
+            /**
+             * Format: uuid
+             * @description Campo real, sempre presente na resposta (backend/api/models.py CampaignResponse.
+             *     connection_id). Ausente do contrato ate esta correcao (achado P-39).
+             */
+            connection_id?: string | null;
             channels?: components["schemas"]["Channel"][];
             /** @description Vazio ate a reconciliacao confirmar. Estado ACTIVE exige ao menos um ID externo. */
             external_resources?: {
@@ -651,6 +670,12 @@ export interface components {
                 daily_cap?: number;
                 spent_to_date?: number;
             };
+            /**
+             * Format: date-time
+             * @description Campo real, sempre presente na resposta (backend/api/models.py CampaignResponse.
+             *     last_synced_at). Ausente do contrato ate esta correcao (achado P-39).
+             */
+            last_synced_at?: string | null;
             /** Format: date-time */
             created_at?: string;
         };
