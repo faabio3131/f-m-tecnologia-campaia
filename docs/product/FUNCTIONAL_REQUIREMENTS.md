@@ -2,7 +2,20 @@
 **Campanhas inteligentes. Resultados reais.**
 
 **Data:** 26 de agosto de 2026  
-**Status:** IMPLEMENTADO — AGUARDANDO VALIDAÇÃO DO DIRETOR
+**Status:** REQUISITOS APROVADOS PARA O ESCOPO DO MVP (Fase 0) — NÃO É UM RASTREADOR DE
+IMPLEMENTAÇÃO. Cada "✅ Aprovado" abaixo significa que o requisito foi aceito no escopo do
+MVP em 26/08/2026, antes de qualquer código existir — não que o comportamento descrito esteja
+construído hoje. **Reconciliado em 22/09/2026** (a formulação original "IMPLEMENTADO —
+AGUARDANDO VALIDAÇÃO DO DIRETOR" era objetivamente incorreta já na sua própria data de criação,
+já que nenhum código do backend existia em 26/08/2026 — ver `backend/01_PAINEL_EXECUCAO_v31_VIGENTE.md`
+"Registro de blocos executados", cujo primeiro bloco de construção real é datado de 27/08/2026).
+O status real de implementação de cada capacidade, requisito a requisito, está no painel de
+execução vigente (`backend/01_PAINEL_EXECUCAO_v31_VIGENTE.md`) e em
+`docs/web/06_ROADMAP_WORK_PACKAGES.md`, não neste documento. Em particular: F1.1 (criar
+empresa) e F1.2 (adicionar unidade) não têm endpoint real (nenhuma rota de criação de
+tenant/unidade existe — `tenant_id` vem sempre da sessão autenticada); F1.3–F1.5 (conectar
+Google Ads/Meta/WhatsApp) usam OAuth **simulado**, nunca uma integração real com provider —
+ver `docs/web/11_CERTIFICACAO_WP04_ONBOARDING_BRAND_KIT.md`.
 
 ---
 
@@ -367,5 +380,6 @@
 
 ---
 
-**Status:** IMPLEMENTADO — AGUARDANDO VALIDAÇÃO DO DIRETOR
+**Status:** REQUISITOS APROVADOS PARA O ESCOPO DO MVP (Fase 0) — ver nota de reconciliação no
+topo deste documento. Status real de implementação: `backend/01_PAINEL_EXECUCAO_v31_VIGENTE.md`.
 
