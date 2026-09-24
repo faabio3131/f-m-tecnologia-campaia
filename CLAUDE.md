@@ -67,6 +67,15 @@ Não editar enquanto o CURRENT necessário estiver contraditório ou insuficient
 - Trabalhar somente no escopo, repositório, branch e PR autorizados.
 - Preservar alterações preexistentes do usuário.
 - Não fazer merge, deploy, release, alteração de produção, force push, rebase destrutivo, exclusão material, migration destrutiva ou ampliação de permissões sem autorização explícita e atual.
+  - **Exceção registrada pelo Diretor (Fábio Aluizio da Silva, 24/09/2026):** o merge de um PR
+    para `main` fica pré-autorizado quando a suíte de testes completa do repositório estiver
+    100% verde — executada de fato nesta sessão, no HEAD exato do PR, nunca presumida ou
+    herdada de uma execução anterior. Esta exceção cobre apenas o gate de merge; não dispensa
+    ADR para decisão arquitetural ou comercial (ex.: escolha de gateway, modelo de cobrança),
+    não dispensa `fm-security-review` quando aplicável, e nenhuma STOP condition desta
+    constituição deixa de valer por causa dela. Deploy, release, alteração de produção, force
+    push, rebase destrutivo, exclusão material, migration destrutiva e ampliação de permissões
+    continuam exigindo autorização explícita e atual, caso a caso — a exceção é só para merge.
 - Antes de ação externa ou destrutiva, confirmar o alvo exato e o impacto.
 - Se a solicitação for somente análise, permanecer estritamente em leitura.
 
