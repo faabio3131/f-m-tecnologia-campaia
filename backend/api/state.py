@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from campaia_core.agents import AgentRunner
 from campaia_core.ai_gateway import AIGateway
@@ -21,6 +21,7 @@ from campaia_core.infra import Capability, CapabilityRegistry, IdempotencyStore
 from campaia_core.payment_gateway import PaymentGatewayConnector
 from campaia_core.payment_simulator import PaymentGatewaySimulator
 from campaia_core.permissions import Principal, Role
+from campaia_core.rate_limit import FixedWindowRateLimiter
 from campaia_core.subscription import Subscription, SubscriptionCharge
 
 from .repositories import (
@@ -116,6 +117,22 @@ def _default_asaas_webhook_receiver() -> AsaasWebhookReceiver:
     return AsaasWebhookReceiver(token_resolver=lambda: os.environ.get("ASAAS_WEBHOOK_TOKEN"))
 
 
+#: Item 1.2 do cronograma mestre (24/09/2026): limite do unico endpoint publico sem
+#: autenticacao de usuario (`/webhooks/asaas`). Generoso o bastante para nunca recusar
+#: trafego legitimo do Asaas (que nao documenta um volume esperado por segundo, mas isto e
+#: liquidacao de cobranca, nao um webhook de alta frequencia) e restritivo o bastante para
+#: barrar flood de aplicacao de uma unica origem.
+ASAAS_WEBHOOK_RATE_LIMIT_MAX_REQUESTS = 60
+ASAAS_WEBHOOK_RATE_LIMIT_WINDOW = timedelta(minutes=1)
+
+
+def _default_asaas_webhook_rate_limiter() -> FixedWindowRateLimiter:
+    return FixedWindowRateLimiter(
+        max_requests=ASAAS_WEBHOOK_RATE_LIMIT_MAX_REQUESTS,
+        window=ASAAS_WEBHOOK_RATE_LIMIT_WINDOW,
+    )
+
+
 def _seed_capabilities() -> CapabilityRegistry:
     registry = CapabilityRegistry()
     now = datetime.now(timezone.utc)
@@ -181,6 +198,12 @@ class AppState:
     charges: dict[str, SubscriptionCharge] = field(default_factory=dict)
     billing_gateway: PaymentGatewayConnector = field(default_factory=_default_billing_gateway)
     asaas_webhook: AsaasWebhookReceiver = field(default_factory=_default_asaas_webhook_receiver)
+    #: Item 1.2 do cronograma mestre (24/09/2026) -- em memoria mesmo com `db_path`
+    #: configurado: contador de janela e efemero por natureza (nao ha valor em persistir um
+    #: contador que reseta a cada minuto), diferente do dedupe de evento acima.
+    asaas_webhook_rate_limiter: FixedWindowRateLimiter = field(
+        default_factory=_default_asaas_webhook_rate_limiter
+    )
 
     ai_gateway: AIGateway = field(default_factory=AIGateway)
     #: Default output matches the "strategist" agent's OutputSchema (campaia_core/agents.py
@@ -208,7 +231,12 @@ class AppState:
         #: is garbage collected.
         self.db = None
         if self.db_path is not None:
-            from .db import Database, PersistentIdempotencyStore, PersistentTenantAutonomy
+            from .db import (
+                Database,
+                PersistentIdempotencyStore,
+                PersistentSeenEventStore,
+                PersistentTenantAutonomy,
+            )
 
             self.db = Database(self.db_path)
             # Every field replaced below is a plain in-memory default_factory value at
@@ -226,6 +254,14 @@ class AppState:
             self.tenant_autonomy = PersistentTenantAutonomy(self.db.table("tenant_autonomy"))
             self.tenant_autonomy_updated_at = PersistentTenantAutonomy(
                 self.db.table("tenant_autonomy_updated_at")
+            )
+            # Item 1.1 do cronograma mestre (24/09/2026): o dedupe do webhook do Asaas
+            # tambem precisa sobreviver a um reinicio de processo entre duas entregas do
+            # mesmo evento -- token_resolver preservado do factory default, so o seen_store
+            # troca para a implementacao persistida.
+            self.asaas_webhook = AsaasWebhookReceiver(
+                token_resolver=self.asaas_webhook.token_resolver,
+                seen_store=PersistentSeenEventStore(self.db.table("asaas_webhook_seen_events")),
             )
             # capabilities and tokens are deliberately NOT persisted: both are
             # process-startup fixture/seed data (a hardcoded Capability Matrix and a
