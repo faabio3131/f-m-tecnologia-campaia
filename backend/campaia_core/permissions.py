@@ -47,6 +47,11 @@ class Permission(StrEnum):
     AI_CONFIG = "AI_CONFIG"
     AUDIT_VIEW = "AUDIT_VIEW"
     KILL_SWITCH = "KILL_SWITCH"
+    #: Ve e gerencia a assinatura/cobranca propria do CampaIA (fm-security-review, achado
+    #: #4, 24/09/2026) — nao existia nenhuma permissao dedicada para o motor de cobranca.
+    #: Mesmo padrao VIEW/CHANGE de BUDGET_VIEW/BUDGET_CHANGE.
+    BILLING_VIEW = "BILLING_VIEW"
+    BILLING_MANAGE = "BILLING_MANAGE"
 
 
 class Role(StrEnum):
@@ -75,6 +80,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.AI_CONFIG,
             Permission.AUDIT_VIEW,
             Permission.KILL_SWITCH,
+            Permission.BILLING_VIEW,
         }
     ),
     Role.FINANCE: frozenset(
@@ -85,6 +91,8 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.APPROVAL_DECIDE,
             Permission.AUDIT_VIEW,
             Permission.KILL_SWITCH,
+            Permission.BILLING_VIEW,
+            Permission.BILLING_MANAGE,
         }
     ),
     Role.APPROVER: frozenset(
@@ -94,6 +102,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.APPROVAL_DECIDE,
             Permission.AUDIT_VIEW,
             Permission.KILL_SWITCH,
+            Permission.BILLING_VIEW,
         }
     ),
     Role.MARKETER: frozenset(
@@ -119,6 +128,7 @@ REQUIRES_STEP_UP: frozenset[Permission] = frozenset(
         Permission.AUTONOMY_CHANGE,
         Permission.APPROVAL_DECIDE,
         Permission.MEMBER_MANAGE,
+        Permission.BILLING_MANAGE,
     }
 )
 
@@ -129,6 +139,7 @@ REQUIRES_MFA: frozenset[Permission] = frozenset(
         Permission.CONNECTION_MANAGE,
         Permission.MEMBER_MANAGE,
         Permission.AUTONOMY_CHANGE,
+        Permission.BILLING_MANAGE,
     }
 )
 

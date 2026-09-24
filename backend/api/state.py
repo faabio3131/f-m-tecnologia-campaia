@@ -7,15 +7,21 @@ is persisted across process restarts, and nothing here is a real credential.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from campaia_core.agents import AgentRunner
 from campaia_core.ai_gateway import AIGateway
 from campaia_core.ai_simulator import SimulatedAIProvider
+from campaia_core.asaas_gateway import AsaasConfig, AsaasGateway
+from campaia_core.asaas_webhook import AsaasWebhookReceiver
 from campaia_core.autonomy import AutonomySettings
 from campaia_core.infra import Capability, CapabilityRegistry, IdempotencyStore
+from campaia_core.payment_gateway import PaymentGatewayConnector
+from campaia_core.payment_simulator import PaymentGatewaySimulator
 from campaia_core.permissions import Principal, Role
+from campaia_core.subscription import Subscription, SubscriptionCharge
 
 from .repositories import (
     ApprovalRepository,
@@ -96,6 +102,20 @@ def _seed_tokens() -> dict[str, TokenPrincipal]:
     }
 
 
+def _default_billing_gateway() -> PaymentGatewayConnector:
+    """Never a real gateway unless explicitly configured (same "never a real provider by
+    default" discipline as `ai_provider` below). If `ASAAS_API_KEY` is set in the
+    environment, use the real adapter (verified against the Asaas Sandbox 24/09/2026); else
+    fall back to the in-memory simulator, exactly like every other connector in this app."""
+    if os.environ.get("ASAAS_API_KEY"):
+        return AsaasGateway(config=AsaasConfig.from_env())
+    return PaymentGatewaySimulator()
+
+
+def _default_asaas_webhook_receiver() -> AsaasWebhookReceiver:
+    return AsaasWebhookReceiver(token_resolver=lambda: os.environ.get("ASAAS_WEBHOOK_TOKEN"))
+
+
 def _seed_capabilities() -> CapabilityRegistry:
     registry = CapabilityRegistry()
     now = datetime.now(timezone.utc)
@@ -151,6 +171,16 @@ class AppState:
     #: tenant_autonomy since AutonomySettings itself (campaia_core.autonomy) is a frozen
     #: domain dataclass with no timestamp field of its own.
     tenant_autonomy_updated_at: dict[str, datetime] = field(default_factory=dict)
+
+    #: Motor de cobranca propria do CampaIA (B11/ADR-0020). Uma assinatura ativa por tenant.
+    #: Em memoria por enquanto -- persistencia fica para quando este motor tiver seu proprio
+    #: bloco de integracao com `db.py`, mesmo padrao ja usado pelos outros repositorios.
+    subscriptions: dict[str, Subscription] = field(default_factory=dict)
+    #: Cobrancas ja enviadas ao gateway, por `gateway_charge_id` -- e o que permite ao
+    #: webhook do Asaas encontrar de volta a que cobranca um pagamento confirmado pertence.
+    charges: dict[str, SubscriptionCharge] = field(default_factory=dict)
+    billing_gateway: PaymentGatewayConnector = field(default_factory=_default_billing_gateway)
+    asaas_webhook: AsaasWebhookReceiver = field(default_factory=_default_asaas_webhook_receiver)
 
     ai_gateway: AIGateway = field(default_factory=AIGateway)
     #: Default output matches the "strategist" agent's OutputSchema (campaia_core/agents.py

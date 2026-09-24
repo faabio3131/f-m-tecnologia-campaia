@@ -65,6 +65,11 @@ STATUS_BY_CODE: dict[str, int] = {
     "AUTH_EXPIRED": 401,
     "VALIDATION_REJECTED": 422,
     "PARTIAL_FAILURE": 207,
+    # campaia_core.payment_gateway.PaymentGatewayErrorCode.DECLINED (billing route,
+    # 24/09/2026) -- the only PaymentGatewayErrorCode value not already covered above by
+    # name (AUTH_EXPIRED/VALIDATION_REJECTED/RATE_LIMITED/TRANSIENT/UNKNOWN already are).
+    # 402 Payment Required is the correct semantic for a gateway-declined charge.
+    "DECLINED": 402,
 }
 
 

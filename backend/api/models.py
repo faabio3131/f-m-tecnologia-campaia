@@ -314,3 +314,37 @@ class ErrorResponse(BaseModel):
     message: str
     details: dict
     assisted_flow_url: str | None
+
+
+# --------------------------------------------------------------------------- billing (B11)
+
+
+class BillingSubscriptionUpsert(ApiModel):
+    plan_id: str
+    #: CPF ou CNPJ do cliente cobrado — obrigatorio, mesma exigencia do dominio
+    #: (subscription.Subscription, payment_gateway.ChargeCommand).
+    customer_document: str
+
+
+class BillingSubscriptionResponse(BaseModel):
+    tenant_id: str
+    customer_ref: str
+    customer_document: str
+    plan_id: str
+    plan_name: str
+    status: str
+
+
+class BillingChargeCreate(ApiModel):
+    competence: str
+    extra_credits_used: Decimal = Decimal("0")
+
+
+class BillingChargeResponse(BaseModel):
+    billing_id: str
+    tenant_id: str
+    competence: str
+    currency: str
+    amount: Decimal
+    gateway_charge_id: str
+    gateway_status: str
