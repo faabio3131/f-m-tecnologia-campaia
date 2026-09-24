@@ -21,6 +21,7 @@ from .errors import ApiError, from_domain_error
 from .routes_approvals import create_approval, decide_approval, list_approvals
 from .routes_audit import list_audit_events
 from .routes_autonomy import get_autonomy, put_autonomy
+from .routes_billing import asaas_webhook, create_charge, get_subscription, put_subscription
 from .routes_brand import create_brand_profile, list_brand_profiles
 from .routes_campaigns import (
     create_brief,
@@ -90,6 +91,14 @@ routes = [
     Route("/kill-switch", kill_switch, methods=["POST"]),
 
     Route("/audit-events", list_audit_events, methods=["GET"]),
+
+    # Motor de cobranca propria do CampaIA (B11 / ADR-0020).
+    Route("/billing/subscription", get_subscription, methods=["GET"]),
+    Route("/billing/subscription", put_subscription, methods=["PUT"]),
+    Route("/billing/charges", create_charge, methods=["POST"]),
+    # Unico endpoint deste app sem Bearer token de usuario -- quem chama e o Asaas, nao o
+    # app; a autenticidade vem do token estatico verificado por AsaasWebhookReceiver.
+    Route("/webhooks/asaas", asaas_webhook, methods=["POST"]),
 ]
 
 exception_handlers = {
