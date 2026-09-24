@@ -11,6 +11,7 @@ from campaia_core.asaas_gateway import (
     AsaasConfig,
     AsaasGateway,
 )
+from campaia_core.infra import IdempotencyStore
 from campaia_core.payment_gateway import (
     ChargeCommand,
     GatewayChargeStatus,
@@ -185,6 +186,35 @@ class AsaasGatewayRequestShapeTests(unittest.TestCase):
         second = gateway.create_charge(_command())
         self.assertEqual(first.gateway_charge_id, second.gateway_charge_id)
         self.assertEqual(call_count, calls_after_first)  # nenhuma nova chamada de rede
+
+    def test_idempotency_survives_a_process_restart_via_shared_external_store(self) -> None:
+        """fm-security-review (24/09/2026): duas instancias de `AsaasGateway` compartilhando
+        o mesmo `IdempotencyStore` externo simulam um reinicio de processo entre a criacao
+        da cobranca e uma tentativa de retry — a segunda instancia nunca deve chamar a rede
+        de novo para criar uma segunda cobranca real no Asaas."""
+        call_count = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal call_count
+            call_count += 1
+            if request.url.path.endswith("/customers"):
+                return httpx.Response(200, json={"data": [{"id": "cus_1"}]})
+            return httpx.Response(200, json={"id": "pay_1", "status": "PENDING"})
+
+        transport = httpx.MockTransport(handler)
+        shared_store = IdempotencyStore()
+
+        first_process = AsaasGateway(config=_config(), transport=transport, idempotency=shared_store)
+        result_before_restart = first_process.create_charge(_command())
+        calls_after_first_process = call_count
+
+        second_process = AsaasGateway(config=_config(), transport=transport, idempotency=shared_store)
+        result_after_restart = second_process.create_charge(_command())
+
+        self.assertEqual(
+            result_before_restart.gateway_charge_id, result_after_restart.gateway_charge_id
+        )
+        self.assertEqual(call_count, calls_after_first_process)  # nenhuma nova chamada de rede
 
     def test_confirmed_status_mapping(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:

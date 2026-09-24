@@ -4,7 +4,8 @@ import unittest
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from campaia_core.billing_settlement import charge_subscription, try_settle
+from campaia_core.billing_settlement import charge_subscription, try_settle, try_settle_from_status
+from campaia_core.payment_gateway import GatewayChargeStatus
 from campaia_core.fiscal_handoff import build_campaia_fiscal_handoff
 from campaia_core.payment_simulator import PaymentGatewaySimulator
 from campaia_core.subscription import PlanDefinition, Subscription, compute_cycle_charge
@@ -73,6 +74,25 @@ class BillingSettlementTests(unittest.TestCase):
         result_a = charge_subscription(charge_a, self.gateway)
         result_b = charge_subscription(charge_b, self.gateway)
         self.assertEqual(result_a.gateway_charge_id, result_b.gateway_charge_id)
+
+    def test_try_settle_from_status_confirmed_produces_fact(self) -> None:
+        """Caminho usado por um receptor de webhook: o status ja vem do proprio evento,
+        sem nova chamada ao gateway."""
+        charge = compute_cycle_charge(self.subscription, competence="2026-09")
+        fact = try_settle_from_status(
+            charge, GatewayChargeStatus.CONFIRMED, settled_at=datetime(2026, 9, 24, 12, tzinfo=UTC)
+        )
+        self.assertIsNotNone(fact)
+        assert fact is not None
+        self.assertEqual(fact.amount, charge.amount)
+
+    def test_try_settle_from_status_pending_or_failed_produce_nothing(self) -> None:
+        charge = compute_cycle_charge(self.subscription, competence="2026-09")
+        for status in (GatewayChargeStatus.PENDING, GatewayChargeStatus.FAILED):
+            fact = try_settle_from_status(
+                charge, status, settled_at=datetime(2026, 9, 24, 12, tzinfo=UTC)
+            )
+            self.assertIsNone(fact)
 
 
 if __name__ == "__main__":
