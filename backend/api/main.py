@@ -20,7 +20,7 @@ from campaia_core.errors import CampaiaError
 from .errors import ApiError, from_domain_error
 from .routes_approvals import create_approval, decide_approval, list_approvals
 from .routes_audit import list_audit_events
-from .routes_auth import login, logout
+from .routes_auth import login, login_nonce, logout
 from .routes_autonomy import get_autonomy, put_autonomy
 from .routes_billing import asaas_webhook, create_charge, get_subscription, put_subscription
 from .routes_brand import create_brand_profile, list_brand_profiles
@@ -62,6 +62,9 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> JSONRespo
 routes = [
     # Item 1.3/WP-02 (24/09/2026): sessao real. Sem require_auth -- e o proprio endpoint
     # que estabelece/encerra a sessao que require_auth depois consome.
+    # /auth/login-nonce (achado de fm-security-review, 24/09/2026, ver session.py): passo 1
+    # do login, emite o nonce de pre-login que POST /auth/session exige de volta.
+    Route("/auth/login-nonce", login_nonce, methods=["GET"]),
     Route("/auth/session", login, methods=["POST"]),
     Route("/auth/session", logout, methods=["DELETE"]),
 

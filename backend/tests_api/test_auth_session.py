@@ -71,10 +71,68 @@ def _default_verifier() -> FakeIdTokenVerifier:
     )
 
 
+def _login_nonce(client: TestClient) -> str:
+    r = client.get("/auth/login-nonce")
+    assert r.status_code == 200, r.text
+    return r.json()["login_csrf_token"]
+
+
+def _login(client: TestClient, id_token: str, *, login_csrf_token: str | None = None):
+    """Fluxo completo de login (GET /auth/login-nonce -> POST /auth/session), como um
+    cliente real faz -- mitigacao do achado de login-CSRF (fm-security-review,
+    24/09/2026, ver api/session.py). `login_csrf_token=None` (default) busca um nonce
+    valido; um valor explicito permite testar os casos de nonce ausente/errado."""
+    if login_csrf_token is None:
+        login_csrf_token = _login_nonce(client)
+    return client.post(
+        "/auth/session",
+        json={"id_token": id_token, "login_csrf_token": login_csrf_token},
+    )
+
+
+class LoginNonceTests(unittest.TestCase):
+    def test_login_nonce_issues_value_and_cookie(self) -> None:
+        client = _client(_default_verifier())
+        r = client.get("/auth/login-nonce")
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertIn("login_csrf_token", body)
+        self.assertTrue(body["login_csrf_token"])
+        self.assertIn("campaia_login_csrf", r.cookies)
+
+    def test_login_without_any_nonce_is_rejected(self) -> None:
+        """Achado de fm-security-review (24/09/2026): sem o nonce de pre-login, um site
+        malicioso poderia disparar login com o proprio id_token ("login CSRF")."""
+        client = _client(_default_verifier())
+        r = client.post(
+            "/auth/session",
+            json={"id_token": OWNER_TOKEN, "login_csrf_token": "chute-qualquer"},
+        )
+        self.assertEqual(r.status_code, 403, r.text)
+        self.assertEqual(r.json()["code"], "PERMISSION_DENIED")
+        self.assertNotIn(SESSION_COOKIE_NAME, r.cookies)
+
+    def test_login_with_wrong_nonce_value_is_rejected(self) -> None:
+        client = _client(_default_verifier())
+        _login_nonce(client)  # emite o cookie real, mas o corpo abaixo nao bate com ele
+        r = client.post(
+            "/auth/session",
+            json={"id_token": OWNER_TOKEN, "login_csrf_token": "valor-diferente-do-cookie"},
+        )
+        self.assertEqual(r.status_code, 403, r.text)
+        self.assertNotIn(SESSION_COOKIE_NAME, r.cookies)
+
+    def test_login_with_correct_nonce_succeeds(self) -> None:
+        client = _client(_default_verifier())
+        r = _login(client, OWNER_TOKEN)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertIn(SESSION_COOKIE_NAME, r.cookies)
+
+
 class LoginTests(unittest.TestCase):
     def test_login_with_verified_known_email_succeeds_and_sets_cookie(self) -> None:
         client = _client(_default_verifier())
-        r = client.post("/auth/session", json={"id_token": OWNER_TOKEN})
+        r = _login(client, OWNER_TOKEN)
         self.assertEqual(r.status_code, 200, r.text)
         body = r.json()
         self.assertEqual(body["user_id"], "user-owner-1")
@@ -84,13 +142,13 @@ class LoginTests(unittest.TestCase):
 
     def test_login_with_invalid_id_token_is_rejected(self) -> None:
         client = _client(_default_verifier())
-        r = client.post("/auth/session", json={"id_token": "token-que-nao-existe"})
+        r = _login(client, "token-que-nao-existe")
         self.assertEqual(r.status_code, 401, r.text)
         self.assertNotIn(SESSION_COOKIE_NAME, r.cookies)
 
     def test_login_with_unverified_email_is_rejected(self) -> None:
         client = _client(_default_verifier())
-        r = client.post("/auth/session", json={"id_token": UNVERIFIED_TOKEN})
+        r = _login(client, UNVERIFIED_TOKEN)
         self.assertEqual(r.status_code, 401, r.text)
         self.assertNotIn(SESSION_COOKIE_NAME, r.cookies)
 
@@ -98,7 +156,7 @@ class LoginTests(unittest.TestCase):
         """Decisao do Diretor (24/09/2026): identidade do Google provada, mas sem vinculo
         interno -> RECUSA. Nunca autoprovisiona tenant/usuario novo."""
         client = _client(_default_verifier())
-        r = client.post("/auth/session", json={"id_token": UNKNOWN_EMAIL_TOKEN})
+        r = _login(client, UNKNOWN_EMAIL_TOKEN)
         self.assertEqual(r.status_code, 403, r.text)
         self.assertEqual(r.json()["code"], "PERMISSION_DENIED")
         self.assertNotIn(SESSION_COOKIE_NAME, r.cookies)
@@ -111,7 +169,7 @@ class LoginTests(unittest.TestCase):
         client = _client(_default_verifier())
         client.cookies.set(SESSION_COOKIE_NAME, "attacker-chosen-session-id")
 
-        r = client.post("/auth/session", json={"id_token": OWNER_TOKEN})
+        r = _login(client, OWNER_TOKEN)
         self.assertEqual(r.status_code, 200, r.text)
         new_session_id = r.cookies[SESSION_COOKIE_NAME]
         self.assertNotEqual(new_session_id, "attacker-chosen-session-id")
@@ -124,9 +182,9 @@ class LoginTests(unittest.TestCase):
 
     def test_two_logins_issue_two_different_session_ids(self) -> None:
         client = _client(_default_verifier())
-        r1 = client.post("/auth/session", json={"id_token": OWNER_TOKEN})
+        r1 = _login(client, OWNER_TOKEN)
         sid1 = r1.cookies[SESSION_COOKIE_NAME]
-        r2 = client.post("/auth/session", json={"id_token": OWNER_TOKEN})
+        r2 = _login(client, OWNER_TOKEN)
         sid2 = r2.cookies[SESSION_COOKIE_NAME]
         self.assertNotEqual(sid1, sid2)
 
@@ -134,7 +192,7 @@ class LoginTests(unittest.TestCase):
 class SessionAuthenticatesProtectedRoutesTests(unittest.TestCase):
     def _logged_in_client(self, token: str = OWNER_TOKEN) -> tuple[TestClient, str]:
         client = _client(_default_verifier())
-        r = client.post("/auth/session", json={"id_token": token})
+        r = _login(client, token)
         self.assertEqual(r.status_code, 200, r.text)
         return client, r.json()["csrf_token"]
 
@@ -143,6 +201,21 @@ class SessionAuthenticatesProtectedRoutesTests(unittest.TestCase):
         r = client.get("/me")
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.json()["user_id"], "user-owner-1")
+
+    def test_me_exposes_csrf_token_when_authenticated_via_real_session(self) -> None:
+        """Achado de fm-security-review (24/09/2026): antes so vinha no corpo do login --
+        uma aba recarregada nao conseguia recuperar o csrf_token sem logar de novo."""
+        client, login_csrf = self._logged_in_client()
+        r = client.get("/me")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["csrf_token"], login_csrf)
+
+    def test_me_has_no_csrf_token_when_authenticated_via_dev_bearer_fixture(self) -> None:
+        app = create_app(env="test")
+        client = TestClient(app)
+        r = client.get("/me", headers={"Authorization": "Bearer demo-owner-token"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertIsNone(r.json()["csrf_token"])
 
     def test_get_without_any_cookie_or_bearer_is_unauthenticated(self) -> None:
         client = _client(_default_verifier())
@@ -195,7 +268,7 @@ class SessionAuthenticatesProtectedRoutesTests(unittest.TestCase):
 class LogoutTests(unittest.TestCase):
     def test_logout_invalidates_the_session(self) -> None:
         client = _client(_default_verifier())
-        r = client.post("/auth/session", json={"id_token": OWNER_TOKEN})
+        r = _login(client, OWNER_TOKEN)
         self.assertEqual(r.status_code, 200, r.text)
 
         r = client.delete("/auth/session")
