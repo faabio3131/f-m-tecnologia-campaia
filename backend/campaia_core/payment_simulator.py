@@ -11,11 +11,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .connectors import SecretRef
+from .infra import IdempotencyStore
 from .payment_gateway import (
     ChargeCommand,
     ChargeResult,
     GatewayChargeStatus,
     GatewayMode,
+    IdempotencyStoreLike,
     PaymentGatewayError,
     PaymentGatewayErrorCode,
     require_idempotency,
@@ -24,7 +26,12 @@ from .payment_gateway import (
 
 @dataclass
 class PaymentGatewaySimulator:
-    """Adaptador falso, fiel ao contrato. Uso: desenvolvimento, testes e CI."""
+    """Adaptador falso, fiel ao contrato. Uso: desenvolvimento, testes e CI.
+
+    `idempotency` e injetavel (achado de fm-security-review, 24/09/2026): por padrao usa
+    `IdempotencyStore` em memoria (comportamento identico ao anterior), mas em producao pode
+    receber `api.db.PersistentIdempotencyStore` — mesma interface, sem tocar neste arquivo.
+    """
 
     provider: str = "SIMULATOR"
     mode: GatewayMode = GatewayMode.SIMULATOR
@@ -32,8 +39,7 @@ class PaymentGatewaySimulator:
     scripted_failures: list[PaymentGatewayErrorCode] = field(default_factory=list)
     #: Status que get_charge_status deve devolver, por gateway_charge_id.
     scripted_status: dict[str, GatewayChargeStatus] = field(default_factory=dict)
-    #: Cobrancas criadas, por (tenant_id, idempotency_key) — retry nao duplica.
-    _created: dict[tuple[str, str], ChargeResult] = field(default_factory=dict)
+    idempotency: IdempotencyStoreLike = field(default_factory=IdempotencyStore)
     _counter: int = 0
 
     def resolve_secret(self, account_handle: str) -> SecretRef:
@@ -42,24 +48,25 @@ class PaymentGatewaySimulator:
     def create_charge(self, command: ChargeCommand) -> ChargeResult:
         require_idempotency(command)
 
-        chave = (command.tenant_id, command.idempotency_key)
-        if chave in self._created:
-            return self._created[chave]
+        def _do_create() -> ChargeResult:
+            if self.scripted_failures:
+                codigo = self.scripted_failures.pop(0)
+                raise PaymentGatewayError(codigo, "Falha programada na cobranca.")
 
-        if self.scripted_failures:
-            codigo = self.scripted_failures.pop(0)
-            raise PaymentGatewayError(codigo, "Falha programada na cobranca.")
+            self._counter += 1
+            resultado = ChargeResult(
+                gateway_charge_id=f"sim-charge-{self._counter:04d}",
+                status=GatewayChargeStatus.PENDING,
+                provider=self.provider,
+                mode=self.mode,
+            )
+            self.scripted_status.setdefault(
+                resultado.gateway_charge_id, GatewayChargeStatus.PENDING
+            )
+            return resultado
 
-        self._counter += 1
-        resultado = ChargeResult(
-            gateway_charge_id=f"sim-charge-{self._counter:04d}",
-            status=GatewayChargeStatus.PENDING,
-            provider=self.provider,
-            mode=self.mode,
-        )
-        self._created[chave] = resultado
-        self.scripted_status.setdefault(
-            resultado.gateway_charge_id, GatewayChargeStatus.PENDING
+        resultado, _replay = self.idempotency.execute(
+            command.tenant_id, command.idempotency_key, _do_create
         )
         return resultado
 

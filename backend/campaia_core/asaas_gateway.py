@@ -11,12 +11,11 @@ URLs base e formato de chamada verificados em 23/09/2026 contra a documentacao o
 assumidos de memoria, mesma disciplina ja aplicada a versoes de pacote neste projeto
 (ver EVIDENCIA_C1_CI_HTTPX_FIX_20260905.md).
 
-LIMITACAO DE AMBIENTE, documentada e nao escondida (Ordem Mestra): este adaptador nao foi
-verificado contra uma conta real do Asaas — nenhuma credencial existe ainda nesta sandbox.
-Os testes (`test_asaas_gateway.py`) validam a forma da requisicao e o parsing da resposta
-contra um transporte HTTP falso (`httpx.MockTransport`), nunca uma chamada de rede real.
-Verificacao contra uma conta sandbox real fica pendente de o Diretor gerar a chave de API
-(ver docs/evidence/EVIDENCIA_B11_ASAAS_GATEWAY_20260923.md).
+Verificado com sucesso contra a API real do Asaas Sandbox em 24/09/2026 (ver
+docs/evidence/VERIFICACAO_REAL_ASAAS_SANDBOX_20260924.md) — os testes automatizados
+(`test_asaas_gateway.py`) continuam validando forma de requisicao/resposta contra
+`httpx.MockTransport`, nunca rede real, mas a verificacao pontual contra a conta real ja
+aconteceu e encontrou (e corrigiu) dois defeitos reais nao previstos pelo desenho original.
 """
 
 from __future__ import annotations
@@ -29,11 +28,13 @@ from decimal import Decimal
 import httpx
 
 from .connectors import SecretRef
+from .infra import IdempotencyStore
 from .payment_gateway import (
     ChargeCommand,
     ChargeResult,
     GatewayChargeStatus,
     GatewayMode,
+    IdempotencyStoreLike,
     PaymentGatewayError,
     PaymentGatewayErrorCode,
     require_idempotency,
@@ -61,7 +62,10 @@ _CONFIRMED_ASAAS_STATUSES: frozenset[str] = frozenset(
 _FAILED_ASAAS_STATUSES: frozenset[str] = frozenset({"REFUNDED"})
 
 
-def _map_status(asaas_status: str) -> GatewayChargeStatus:
+def map_asaas_status(asaas_status: str) -> GatewayChargeStatus:
+    """Publica (nao mais privada) para que `asaas_webhook.py` reuse exatamente a mesma
+    tabela de mapeamento em vez de duplicá-la — um evento de webhook e uma consulta de
+    polling devem classificar o mesmo status do Asaas do mesmo jeito, sempre."""
     if asaas_status in _CONFIRMED_ASAAS_STATUSES:
         return GatewayChargeStatus.CONFIRMED
     if asaas_status in _FAILED_ASAAS_STATUSES:
@@ -169,8 +173,12 @@ class AsaasGateway:
     config: AsaasConfig
     provider: str = "ASAAS"
     transport: httpx.BaseTransport | None = field(default=None, repr=False)
+    #: Injetavel (achado de fm-security-review, 24/09/2026): por padrao em memoria
+    #: (`IdempotencyStore`), mas em producao deve receber `api.db.PersistentIdempotencyStore`
+    #: — sem isso, reiniciar o processo entre criar e confirmar uma cobranca perde a garantia
+    #: contra duplicar uma cobranca real no Asaas.
+    idempotency: IdempotencyStoreLike = field(default_factory=IdempotencyStore)
     _client: httpx.Client = field(init=False, repr=False)
-    _created: dict[tuple[str, str], ChargeResult] = field(default_factory=dict, repr=False)
 
     @property
     def mode(self) -> GatewayMode:
@@ -206,39 +214,41 @@ class AsaasGateway:
                 f"'Pergunte ao Cliente' (R$ {MINIMUM_CHARGE_AMOUNT}).",
             )
 
-        key = (command.tenant_id, command.idempotency_key)
-        if key in self._created:
-            return self._created[key]  # retry nao duplica cobranca real no Asaas
+        def _do_create() -> ChargeResult:
+            customer_id = self._ensure_customer(command.customer_ref, command.customer_document)
+            due_date = date.today() + timedelta(days=self.config.due_in_days)
+            response = self._client.post(
+                "/payments",
+                json={
+                    "customer": customer_id,
+                    "billingType": "UNDEFINED",
+                    "value": float(command.amount.quantize(Decimal("0.01"))),
+                    "dueDate": due_date.isoformat(),
+                    "description": f"CampaIA — competencia {command.competence}",
+                    "externalReference": command.idempotency_key,
+                },
+            )
+            _raise_for_response(response)
+            body = response.json()
+            return ChargeResult(
+                gateway_charge_id=body["id"],
+                status=map_asaas_status(body["status"]),
+                provider=self.provider,
+                mode=self.mode,
+            )
 
-        customer_id = self._ensure_customer(command.customer_ref, command.customer_document)
-        due_date = date.today() + timedelta(days=self.config.due_in_days)
-        response = self._client.post(
-            "/payments",
-            json={
-                "customer": customer_id,
-                "billingType": "UNDEFINED",
-                "value": float(command.amount.quantize(Decimal("0.01"))),
-                "dueDate": due_date.isoformat(),
-                "description": f"CampaIA — competencia {command.competence}",
-                "externalReference": command.idempotency_key,
-            },
+        # retry nao duplica cobranca real no Asaas: `execute` so chama `_do_create` uma vez
+        # por (tenant_id, idempotency_key), inclusive entre reinicios do processo quando
+        # `idempotency` for uma implementacao persistida.
+        result, _replay = self.idempotency.execute(
+            command.tenant_id, command.idempotency_key, _do_create
         )
-        _raise_for_response(response)
-        body = response.json()
-
-        result = ChargeResult(
-            gateway_charge_id=body["id"],
-            status=_map_status(body["status"]),
-            provider=self.provider,
-            mode=self.mode,
-        )
-        self._created[key] = result
         return result
 
     def get_charge_status(self, gateway_charge_id: str) -> GatewayChargeStatus:
         response = self._client.get(f"/payments/{gateway_charge_id}")
         _raise_for_response(response)
-        return _map_status(response.json()["status"])
+        return map_asaas_status(response.json()["status"])
 
     # ------------------------------------------------------------------ apoio
 
@@ -268,6 +278,8 @@ class AsaasGateway:
 __all__ = [
     "AsaasConfig",
     "AsaasGateway",
+    "MINIMUM_CHARGE_AMOUNT",
     "PRODUCTION_BASE_URL",
     "SANDBOX_BASE_URL",
+    "map_asaas_status",
 ]

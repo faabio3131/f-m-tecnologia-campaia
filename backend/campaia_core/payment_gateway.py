@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
-from typing import Protocol
+from typing import Any, Callable, Protocol
 
 from .connectors import SecretRef
 from .errors import CampaiaError
@@ -114,6 +114,20 @@ def require_idempotency(command: ChargeCommand) -> None:
         )
 
 
+class IdempotencyStoreLike(Protocol):
+    """Mesma forma de `campaia_core.infra.IdempotencyStore` e de
+    `api.db.PersistentIdempotencyStore` — os dois ja implementam este contrato sem saber
+    que um gateway de pagamento existe. Achado de fm-security-review (24/09/2026): manter
+    idempotencia so em memoria dentro do gateway perde a garantia contra cobranca duplicada
+    se o processo reiniciar entre criar a cobranca e confirma-la. Injetar este objeto em vez
+    de um dict privado permite trocar por uma implementacao persistida (a que ja existe em
+    `api/db.py`) sem tocar em `payment_simulator.py` nem em `asaas_gateway.py`."""
+
+    def execute(
+        self, tenant_id: str, idempotency_key: str, operation: Callable[[], Any]
+    ) -> tuple[Any, bool]: ...
+
+
 class PaymentGatewayConnector(Protocol):
     provider: str
     mode: GatewayMode
@@ -128,6 +142,7 @@ __all__ = [
     "ChargeResult",
     "GatewayChargeStatus",
     "GatewayMode",
+    "IdempotencyStoreLike",
     "NON_RETRYABLE",
     "PaymentGatewayConnector",
     "PaymentGatewayError",

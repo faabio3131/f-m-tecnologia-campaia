@@ -41,19 +41,19 @@ def charge_subscription(
     return gateway.create_charge(command)
 
 
-def try_settle(
+def try_settle_from_status(
     charge: SubscriptionCharge,
-    charge_result: ChargeResult,
-    gateway: PaymentGatewayConnector,
+    status: GatewayChargeStatus,
     *,
     settled_at: datetime,
 ) -> SettledOwnBillingFact | None:
-    """Consulta o gateway pelo status real da cobranca.
+    """Liquida a partir de um status ja conhecido — reutilizavel tanto por `try_settle`
+    (polling) quanto por um receptor de webhook (`asaas_webhook.py`), que ja recebe o status
+    mapeado no proprio evento e nao precisa consultar o gateway de novo.
 
     Devolve `None` enquanto PENDING ou quando FAILED — nada e enviado ao fiscal ate a
     confirmacao real do pagamento. Devolve o fato liquidado apenas quando CONFIRMED.
     """
-    status = gateway.get_charge_status(charge_result.gateway_charge_id)
     if status is not GatewayChargeStatus.CONFIRMED:
         return None
 
@@ -72,4 +72,21 @@ def try_settle(
     )
 
 
-__all__ = ["charge_subscription", "try_settle"]
+def try_settle(
+    charge: SubscriptionCharge,
+    charge_result: ChargeResult,
+    gateway: PaymentGatewayConnector,
+    *,
+    settled_at: datetime,
+) -> SettledOwnBillingFact | None:
+    """Consulta o gateway pelo status real da cobranca (polling) e liquida a partir dele.
+
+    Prefira `try_settle_from_status` quando o status ja vier de um webhook — evita uma
+    chamada de rede redundante e reage no momento em que o Asaas de fato notifica, nao no
+    proximo ciclo de consulta.
+    """
+    status = gateway.get_charge_status(charge_result.gateway_charge_id)
+    return try_settle_from_status(charge, status, settled_at=settled_at)
+
+
+__all__ = ["charge_subscription", "try_settle", "try_settle_from_status"]

@@ -18,13 +18,32 @@ achados e as limitações desta análise.
 Ambos com teste automatizado provando a correção (`test_config_repr_never_exposes_the_api_key`,
 `test_error_detail_never_includes_the_raw_response_body`).
 
-## Achados registrados, NÃO corrigidos nesta revisão (exigem decisão de arquitetura)
+## Achados #3 e #5 — corrigidos em 24/09/2026 (mesmo dia, sessão seguinte)
+
+**Atualização:** ambos foram resolvidos a pedido explícito do Diretor, no mesmo dia desta
+revisão. Ver `docs/evidence/CORRECAO_IDEMPOTENCIA_E_WEBHOOK_ASAAS_20260924.md` para o relato
+completo. Resumo:
+
+- **#3 (idempotência só em memória):** `PaymentGatewaySimulator` e `AsaasGateway` agora
+  recebem `idempotency` como parâmetro injetável (`IdempotencyStoreLike`, mesma forma de
+  `campaia_core.infra.IdempotencyStore` e de `api.db.PersistentIdempotencyStore`, que já
+  existia). Por padrão continua em memória (comportamento anterior preservado); em produção,
+  basta injetar `PersistentIdempotencyStore` — nenhuma reescrita do gateway.
+- **#5 (sem webhook):** novo `campaia_core/asaas_webhook.py` — verificação do token estático
+  do Asaas (`asaas-access-token`, **não** HMAC, confirmado contra a documentação oficial),
+  dedupe por `id` do evento, parser do payload real do Asaas. `billing_settlement.py` ganhou
+  `try_settle_from_status`, reaproveitado tanto pelo polling quanto pelo webhook.
+
+## Achado #4 — ainda registrado, não corrigido (fora de escopo de ambas as revisões)
 
 | # | Achado | Risco | Por que não corrigido agora |
 |---|---|---|---|
-| 3 | Idempotência de `create_charge` (tanto no simulador quanto no `AsaasGateway`) é mantida só em memória (`_created`, dicionário do processo). Reiniciar o processo entre o envio da cobrança e a confirmação perde essa memória — um retry após reinício poderia gerar uma segunda cobrança real no Asaas | **Alto para produção** — mas hoje nenhum destes módulos está persistido nem ligado a `api/`; o risco é real assim que isso for exposto por uma rota HTTP com retry automático | Corrigir exige uma decisão de persistência (tabela de idempotência, provavelmente em `backend/db/`) — fora do escopo desta revisão pontual; **deve bloquear produção real**, não sandbox |
 | 4 | Nenhuma verificação de RBAC/permissão está embutida em `charge_subscription`/`try_settle` — qualquer código que os chame executa a cobrança | Baixo hoje (nenhuma rota HTTP os expõe ainda, mesmo padrão de B5/pacing) | Autorização é responsabilidade da camada `api/`, que ainda não foi construída para este motor — registrar como requisito quando essa camada for construída, não decidir agora |
-| 5 | Confirmação de pagamento hoje é só por *polling* (`get_charge_status`), sem um receptor de webhook do Asaas verificado por assinatura | Médio — polling não reage em tempo real e não cobre eventos pós-liquidação (estorno, chargeback) que mudariam o status depois do fato liquidado já ter sido gerado | Construir um webhook receptor é um bloco novo, com verificação de assinatura HMAC (mesmo padrão de `webhooks.py` já existente no domínio) — fora do escopo desta revisão pontual |
+
+**Nota:** a rota HTTP que efetivamente recebe o webhook do Asaas (endpoint em `api/`) também
+não foi construída nesta correção — só a lógica de domínio (verificação, parsing, liquidação),
+testada e completa. Expor isso como rota HTTP é integração, mesmo tipo de trabalho que o resto
+deste motor de cobrança já vem deliberadamente adiando (mesmo padrão do B5/pacing).
 
 ## Caminhos negativos e testes adversariais já cobertos
 

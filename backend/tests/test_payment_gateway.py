@@ -9,6 +9,7 @@ from campaia_core.payment_gateway import (
     PaymentGatewayError,
     PaymentGatewayErrorCode,
 )
+from campaia_core.infra import IdempotencyStore
 from campaia_core.payment_simulator import PaymentGatewaySimulator
 
 
@@ -125,6 +126,22 @@ class PaymentGatewaySimulatorTests(unittest.TestCase):
         secret = gateway.resolve_secret("acct-1")
         self.assertEqual(repr(secret), "<SecretRef REDACTED>")
 
+    def test_idempotency_survives_a_process_restart_via_shared_external_store(self) -> None:
+        """fm-security-review (24/09/2026): idempotencia so em memoria dentro do gateway
+        perdia a garantia contra cobranca duplicada num reinicio de processo. Duas instancias
+        de gateway compartilhando o mesmo `IdempotencyStore` externo simulam exatamente esse
+        cenario — a segunda instancia (o "processo reiniciado") deve devolver o mesmo
+        resultado, nunca criar uma segunda cobranca."""
+        shared_store = IdempotencyStore()
+        first_process = PaymentGatewaySimulator(idempotency=shared_store)
+        result_before_restart = first_process.create_charge(self.command())
+
+        second_process = PaymentGatewaySimulator(idempotency=shared_store)
+        result_after_restart = second_process.create_charge(self.command())
+
+        self.assertEqual(
+            result_before_restart.gateway_charge_id, result_after_restart.gateway_charge_id
+        )
 
 if __name__ == "__main__":
     unittest.main()
