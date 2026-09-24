@@ -139,26 +139,78 @@ vez de um **array JSON** — o schema real do agente "strategist" (`agents.py`) 
 para esse campo, então essa resposta teria sido rejeitada como `SCHEMA_INVALID` por
 `OutputSchema.validate()` em produção. Causa raiz: `_build_prompt()` só instruía o modelo
 com os NOMES dos campos obrigatórios, nunca o TIPO de valor JSON esperado para cada um.
-Corrigido: o prompt agora inclui o tipo de cada campo (`string`, `array de strings`, etc.,
-derivado de `schema.types`), com instrução explícita de que um campo do tipo array precisa
-ser um array JSON de verdade, nunca uma string com itens separados por vírgula. Novo teste
+Corrigido (PR #25, commit `19700ec`): o prompt agora inclui o tipo de cada campo (`string`,
+`array de strings`, etc., derivado de `schema.types`), com instrução explícita de que um
+campo do tipo array precisa ser um array JSON de verdade, nunca uma string com itens
+separados por vírgula. Novo teste
 (`test_prompt_tells_the_model_the_json_type_of_each_field`) prova que o prompt inclui essa
-instrução. **Esta correção ainda não foi reverificada contra uma chamada real** (o achado
-apareceu depois da tentativa 5) — próxima verificação real deve confirmar que `canais` volta
-como array de fato.
+instrução.
+
+## Reverificação pós-correção (mesmo dia, mesma sessão irmã, commit `19700ec` isolado em worktree)
+
+**Tentativa 6** — mesmo teste, com o prompt corrigido, `model="gemini-3.5-flash-lite"`:
+`HTTP 200`, mas `"canais"` voltou de novo como string ("Instagram Ads e Facebook Ads"), não
+como array. `OutputSchema.validate()` rejeitou corretamente (`SCHEMA_INVALID`) — o fail-closed
+funcionou, mas a correção do prompt **não eliminou** o problema nesta amostra.
+
+**Interpretação:** instrução de tipo por prompt (texto) reduz a chance do modelo errar o
+formato, mas não garante 100% — isso é uma limitação conhecida e esperada de instrução por
+prompt (sem um parâmetro de saída estruturada nativa da API que force o formato no nível do
+schema, não da instrução). Não é um defeito do adapter: o fail-closed continua protegendo o
+sistema contra dado malformado em 100% dos casos testados (6 chamadas reais, 0 saídas
+incorretas passaram pela validação).
+
+## Experimento com o parâmetro nativo de saída estruturada — não adotado
+
+Testado isoladamente (fora do `GeminiProvider`, nunca no código de produto), 3 tentativas:
+
+- **Tentativa 1** — corpo no formato estilo OpenAI (`response_format: {"type": "json_schema",
+  "json_schema": {...}}`): `HTTP 400`. A API reconhece o campo `response_format` (não é
+  "campo desconhecido"), mas rejeita `"json_schema"` como valor de `type`. Mensagem exata:
+  *"The value 'json_schema' is not supported for 'type' at 'response_format'. Supported
+  values: 'image', 'object', 'audio', 'string', 'video', 'number', 'integer', 'boolean',
+  'text', 'array'."*
+- **Tentativas 2 e 3** — corpo ajustado (`response_format: {"type": "object", "schema":
+  {...}}`), usando o vocabulário que a própria API confirmou: `HTTP 200` nas duas, mas o
+  `model_output` veio **vazio** (`{}`) nas duas vezes — pior resultado que a instrução por
+  prompt sozinha, não melhor.
+
+**Decisão: não adotar o parâmetro nativo agora.** A forma correta do campo existe
+(`response_format.type = "object"` + `schema`), mas produz saída vazia do jeito testado —
+possivelmente por interação com o prompt de texto redundante, ou com um passo de
+"raciocínio" (`thought`) consumindo o orçamento de saída antes do `model_output`; causa raiz
+não isolada, e não vale gastar mais chamadas reais investigando agora. Registrado como
+melhoria futura a investigar com mais cuidado (prompt mais simples, sem instrução textual
+duplicada, isolando o parâmetro), não como bloqueio da Etapa 1.
 
 ## Pendência explícita antes de uso real em produção
 
-1. Reverificar contra uma chamada real que a correção do prompt (tipo por campo) realmente
-   faz o Gemini devolver `"canais"` como array JSON, não como frase — ainda não confirmado.
-2. Considerar adicionar o parâmetro de saída estruturada nativa uma vez que o campo certo for
-   confirmado contra a documentação oficial (`WebFetch` para `ai.google.dev` seguiu bloqueado
-   nesta sessão) — teria evitado este achado por completo, forçando o formato no nível da API
-   em vez de depender de instrução por prompt.
-3. Reconfirmar o preço por milhão de tokens contra `ai.google.dev/gemini-api/docs/pricing`
+1. Melhorar a confiabilidade da conformidade de tipo (`canais` como array) além do que a
+   instrução por prompt garante hoje — seja isolando o parâmetro de saída estruturada nativa
+   (ver experimento acima), seja aceitando a taxa de retentativa via `/plan/regenerate` como
+   comportamento esperado por enquanto. Não bloqueia: o fail-closed já impede dado malformado
+   de entrar no sistema em qualquer um dos dois cenários.
+2. Reconfirmar o preço por milhão de tokens contra `ai.google.dev/gemini-api/docs/pricing`
    antes de 31/12/2026 (a tarifa introdutória usada aqui muda nessa data, por documentação do
    próprio Google).
-4. Em produção real, a credencial não pode depender do mecanismo de proxy de sessão do Claude
+3. Em produção real, a credencial não pode depender do mecanismo de proxy de sessão do Claude
    Code (existe só para chamadas feitas por uma sessão de desenvolvimento) — precisa ser uma
    variável de ambiente/Secret Manager de verdade no processo do backend implantado, exatamente
    como `GeminiConfig.from_env()` já espera.
+
+## Resumo da verificação real (6 chamadas + 3 experimentos, mesmo dia)
+
+| # | Modelo | Resultado |
+|---|---|---|
+| 1-2 | gemini-3.8-flash | 503 (sobrecarga do Google) |
+| 3-4 | gemini-3.8-flash | 429 (rate limit, tentativas próximas demais) |
+| 5 | gemini-3.5-flash-lite | 200, sucesso, mas `canais` como string (achado, corrigido no prompt) |
+| 6 | gemini-3.5-flash-lite | 200, pós-correção do prompt, `canais` ainda como string (limitação conhecida de instrução por prompt) |
+| exp. 1 | gemini-3.5-flash-lite | 400 — `response_format` existe, mas `type: "json_schema"` não é aceito |
+| exp. 2-3 | gemini-3.5-flash-lite | 200 com `response_format.type: "object"`, mas saída vazia — não adotado |
+
+**Conclusão geral:** a integração está funcional e correta no que mais importa — autentica,
+formata a requisição certa, processa toda a variedade de erros reais encontrados (503, 429,
+400) como `ProviderError`, e o fail-closed nunca deixou passar uma saída malformada em nenhuma
+das 6 tentativas. A confiabilidade de o modelo acertar o tipo de cada campo de primeira ainda
+não é 100%, é uma melhoria de qualidade a perseguir depois, não um bloqueador desta etapa.
