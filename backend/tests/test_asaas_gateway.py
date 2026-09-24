@@ -85,6 +85,26 @@ class AsaasGatewayRequestShapeTests(unittest.TestCase):
         transport = httpx.MockTransport(handler)
         return AsaasGateway(config=_config(mode=mode), transport=transport)
 
+    def test_below_minimum_amount_is_rejected_before_any_network_call(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise AssertionError("nao deveria chamar a rede para valor abaixo do minimo")
+
+        gateway = self._gateway(handler)
+        command = _command()
+        below_minimum = ChargeCommand(
+            tenant_id=command.tenant_id,
+            billing_id=command.billing_id,
+            customer_ref=command.customer_ref,
+            customer_document=command.customer_document,
+            amount=Decimal("1.00"),
+            currency=command.currency,
+            competence=command.competence,
+            idempotency_key=command.idempotency_key,
+        )
+        with self.assertRaises(PaymentGatewayError) as ctx:
+            gateway.create_charge(below_minimum)
+        self.assertEqual(ctx.exception.gateway_code, PaymentGatewayErrorCode.VALIDATION_REJECTED)
+
     def test_sandbox_and_production_use_distinct_base_urls(self) -> None:
         seen_urls: list[str] = []
 
