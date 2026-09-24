@@ -226,6 +226,38 @@ class AsaasGatewayRequestShapeTests(unittest.TestCase):
             gateway.get_charge_status("pay_1")
         self.assertEqual(ctx.exception.gateway_code, PaymentGatewayErrorCode.VALIDATION_REJECTED)
 
+    def test_error_detail_never_includes_the_raw_response_body(self) -> None:
+        """fm-security-review (24/09/2026): um corpo de erro de validacao pode ecoar de volta
+        um campo submetido (ex.: cpfCnpj, PII). So o resumo estruturado (code+description)
+        pode ir para `details` — nunca o texto bruto da resposta."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                400,
+                json={
+                    "errors": [
+                        {"code": "invalid_cpfCnpj", "description": "cpfCnpj 11144477735 invalido"}
+                    ]
+                },
+            )
+
+        gateway = self._gateway(handler)
+        with self.assertRaises(PaymentGatewayError) as ctx:
+            gateway.get_charge_status("pay_1")
+        self.assertNotIn("body", ctx.exception.details)
+        self.assertIn("error_summary", ctx.exception.details)
+        self.assertIn("invalid_cpfCnpj", ctx.exception.details["error_summary"])
+
+    def test_config_repr_never_exposes_the_api_key(self) -> None:
+        """fm-security-review (24/09/2026): repr padrao de dataclass expunha a chave em
+        claro — corrigido com `field(repr=False)`."""
+        config = _config(api_key="SECRET_VALUE_MUST_NOT_APPEAR")
+        self.assertNotIn("SECRET_VALUE_MUST_NOT_APPEAR", repr(config))
+
+        transport = httpx.MockTransport(lambda request: httpx.Response(200, json={}))
+        gateway = AsaasGateway(config=config, transport=transport)
+        self.assertNotIn("SECRET_VALUE_MUST_NOT_APPEAR", repr(gateway))
+
     def test_429_maps_to_rate_limited(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(429, json={})
