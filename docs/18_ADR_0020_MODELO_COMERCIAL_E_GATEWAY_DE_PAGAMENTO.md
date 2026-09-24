@@ -74,6 +74,18 @@ Este motor alimenta o adapter fiscal fail-closed `fiscal_handoff.py` (já import
 repositório canônico via ADR-0015 / bloco FISC V2-16.5): fecha, em simulador, o ciclo completo
 cobrar → confirmar → fato liquidado → handoff fiscal.
 
+## Adendo (24/09/2026) — catálogo de planos configurável
+
+O Diretor pediu explicitamente que os **valores** dos planos (preço da franquia, quantidade de
+créditos incluídos, preço do crédito extra) também fossem configuráveis, para nunca exigir
+alteração de código a cada ajuste comercial. Adicionado `backend/campaia_core/plan_catalog.py`:
+carrega `PlanDefinition` de um arquivo JSON externo, cujo caminho vem de
+`CAMPAIA_PLAN_CATALOG_PATH` (mesmo princípio do Capability Registry — "dado, não código", ver
+`docs/08_CAPABILITY_MATRIX.md` seção 5). Fail-closed: sem arquivo configurado, ou com dado
+inválido/incompleto/duplicado, a carga falha com erro claro — nunca inventa ou aproxima um
+preço. Template de exemplo em `backend/config/plans.example.json` (valores fictícios de R$ 1,00,
+nunca usados como padrão real). 13 novos testes (`test_plan_catalog.py`).
+
 ## O que esta ADR NÃO resolve
 
 - O adaptador Asaas não foi verificado contra uma conta real — só contra `httpx.MockTransport`
