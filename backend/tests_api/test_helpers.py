@@ -21,7 +21,9 @@ def with_step_up(headers: dict) -> dict:
 
 
 def make_client() -> TestClient:
-    return TestClient(create_app())
+    # env="test" habilita o fixture de bearer token de dev/teste (item 1.3/WP-02) --
+    # AppState recusa fail-closed fora de test/dev-local, ver api/state.py.
+    return TestClient(create_app(env="test"))
 
 
 _idem_counter = [0]

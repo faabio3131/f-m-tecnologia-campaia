@@ -24,7 +24,7 @@ class AIProviderWiringTests(unittest.TestCase):
     def test_default_state_uses_the_simulator_never_a_real_provider(self) -> None:
         old = self._clear_gemini_env()
         try:
-            state = AppState()
+            state = AppState(env="test")
             self.assertIsInstance(state.ai_provider, SimulatedAIProvider)
         finally:
             self._restore_gemini_env(old)
@@ -33,7 +33,7 @@ class AIProviderWiringTests(unittest.TestCase):
         old = self._clear_gemini_env()
         os.environ["GEMINI_API_KEY"] = "fake-key-for-wiring-test"
         try:
-            state = AppState()
+            state = AppState(env="test")
             self.assertIsInstance(state.ai_provider, GeminiProvider)
             # As schemas de todo o catalogo de agentes precisam estar disponiveis para o
             # GeminiProvider real montar o prompt certo por tarefa -- sem isso, toda
