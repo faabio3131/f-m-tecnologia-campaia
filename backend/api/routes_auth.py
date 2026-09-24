@@ -23,12 +23,37 @@ from .deps import get_state
 from .errors import ApiError
 from .helpers import parse_body
 from .models import SessionLoginRequest, SessionLoginResponse
-from .session import SESSION_COOKIE_NAME, clear_session_cookie, set_session_cookie
+from .session import (
+    SESSION_COOKIE_NAME,
+    clear_session_cookie,
+    is_same_origin,
+    set_session_cookie,
+)
+
+
+def _serialize_session(principal, *, csrf_token: str) -> SessionLoginResponse:
+    return SessionLoginResponse(
+        user_id=principal.user_id,
+        tenant_id=principal.tenant_id,
+        business_unit_id=principal.business_unit_id,
+        roles=sorted(r.value for r in principal.roles),
+        csrf_token=csrf_token,
+    )
 
 
 async def login(request: Request) -> JSONResponse:
-    body = await parse_body(request, SessionLoginRequest)
     state = get_state(request)
+
+    # Achado de fm-security-review (24/09/2026), corrigido por decisao do Diretor:
+    # login-CSRF. Checado ANTES de tocar em qualquer credencial -- uma origem nao
+    # permitida nunca chega a gastar uma verificacao de id_token.
+    if not is_same_origin(request, state.allowed_origins):
+        raise ApiError(
+            "PERMISSION_DENIED",
+            "Origem da requisicao ausente, invalida ou nao autorizada para login.",
+        )
+
+    body = await parse_body(request, SessionLoginRequest)
 
     try:
         identity = state.id_token_verifier.verify(body.id_token)
@@ -55,17 +80,35 @@ async def login(request: Request) -> JSONResponse:
     record = state.sessions.create(principal, now=now)
 
     response = JSONResponse(
-        SessionLoginResponse(
-            user_id=principal.user_id,
-            tenant_id=principal.tenant_id,
-            business_unit_id=principal.business_unit_id,
-            roles=sorted(r.value for r in principal.roles),
-            csrf_token=record.csrf_secret,
-        ).model_dump()
+        _serialize_session(principal, csrf_token=record.csrf_secret).model_dump()
     )
     max_age = int((record.expires_at - now).total_seconds())
     set_session_cookie(response, record.session_id, max_age_seconds=max_age)
     return response
+
+
+async def get_session(request: Request) -> JSONResponse:
+    """Recuperacao do CSRF apos reload (achado de fm-security-review, 24/09/2026,
+    corrigido por decisao do Diretor): permite ao frontend reobter o `csrf_token` da
+    sessao atual sem novo login. So le a sessao existente -- nunca a rotaciona/estende,
+    nunca aceita o fixture de bearer token (essa rota so faz sentido para sessao real).
+
+    Nao expoe: session_id, cookies, secrets internos, ID token ou claims do Google --
+    a resposta e exatamente o mesmo shape de `login()` (user_id/tenant_id/
+    business_unit_id/roles/csrf_token), nada mais.
+    """
+    state = get_state(request)
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if session_id is None:
+        raise ApiError("UNAUTHENTICATED", "Nenhuma sessao ativa.")
+
+    record = state.sessions.get(session_id)
+    if record is None or record.is_expired(now=datetime.now(timezone.utc)):
+        raise ApiError("UNAUTHENTICATED", "Sessao invalida ou expirada.")
+
+    return JSONResponse(
+        _serialize_session(record.principal, csrf_token=record.csrf_secret).model_dump()
+    )
 
 
 async def logout(request: Request) -> Response:

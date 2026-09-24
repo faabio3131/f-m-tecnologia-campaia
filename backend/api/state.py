@@ -154,6 +154,12 @@ def _default_session_store():
     return InMemorySessionStore()
 
 
+def _default_allowed_origins() -> frozenset[str]:
+    from .session import default_allowed_origins
+
+    return default_allowed_origins()
+
+
 def _default_billing_gateway() -> PaymentGatewayConnector:
     """Never a real gateway unless explicitly configured (same "never a real provider by
     default" discipline as `ai_provider` below). If `ASAAS_API_KEY` is set in the
@@ -306,6 +312,11 @@ class AppState:
     id_token_verifier: IdTokenVerifier = field(default_factory=_default_id_token_verifier)
     identity_directory: "IdentityDirectory | None" = None
     sessions: "SessionStore" = field(default_factory=_default_session_store)
+    #: Achado de fm-security-review (24/09/2026), corrigido por decisao do Diretor:
+    #: login-CSRF em POST /auth/session. Vazio por padrao -- fail-closed: nenhuma origem
+    #: e aceita enquanto CAMPAIA_ALLOWED_ORIGINS nao estiver configurada. NUNCA um
+    #: wildcard (nem aqui nem em session.parse_allowed_origins).
+    allowed_origins: frozenset[str] = field(default_factory=_default_allowed_origins)
 
     def __post_init__(self) -> None:
         # Fixture de bearer token de dev/teste: so populado automaticamente quando `env`
