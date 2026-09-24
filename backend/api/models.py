@@ -29,6 +29,40 @@ class MeResponse(BaseModel):
     roles: list[str]
     permissions: list[str]
     mfa_enabled: bool
+    #: Achado de fm-security-review (24/09/2026, WP-02): o csrf_token so vinha na resposta
+    #: de login -- uma aba recarregada sem novo login ficava autenticada para leitura mas
+    #: incapaz de fazer qualquer mutacao. Exposto aqui tambem (None quando autenticado via
+    #: fixture de bearer de dev/teste, que nao tem sessao/CSRF -- ver routes_me.py).
+    csrf_token: str | None = None
+
+
+# --------------------------------------------------------------------------- auth / sessao (item 1.3/WP-02)
+
+
+class LoginNonceResponse(BaseModel):
+    #: Cliente deve devolver este valor em `login_csrf_token` no corpo de
+    #: `POST /auth/session` -- mitigacao de login-CSRF (fm-security-review, 24/09/2026,
+    #: ver api/session.py).
+    login_csrf_token: str
+
+
+class SessionLoginRequest(ApiModel):
+    #: ID token do Google Identity Platform, obtido pelo frontend apos o usuario
+    #: autenticar -- nunca um token opaco de dev/teste (isso e o header Bearer legado).
+    id_token: str
+    #: Valor recebido de `GET /auth/login-nonce` -- comparado em tempo constante contra o
+    #: cookie de mesmo nome (mitigacao de login-CSRF, ver api/session.py).
+    login_csrf_token: str
+
+
+class SessionLoginResponse(BaseModel):
+    user_id: str
+    tenant_id: str
+    business_unit_id: str | None
+    roles: list[str]
+    #: Cliente deve devolver este valor no header X-CSRF-Token em toda mutacao
+    #: subsequente (double-submit cookie, ver api/session.py).
+    csrf_token: str
 
 
 # --------------------------------------------------------------------------- brand profiles

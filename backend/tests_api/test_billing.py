@@ -155,7 +155,7 @@ class BillingChargeTests(unittest.TestCase):
 
 class AsaasWebhookTests(unittest.TestCase):
     def _app_and_client(self):
-        app = create_app()
+        app = create_app(env="test")
         return app, TestClient(app)
 
     def _set_webhook_token(self, token: str):
