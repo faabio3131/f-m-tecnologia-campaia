@@ -44,7 +44,15 @@
 ---
 
 ### 3. Modelo Comercial
-**Decisão:** ✅ **Assinatura (Subscription puro)**
+
+> ⚠️ **SUPERSEDED por `docs/18_ADR_0020_MODELO_COMERCIAL_E_GATEWAY_DE_PAGAMENTO.md` (24/09/2026).**
+> Este item descrevia "assinatura pura, sem créditos" com Stripe, mas D-06 (27/08/2026, um dia
+> depois desta nota) já havia decidido o modelo híbrido abaixo, e nunca foi propagado para este
+> documento. Mantido aqui, não apagado, por disciplina de rastreabilidade (Padrões de Construção
+> Nova FM, §7). **Não seguir a decisão abaixo — ver a ADR-0020 para o modelo vigente: franquia
+> mensal + créditos extras pagos por excedente, gateway Asaas.**
+
+**Decisão (histórica, substituída):** ✅ **Assinatura (Subscription puro)**
 
 **Modelo:**
 - Plano mensal + limite de campanhas/mês
