@@ -11,8 +11,8 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
-from campaia_core.agents import AgentRunner
-from campaia_core.ai_gateway import AIGateway
+from campaia_core.agents import AGENTS, AgentRunner
+from campaia_core.ai_gateway import AIGateway, AIProvider
 from campaia_core.ai_simulator import SimulatedAIProvider
 from campaia_core.asaas_gateway import AsaasConfig, AsaasGateway
 from campaia_core.asaas_webhook import AsaasWebhookReceiver
@@ -117,6 +117,29 @@ def _default_asaas_webhook_receiver() -> AsaasWebhookReceiver:
     return AsaasWebhookReceiver(token_resolver=lambda: os.environ.get("ASAAS_WEBHOOK_TOKEN"))
 
 
+def _default_ai_provider() -> AIProvider:
+    """Never a real provider unless explicitly configured (same "never a real provider by
+    default" discipline as `_default_billing_gateway`). If `GEMINI_API_KEY` is set in the
+    environment, use the real adapter chosen in ADR-0021 (Google Gemini); else fall back to
+    the in-memory simulator, whose default output matches the "strategist" agent's
+    OutputSchema (`campaia_core/agents.py` AGENTS["strategist"]: requires objetivo/funil/
+    canais/justificativa) so `/plan/regenerate` works out of the box without any credential.
+    """
+    if os.environ.get("GEMINI_API_KEY"):
+        from campaia_core.gemini_provider import GeminiConfig, GeminiProvider
+
+        schemas = {spec.output_schema.schema_id: spec.output_schema for spec in AGENTS.values()}
+        return GeminiProvider(config=GeminiConfig.from_env(), schemas=schemas)
+    return SimulatedAIProvider(
+        output={
+            "objetivo": "Gerar demanda qualificada dentro do orcamento aprovado.",
+            "funil": "TOPO_MEIO",
+            "canais": ["GOOGLE_ADS", "META_ADS"],
+            "justificativa": "Saida simulada do SimulatedAIProvider (nunca um provedor real).",
+        }
+    )
+
+
 #: Item 1.2 do cronograma mestre (24/09/2026): limite do unico endpoint publico sem
 #: autenticacao de usuario (`/webhooks/asaas`). Generoso o bastante para nunca recusar
 #: trafego legitimo do Asaas (que nao documenta um volume esperado por segundo, mas isto e
@@ -206,19 +229,10 @@ class AppState:
     )
 
     ai_gateway: AIGateway = field(default_factory=AIGateway)
-    #: Default output matches the "strategist" agent's OutputSchema (campaia_core/agents.py
-    #: AGENTS["strategist"]: requires objetivo/funil/canais/justificativa) so /plan/regenerate
-    #: works out of the box against the SimulatedAIProvider -- never a real AI provider.
-    ai_provider: SimulatedAIProvider = field(
-        default_factory=lambda: SimulatedAIProvider(
-            output={
-                "objetivo": "Gerar demanda qualificada dentro do orcamento aprovado.",
-                "funil": "TOPO_MEIO",
-                "canais": ["GOOGLE_ADS", "META_ADS"],
-                "justificativa": "Saida simulada do SimulatedAIProvider (nunca um provedor real).",
-            }
-        )
-    )
+    #: `GEMINI_API_KEY` unset (the default, and every pre-existing test) -> in-memory
+    #: SimulatedAIProvider, byte-for-byte the prior behaviour. Set -> real GeminiProvider
+    #: (ADR-0021). See `_default_ai_provider`.
+    ai_provider: AIProvider = field(default_factory=_default_ai_provider)
     agent_runner: AgentRunner = field(init=False)
 
     def __post_init__(self) -> None:
