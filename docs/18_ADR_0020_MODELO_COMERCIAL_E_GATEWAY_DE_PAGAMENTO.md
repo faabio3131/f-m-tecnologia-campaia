@@ -86,11 +86,25 @@ inválido/incompleto/duplicado, a carga falha com erro claro — nunca inventa o
 preço. Template de exemplo em `backend/config/plans.example.json` (valores fictícios de R$ 1,00,
 nunca usados como padrão real). 13 novos testes (`test_plan_catalog.py`).
 
-## O que esta ADR NÃO resolve
+## Adendo (24/09/2026) — verificação real contra o Asaas Sandbox
 
-- O adaptador Asaas não foi verificado contra uma conta real — só contra `httpx.MockTransport`
-  (o Diretor já gerou uma chave de Sandbox; verificação real pendente, tentativa via GitHub
-  Actions bloqueada por cota de minutos esgotada, alternativa local pelo VS Code em andamento).
+O adaptador foi verificado com sucesso contra a API real do Asaas Sandbox (via VS Code, na
+máquina do Diretor, chave nunca exposta a este assistente): criou um cliente real
+(`cus_...`), uma cobrança real (`pay_yiiurrzcqcth6ma4`, status `PENDING`) e consultou o
+status de volta. Dois defeitos reais foram encontrados e corrigidos no processo, ambos
+confirmados pela resposta real da API do Asaas, não presumidos:
+
+1. `POST /customers` exige `cpfCnpj` — ausente no desenho original. Corrigido tornando
+   `customer_document` campo obrigatório do contrato (`payment_gateway.ChargeCommand`),
+   propagado por `Subscription`/`SubscriptionCharge`, não específico do Asaas (qualquer
+   gateway brasileiro real exige identificar o contribuinte).
+2. Cobrança com `billingType: UNDEFINED` ("Pergunte ao Cliente") tem valor mínimo de R$ 5,00
+   no Asaas — não documentado no desenho original. Corrigido com checagem fail-closed em
+   `AsaasGateway.create_charge`, antes de qualquer chamada de rede.
+
+Ver `docs/evidence/VERIFICACAO_REAL_ASAAS_SANDBOX_20260924.md`.
+
+## O que esta ADR ainda não resolve
 - A tabela real de preços dos planos (valor da franquia, quantidade de créditos incluídos, preço
   do crédito extra) não é decidida aqui — continua fora de código, como dado de configuração.
 - Não decide o destino do `mobile/` (quarentena arquitetural, ADR anterior) nem toca no System
