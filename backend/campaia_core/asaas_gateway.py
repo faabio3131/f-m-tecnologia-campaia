@@ -44,6 +44,13 @@ from .payment_gateway import (
 PRODUCTION_BASE_URL = "https://api.asaas.com/v3"
 SANDBOX_BASE_URL = "https://sandbox.asaas.com/api/v3"
 
+#: Confirmado por resposta real da API em 24/09/2026 (verificacao manual, Sandbox):
+#: "O valor minimo para cobrancas com a forma de pagamento Pergunte ao Cliente e R$ 5,00" —
+#: `billingType: UNDEFINED` mapeia para "Pergunte ao Cliente" na interface do Asaas. Validado
+#: aqui, antes de qualquer chamada de rede, para falhar cedo e com mensagem clara em vez de
+#: deixar o Asaas recusar.
+MINIMUM_CHARGE_AMOUNT = Decimal("5.00")
+
 #: Status confirmados na documentacao oficial (docs.asaas.com/docs/status-possiveis),
 #: 23/09/2026. Qualquer status nao listado aqui cai em PENDING pelo `.get(..., PENDING)`
 #: abaixo — fail-closed por desenho: nunca inventa CONFIRMED para um status desconhecido.
@@ -169,6 +176,12 @@ class AsaasGateway:
 
     def create_charge(self, command: ChargeCommand) -> ChargeResult:
         require_idempotency(command)
+        if command.amount < MINIMUM_CHARGE_AMOUNT:
+            raise PaymentGatewayError(
+                PaymentGatewayErrorCode.VALIDATION_REJECTED,
+                f"Valor da cobranca (R$ {command.amount}) abaixo do minimo do Asaas para "
+                f"'Pergunte ao Cliente' (R$ {MINIMUM_CHARGE_AMOUNT}).",
+            )
 
         key = (command.tenant_id, command.idempotency_key)
         if key in self._created:

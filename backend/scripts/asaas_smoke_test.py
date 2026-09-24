@@ -39,7 +39,7 @@ def main() -> int:
         billing_id=f"smoke:{smoke_id}",
         customer_ref=f"smoke-customer-{smoke_id}",
         customer_document="11144477735",
-        amount=Decimal("1.00"),
+        amount=Decimal("5.90"),  # acima do minimo do Asaas p/ "Pergunte ao Cliente" (R$ 5,00)
         currency="BRL",
         competence="SMOKE-TEST",
         idempotency_key=f"campaia:smoke:{smoke_id}",
@@ -64,7 +64,7 @@ def main() -> int:
 
     print("OK — adaptador AsaasGateway verificado contra a API real (Sandbox).")
     print(
-        f"Cobranca de R$ 1,00 criada em '{command.customer_ref}' — cancele manualmente no "
+        f"Cobranca de R$ 5,90 criada em '{command.customer_ref}' — cancele manualmente no "
         "painel do Asaas Sandbox se quiser limpar, nenhum efeito real (ambiente de teste)."
     )
     return 0
