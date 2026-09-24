@@ -118,18 +118,43 @@ no cabeçalho de saída. O erro recebido (`503 service_unavailable`) é um forma
 coerente da API pública do Gemini, tratado corretamente pelo adapter como `ProviderError`
 (nunca virou uma exceção não tratada nem um resultado silenciosamente incorreto).
 
-**O que ainda não foi confirmado:** uma resposta de **sucesso** (200), que validaria o parsing
-de `steps`/`model_output`/`usage` contra o formato real — as duas tentativas encontraram o
-modelo `gemini-3.8-flash` sobrecarregado do lado do Google (`503`, tipicamente transitório).
+**Tentativas 3 e 4 (mesmo dia, mesma sessão irmã):** modelo `gemini-3.8-flash`, ambas
+retornaram `429` (limite de taxa) — 2 tentativas seguidas de perto demais, não indicam defeito
+do adapter (`GeminiProvider` já trata `429` corretamente como `ProviderError`, confirmado
+pelos testes automatizados).
+
+**Tentativa 5 — sucesso (200) confirmado**, com `model="gemini-3.5-flash-lite"` (mesmo
+formato de resposta da Interactions API para qualquer modelo, só trocado para reduzir a
+chance de sobrecarga/rate limit durante o teste pontual — o padrão de produção continua
+`gemini-3.8-flash`, decidido em ADR-0021). Output parseado corretamente, todos os 4 campos
+obrigatórios presentes: `objetivo`, `funil`, `canais`, `justificativa`. `cost_units`
+calculado: `0.000907`. `model` retornado: `gemini-3.5-flash-lite`. `model_version` veio
+`None` nesta resposta (a API não populou esse campo opcional para este modelo — não é usado
+em lugar nenhum do adapter hoje, mas fica registrado como ponto de atenção se algo passar a
+depender dele).
+
+**Achado real desta verificação, corrigido nesta mesma sessão:** o campo `"canais"` voltou
+como uma **frase corrida** ("Instagram Ads, Facebook Ads e YouTube Ads, considerando...") em
+vez de um **array JSON** — o schema real do agente "strategist" (`agents.py`) exige `list`
+para esse campo, então essa resposta teria sido rejeitada como `SCHEMA_INVALID` por
+`OutputSchema.validate()` em produção. Causa raiz: `_build_prompt()` só instruía o modelo
+com os NOMES dos campos obrigatórios, nunca o TIPO de valor JSON esperado para cada um.
+Corrigido: o prompt agora inclui o tipo de cada campo (`string`, `array de strings`, etc.,
+derivado de `schema.types`), com instrução explícita de que um campo do tipo array precisa
+ser um array JSON de verdade, nunca uma string com itens separados por vírgula. Novo teste
+(`test_prompt_tells_the_model_the_json_type_of_each_field`) prova que o prompt inclui essa
+instrução. **Esta correção ainda não foi reverificada contra uma chamada real** (o achado
+apareceu depois da tentativa 5) — próxima verificação real deve confirmar que `canais` volta
+como array de fato.
 
 ## Pendência explícita antes de uso real em produção
 
-1. Confirmar o parsing de uma resposta de **sucesso** real (200) — pendente por causa do
-   `503` transitório acima, não por falha do adapter; repetir a mesma verificação mais tarde
-   deve resolver.
+1. Reverificar contra uma chamada real que a correção do prompt (tipo por campo) realmente
+   faz o Gemini devolver `"canais"` como array JSON, não como frase — ainda não confirmado.
 2. Considerar adicionar o parâmetro de saída estruturada nativa uma vez que o campo certo for
    confirmado contra a documentação oficial (`WebFetch` para `ai.google.dev` seguiu bloqueado
-   nesta sessão).
+   nesta sessão) — teria evitado este achado por completo, forçando o formato no nível da API
+   em vez de depender de instrução por prompt.
 3. Reconfirmar o preço por milhão de tokens contra `ai.google.dev/gemini-api/docs/pricing`
    antes de 31/12/2026 (a tarifa introdutória usada aqui muda nessa data, por documentação do
    próprio Google).
