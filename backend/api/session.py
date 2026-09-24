@@ -15,15 +15,75 @@ from __future__ import annotations
 
 import hmac
 import os
+import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Protocol
+from urllib.parse import urlsplit
 
 from .state import TokenPrincipal
 
 SESSION_COOKIE_NAME = "campaia_session"
 CSRF_HEADER_NAME = "x-csrf-token"
+
+#: Item 1.3/WP-02, achado de fm-security-review (24/09/2026) corrigido por decisao do
+#: Diretor: login-CSRF em POST /auth/session. Defesa fail-closed por validacao de
+#: Origin/Referer same-origin -- NUNCA wildcard, origem ausente/invalida/nao configurada
+#: e sempre rejeitada.
+ALLOWED_ORIGINS_ENV_VAR = "CAMPAIA_ALLOWED_ORIGINS"
+
+#: Origem valida: "scheme://host" ou "scheme://host:port", scheme http/https, sem path,
+#: query, fragment, espaco ou "*". Rejeita qualquer coisa fora desse formato exato.
+_ORIGIN_PATTERN = re.compile(r"^https?://[A-Za-z0-9.\-]+(:\d+)?$")
+
+
+def _parse_origin(value: str) -> str | None:
+    value = value.strip()
+    if not value or "*" in value or not _ORIGIN_PATTERN.fullmatch(value):
+        return None
+    return value
+
+
+def parse_allowed_origins(raw: str) -> frozenset[str]:
+    """Fail-closed por configuracao: se `raw` estiver vazio OU contiver qualquer entrada
+    invalida (wildcard, malformada), o resultado e o conjunto vazio -- nenhuma origem e
+    aceita. Nunca "confia parcialmente" numa configuracao parcialmente quebrada."""
+    entries = [e for e in (part.strip() for part in raw.split(",")) if e]
+    if not entries:
+        return frozenset()
+    parsed = [_parse_origin(e) for e in entries]
+    if any(p is None for p in parsed):
+        return frozenset()
+    return frozenset(parsed)
+
+
+def default_allowed_origins() -> frozenset[str]:
+    return parse_allowed_origins(os.environ.get(ALLOWED_ORIGINS_ENV_VAR, ""))
+
+
+def extract_request_origin(request) -> str | None:
+    """Origin tem prioridade (enviado por fetch/XHR em todo metodo mutante, mesmo
+    same-origin, desde 2017). Referer e fallback só quando Origin estiver ausente --
+    nunca o contrario, e qualquer valor malformado em qualquer um dos dois vira None
+    (rejeitado por quem chama, nunca tratado como "sem preferencia")."""
+    origin = request.headers.get("origin")
+    if origin is not None:
+        return _parse_origin(origin)
+
+    referer = request.headers.get("referer")
+    if referer is not None:
+        parts = urlsplit(referer)
+        if parts.scheme and parts.netloc:
+            return _parse_origin(f"{parts.scheme}://{parts.netloc}")
+    return None
+
+
+def is_same_origin(request, allowed: frozenset[str]) -> bool:
+    if not allowed:
+        return False  # configuracao vazia/invalida -- fail-closed, nunca permite nada
+    origin = extract_request_origin(request)
+    return origin is not None and origin in allowed
 
 #: Item 1.3/WP-02 (24/09/2026): TTL absoluto de 24h, alinhado a NFR 4.1
 #: (docs/product/NON_FUNCTIONAL_REQUIREMENTS.md), configuravel por ambiente.
@@ -106,6 +166,7 @@ def clear_session_cookie(response) -> None:
 
 
 __all__ = [
+    "ALLOWED_ORIGINS_ENV_VAR",
     "CSRF_HEADER_NAME",
     "DEFAULT_SESSION_TTL",
     "SESSION_COOKIE_NAME",
@@ -113,5 +174,9 @@ __all__ = [
     "SessionRecord",
     "SessionStore",
     "clear_session_cookie",
+    "default_allowed_origins",
+    "extract_request_origin",
+    "is_same_origin",
+    "parse_allowed_origins",
     "set_session_cookie",
 ]

@@ -3,6 +3,10 @@
 `FakeIdTokenVerifier` injeta identidades verificadas sem qualquer credencial/projeto
 Google Cloud real -- mesmo padrao de `httpx.MockTransport` no `GeminiProvider`. Prova o
 fluxo real (login -> cookie -> rota protegida -> CSRF -> logout) sem depender do item 1.6.
+
+Inclui os 2 achados de fm-security-review corrigidos por decisao do Diretor (24/09/2026):
+validacao de Origin/Referer no login (login-CSRF) e GET /auth/session (recuperacao do
+csrf_token apos reload).
 """
 
 from __future__ import annotations
@@ -13,11 +17,21 @@ from datetime import datetime, timedelta, timezone
 from starlette.testclient import TestClient
 
 from api.main import create_app
-from api.session import CSRF_HEADER_NAME, SESSION_COOKIE_NAME, InMemorySessionStore
+from api.session import (
+    CSRF_HEADER_NAME,
+    SESSION_COOKIE_NAME,
+    parse_allowed_origins,
+)
 from api.state import AppState
 from campaia_core.identity_provider import IdentityError, VerifiedIdentity
 from campaia_core.permissions import Role
 from tests_api.test_helpers import idem, unique_idem
+
+#: Mesma origem usada pelo TestClient (base_url abaixo) -- unica origem permitida nos
+#: testes, configurada explicitamente (nunca herdada de env var global, para nao
+#: depender de ordem de execucao entre arquivos de teste).
+ALLOWED_ORIGIN = "https://testserver"
+EXTERNAL_ORIGIN = "https://attacker.example"
 
 
 class FakeIdTokenVerifier:
@@ -51,13 +65,16 @@ OTHER_TENANT_IDENTITY = VerifiedIdentity(
 )
 
 
-def _client(verifier: FakeIdTokenVerifier) -> TestClient:
+def _client(verifier: FakeIdTokenVerifier, *, allowed_origins=None) -> TestClient:
     app = create_app(env="test")
     app.state.campaia.id_token_verifier = verifier
+    app.state.campaia.allowed_origins = (
+        frozenset({ALLOWED_ORIGIN}) if allowed_origins is None else allowed_origins
+    )
     # base_url https: o cookie de sessao e Secure=True de proposito (ADR-0018) -- o
     # cliente de teste precisa de um contexto "https" para reenviar o cookie nas
     # proximas requisicoes, exatamente como um navegador real faria em produção.
-    return TestClient(app, base_url="https://testserver")
+    return TestClient(app, base_url=ALLOWED_ORIGIN)
 
 
 def _default_verifier() -> FakeIdTokenVerifier:
@@ -71,10 +88,17 @@ def _default_verifier() -> FakeIdTokenVerifier:
     )
 
 
+def _login(client: TestClient, token: str, *, origin: str | None = ALLOWED_ORIGIN, **kwargs):
+    headers = dict(kwargs.pop("headers", {}) or {})
+    if origin is not None:
+        headers["Origin"] = origin
+    return client.post("/auth/session", json={"id_token": token}, headers=headers, **kwargs)
+
+
 class LoginTests(unittest.TestCase):
     def test_login_with_verified_known_email_succeeds_and_sets_cookie(self) -> None:
         client = _client(_default_verifier())
-        r = client.post("/auth/session", json={"id_token": OWNER_TOKEN})
+        r = _login(client, OWNER_TOKEN)
         self.assertEqual(r.status_code, 200, r.text)
         body = r.json()
         self.assertEqual(body["user_id"], "user-owner-1")
@@ -84,13 +108,13 @@ class LoginTests(unittest.TestCase):
 
     def test_login_with_invalid_id_token_is_rejected(self) -> None:
         client = _client(_default_verifier())
-        r = client.post("/auth/session", json={"id_token": "token-que-nao-existe"})
+        r = _login(client, "token-que-nao-existe")
         self.assertEqual(r.status_code, 401, r.text)
         self.assertNotIn(SESSION_COOKIE_NAME, r.cookies)
 
     def test_login_with_unverified_email_is_rejected(self) -> None:
         client = _client(_default_verifier())
-        r = client.post("/auth/session", json={"id_token": UNVERIFIED_TOKEN})
+        r = _login(client, UNVERIFIED_TOKEN)
         self.assertEqual(r.status_code, 401, r.text)
         self.assertNotIn(SESSION_COOKIE_NAME, r.cookies)
 
@@ -98,7 +122,7 @@ class LoginTests(unittest.TestCase):
         """Decisao do Diretor (24/09/2026): identidade do Google provada, mas sem vinculo
         interno -> RECUSA. Nunca autoprovisiona tenant/usuario novo."""
         client = _client(_default_verifier())
-        r = client.post("/auth/session", json={"id_token": UNKNOWN_EMAIL_TOKEN})
+        r = _login(client, UNKNOWN_EMAIL_TOKEN)
         self.assertEqual(r.status_code, 403, r.text)
         self.assertEqual(r.json()["code"], "PERMISSION_DENIED")
         self.assertNotIn(SESSION_COOKIE_NAME, r.cookies)
@@ -111,7 +135,7 @@ class LoginTests(unittest.TestCase):
         client = _client(_default_verifier())
         client.cookies.set(SESSION_COOKIE_NAME, "attacker-chosen-session-id")
 
-        r = client.post("/auth/session", json={"id_token": OWNER_TOKEN})
+        r = _login(client, OWNER_TOKEN)
         self.assertEqual(r.status_code, 200, r.text)
         new_session_id = r.cookies[SESSION_COOKIE_NAME]
         self.assertNotEqual(new_session_id, "attacker-chosen-session-id")
@@ -124,17 +148,91 @@ class LoginTests(unittest.TestCase):
 
     def test_two_logins_issue_two_different_session_ids(self) -> None:
         client = _client(_default_verifier())
-        r1 = client.post("/auth/session", json={"id_token": OWNER_TOKEN})
+        r1 = _login(client, OWNER_TOKEN)
         sid1 = r1.cookies[SESSION_COOKIE_NAME]
-        r2 = client.post("/auth/session", json={"id_token": OWNER_TOKEN})
+        r2 = _login(client, OWNER_TOKEN)
         sid2 = r2.cookies[SESSION_COOKIE_NAME]
         self.assertNotEqual(sid1, sid2)
+
+
+class OriginValidationTests(unittest.TestCase):
+    """Achado de fm-security-review (24/09/2026), corrigido por decisao do Diretor:
+    login-CSRF em POST /auth/session. Defesa fail-closed por Origin/Referer, sem
+    wildcard."""
+
+    def test_login_with_allowed_origin_succeeds(self) -> None:
+        client = _client(_default_verifier())
+        r = _login(client, OWNER_TOKEN, origin=ALLOWED_ORIGIN)
+        self.assertEqual(r.status_code, 200, r.text)
+
+    def test_login_with_external_origin_is_rejected(self) -> None:
+        client = _client(_default_verifier())
+        r = _login(client, OWNER_TOKEN, origin=EXTERNAL_ORIGIN)
+        self.assertEqual(r.status_code, 403, r.text)
+        self.assertEqual(r.json()["code"], "PERMISSION_DENIED")
+        self.assertNotIn(SESSION_COOKIE_NAME, r.cookies)
+
+    def test_login_with_missing_origin_and_no_referer_is_rejected(self) -> None:
+        client = _client(_default_verifier())
+        r = _login(client, OWNER_TOKEN, origin=None)
+        self.assertEqual(r.status_code, 403, r.text)
+        self.assertNotIn(SESSION_COOKIE_NAME, r.cookies)
+
+    def test_login_with_malformed_origin_is_rejected(self) -> None:
+        client = _client(_default_verifier())
+        for malformed in ("nao-e-uma-url", "https://*.attacker.example", "https://x/path", ""):
+            with self.subTest(origin=malformed):
+                r = _login(client, OWNER_TOKEN, origin=malformed)
+                self.assertEqual(r.status_code, 403, r.text)
+
+    def test_login_falls_back_to_referer_when_origin_absent(self) -> None:
+        client = _client(_default_verifier())
+        r = client.post(
+            "/auth/session",
+            json={"id_token": OWNER_TOKEN},
+            headers={"Referer": f"{ALLOWED_ORIGIN}/login-page"},
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+
+    def test_login_rejects_external_referer_when_origin_absent(self) -> None:
+        client = _client(_default_verifier())
+        r = client.post(
+            "/auth/session",
+            json={"id_token": OWNER_TOKEN},
+            headers={"Referer": f"{EXTERNAL_ORIGIN}/evil-page"},
+        )
+        self.assertEqual(r.status_code, 403, r.text)
+
+    def test_login_fails_closed_when_allowed_origins_config_is_empty(self) -> None:
+        client = _client(_default_verifier(), allowed_origins=frozenset())
+        r = _login(client, OWNER_TOKEN, origin=ALLOWED_ORIGIN)
+        self.assertEqual(r.status_code, 403, r.text)
+
+    def test_parse_allowed_origins_rejects_wildcard_fail_closed(self) -> None:
+        self.assertEqual(parse_allowed_origins("*"), frozenset())
+        self.assertEqual(parse_allowed_origins("https://ok.example,*"), frozenset())
+
+    def test_parse_allowed_origins_rejects_any_malformed_entry_fail_closed(self) -> None:
+        # Uma unica entrada invalida invalida a configuracao inteira -- nunca confia
+        # parcialmente numa lista mal configurada.
+        self.assertEqual(
+            parse_allowed_origins("https://ok.example,nao-e-origem"), frozenset()
+        )
+
+    def test_parse_allowed_origins_accepts_well_formed_list(self) -> None:
+        self.assertEqual(
+            parse_allowed_origins("https://app.campaia.com, http://localhost:3000"),
+            frozenset({"https://app.campaia.com", "http://localhost:3000"}),
+        )
+
+    def test_parse_allowed_origins_empty_string_is_fail_closed_empty_set(self) -> None:
+        self.assertEqual(parse_allowed_origins(""), frozenset())
 
 
 class SessionAuthenticatesProtectedRoutesTests(unittest.TestCase):
     def _logged_in_client(self, token: str = OWNER_TOKEN) -> tuple[TestClient, str]:
         client = _client(_default_verifier())
-        r = client.post("/auth/session", json={"id_token": token})
+        r = _login(client, token)
         self.assertEqual(r.status_code, 200, r.text)
         return client, r.json()["csrf_token"]
 
@@ -192,10 +290,76 @@ class SessionAuthenticatesProtectedRoutesTests(unittest.TestCase):
         self.assertEqual(r.json(), [])  # nunca ve o brand profile do outro tenant
 
 
+class GetSessionTests(unittest.TestCase):
+    """Achado de fm-security-review (24/09/2026), corrigido por decisao do Diretor:
+    GET /auth/session recupera o csrf_token apos reload, sem novo login."""
+
+    def _logged_in_client(self, token: str = OWNER_TOKEN) -> TestClient:
+        client = _client(_default_verifier())
+        r = _login(client, token)
+        self.assertEqual(r.status_code, 200, r.text)
+        return client
+
+    def test_valid_session_returns_csrf_token(self) -> None:
+        client = self._logged_in_client()
+        r = client.get("/auth/session")
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertIn("csrf_token", body)
+        self.assertEqual(body["user_id"], "user-owner-1")
+        self.assertEqual(body["tenant_id"], "demo-tenant")
+
+    def test_without_session_is_401(self) -> None:
+        client = _client(_default_verifier())
+        r = client.get("/auth/session")
+        self.assertEqual(r.status_code, 401, r.text)
+
+    def test_expired_session_is_401(self) -> None:
+        app = create_app(env="test")
+        state: AppState = app.state.campaia
+        state.id_token_verifier = _default_verifier()
+        state.allowed_origins = frozenset({ALLOWED_ORIGIN})
+
+        principal = state.identity_directory.resolve(OWNER_IDENTITY.email)
+        past = datetime.now(timezone.utc) - timedelta(hours=25)
+        record = state.sessions.create(principal, now=past)
+
+        client = TestClient(app, base_url=ALLOWED_ORIGIN)
+        client.cookies.set(SESSION_COOKIE_NAME, record.session_id)
+        r = client.get("/auth/session")
+        self.assertEqual(r.status_code, 401, r.text)
+
+    def test_csrf_token_from_get_session_works_for_a_mutation(self) -> None:
+        client = self._logged_in_client()
+        csrf = client.get("/auth/session").json()["csrf_token"]
+        r = client.post(
+            "/brand-profiles",
+            headers={**unique_idem(), CSRF_HEADER_NAME: csrf},
+            json={"name": "Via GET /auth/session", "tone": ""},
+        )
+        self.assertEqual(r.status_code, 201, r.text)
+
+    def test_response_never_contains_session_id_or_other_secrets(self) -> None:
+        client = self._logged_in_client()
+        session_id_cookie_value = client.cookies.get(SESSION_COOKIE_NAME)
+        r = client.get("/auth/session")
+        self.assertEqual(r.status_code, 200, r.text)
+
+        body = r.json()
+        self.assertEqual(
+            set(body.keys()),
+            {"user_id", "tenant_id", "business_unit_id", "roles", "csrf_token"},
+        )
+        raw_text = r.text
+        self.assertNotIn("session_id", raw_text)
+        self.assertNotIn(session_id_cookie_value, raw_text)
+        self.assertNotIn(OWNER_TOKEN, raw_text)  # nunca o id_token bruto
+
+
 class LogoutTests(unittest.TestCase):
     def test_logout_invalidates_the_session(self) -> None:
         client = _client(_default_verifier())
-        r = client.post("/auth/session", json={"id_token": OWNER_TOKEN})
+        r = _login(client, OWNER_TOKEN)
         self.assertEqual(r.status_code, 200, r.text)
 
         r = client.delete("/auth/session")
@@ -215,12 +379,13 @@ class SessionExpiryTests(unittest.TestCase):
         app = create_app(env="test")
         state: AppState = app.state.campaia
         state.id_token_verifier = _default_verifier()
+        state.allowed_origins = frozenset({ALLOWED_ORIGIN})
 
         principal = state.identity_directory.resolve(OWNER_IDENTITY.email)
         past = datetime.now(timezone.utc) - timedelta(hours=25)
         record = state.sessions.create(principal, now=past)  # TTL padrao de 24h -> ja expirou
 
-        client = TestClient(app, base_url="https://testserver")
+        client = TestClient(app, base_url=ALLOWED_ORIGIN)
         client.cookies.set(SESSION_COOKIE_NAME, record.session_id)
         r = client.get("/me")
         self.assertEqual(r.status_code, 401, r.text)
