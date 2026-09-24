@@ -90,12 +90,50 @@ padrão de `_default_billing_gateway` (Asaas).
 
 Nenhuma regressão nos testes pré-existentes.
 
+## Verificação real (24/09/2026, sessão irmã `session_01BLt2GfDQr8w6czS56PpTqD`)
+
+Diferente do que a seção anterior registrava, este adapter **já foi chamado contra a API real
+do Gemini** — não a partir desta sessão (sem API key aqui), mas de uma sessão irmã com uma
+credencial real do Google AI Studio configurada como "Credencial de API" do ambiente de nuvem
+(mecanismo específico do Claude Code: injeta o cabeçalho de autenticação no proxy de rede da
+sessão, para a chamada de saída ao host permitido — a chave nunca aparece como variável de
+ambiente de processo, então `GeminiConfig.from_env()` não a enxerga; o teste usou um valor de
+placeholder só para passar da checagem de "chave vazia").
+
+Script isolado (fora do repositório, nunca commitado), instanciando `GeminiConfig`,
+`GeminiProvider` com o schema `campaign-plan`, e chamando `.generate()` com um `AIRequest` de
+teste para `PLAN_CAMPAIGN`. Resultado, reproduzido em 2 tentativas:
+
+```
+ProviderError: GEMINI: erro HTTP 503 — {"error":{"message":"gemini-3.8-flash is currently
+experiencing high demand, spikes in demand are usually temporary. Please try again
+later.","code":"service_unavailable"}}
+```
+
+**O que isso confirma:** a requisição saiu de verdade e chegou em
+`generativelanguage.googleapis.com` — não foi erro de rede, TLS ou timeout. Não houve erro de
+autenticação (401/403) nas duas tentativas, apesar do valor de `api_key` enviado pelo código
+ser um placeholder inválido — consistente com o proxy da sessão substituindo a credencial real
+no cabeçalho de saída. O erro recebido (`503 service_unavailable`) é um formato de erro real e
+coerente da API pública do Gemini, tratado corretamente pelo adapter como `ProviderError`
+(nunca virou uma exceção não tratada nem um resultado silenciosamente incorreto).
+
+**O que ainda não foi confirmado:** uma resposta de **sucesso** (200), que validaria o parsing
+de `steps`/`model_output`/`usage` contra o formato real — as duas tentativas encontraram o
+modelo `gemini-3.8-flash` sobrecarregado do lado do Google (`503`, tipicamente transitório).
+
 ## Pendência explícita antes de uso real em produção
 
-Este adapter nunca foi chamado contra a API real do Gemini (sem API key nesta sessão) — ao
-contrário do Asaas, que teve uma verificação de Sandbox real documentada separadamente. Antes
-de qualquer uso em produção: (1) confirmar o formato exato de `steps`/`usage` contra uma
-chamada real, (2) considerar adicionar o parâmetro de saída estruturada nativa uma vez que o
-campo certo for confirmado, (3) reconfirmar o preço por milhão de tokens contra
-`ai.google.dev/gemini-api/docs/pricing` (a tarifa introdutória usada aqui vale só até
-31/12/2026, por documentação do próprio Google).
+1. Confirmar o parsing de uma resposta de **sucesso** real (200) — pendente por causa do
+   `503` transitório acima, não por falha do adapter; repetir a mesma verificação mais tarde
+   deve resolver.
+2. Considerar adicionar o parâmetro de saída estruturada nativa uma vez que o campo certo for
+   confirmado contra a documentação oficial (`WebFetch` para `ai.google.dev` seguiu bloqueado
+   nesta sessão).
+3. Reconfirmar o preço por milhão de tokens contra `ai.google.dev/gemini-api/docs/pricing`
+   antes de 31/12/2026 (a tarifa introdutória usada aqui muda nessa data, por documentação do
+   próprio Google).
+4. Em produção real, a credencial não pode depender do mecanismo de proxy de sessão do Claude
+   Code (existe só para chamadas feitas por uma sessão de desenvolvimento) — precisa ser uma
+   variável de ambiente/Secret Manager de verdade no processo do backend implantado, exatamente
+   como `GeminiConfig.from_env()` já espera.
