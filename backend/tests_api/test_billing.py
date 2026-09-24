@@ -285,6 +285,51 @@ class AsaasWebhookTests(unittest.TestCase):
         finally:
             self._restore_webhook_token(old)
 
+    def test_excess_requests_from_the_same_origin_are_rate_limited(self) -> None:
+        """Item 1.2 do cronograma mestre: unico endpoint publico sem autenticacao de usuario
+        deste app -- prova que uma origem que excede o limite da janela recebe 429, mesmo com
+        token valido, e que a origem seguinte (nao contada na mesma janela) ainda e atendida.
+        """
+        app, client = self._app_and_client()
+        old = self._set_webhook_token("expected-token")
+        try:
+            app.state.campaia.asaas_webhook_rate_limiter.max_requests = 3
+            headers = {"asaas-access-token": "expected-token"}
+            for i in range(3):
+                r = client.post(
+                    "/webhooks/asaas",
+                    headers=headers,
+                    json={
+                        "id": f"evt_rl_{i}",
+                        "event": "PAYMENT_RECEIVED",
+                        "payment": {"id": "pay_does_not_exist", "status": "RECEIVED"},
+                    },
+                )
+                assert r.status_code == 200, r.text
+
+            over_limit = client.post(
+                "/webhooks/asaas",
+                headers=headers,
+                json={
+                    "id": "evt_rl_over",
+                    "event": "PAYMENT_RECEIVED",
+                    "payment": {"id": "pay_does_not_exist", "status": "RECEIVED"},
+                },
+            )
+            assert over_limit.status_code == 429, over_limit.text
+            assert over_limit.json()["reason"] == "RATE_LIMITED"
+
+            # Ate um token invalido custa o limite -- a defesa vem antes da verificacao de
+            # autenticidade, exatamente porque protege contra volume, nao so contra forja.
+            wrong_token = client.post(
+                "/webhooks/asaas",
+                headers={"asaas-access-token": "wrong-token"},
+                json={"id": "evt_rl_wrong", "event": "x", "payment": {"id": "x", "status": "x"}},
+            )
+            assert wrong_token.status_code == 429, wrong_token.text
+        finally:
+            self._restore_webhook_token(old)
+
 
 if __name__ == "__main__":
     unittest.main()

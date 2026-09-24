@@ -18,7 +18,12 @@ import hmac
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from .webhooks import RejectionReason, WebhookVerdict
+from .webhooks import InMemorySeenEventStore, RejectionReason, SeenEventStoreLike, WebhookVerdict
+
+#: Sentinela de "provider" para SeenEventStoreLike — o Asaas nao manda um campo "provider"
+#: no proprio payload, mas o dedupe injetavel e generico entre provedores, entao precisa de
+#: um valor fixo para namespacear as chaves.
+_PROVIDER = "ASAAS"
 
 
 @dataclass
@@ -27,11 +32,15 @@ class AsaasWebhookReceiver:
 
     `token_resolver` devolve o token configurado a partir do cofre — nunca guardado em
     atributo, nunca logado, mesma disciplina de `WebhookReceiver.secret_resolver`.
+
+    `seen_store` e injetavel (item 1.1 do cronograma mestre, 24/09/2026) — em memoria por
+    padrao, mas pode receber `api.db.PersistentSeenEventStore` para sobreviver a um reinicio
+    de processo entre duas entregas do mesmo evento (o Asaas documenta entrega "pelo menos
+    uma vez").
     """
 
     token_resolver: Callable[[], str | None]
-    #: Ids de evento ja processados. Nunca reprocessa o mesmo `id` duas vezes.
-    _seen: set[str] = field(default_factory=set)
+    seen_store: SeenEventStoreLike = field(default_factory=InMemorySeenEventStore)
     rejections: list[RejectionReason] = field(default_factory=list)
 
     def _reject(self, reason: RejectionReason, detail: str) -> WebhookVerdict:
@@ -51,15 +60,14 @@ class AsaasWebhookReceiver:
             )
         if not event_id:
             return self._reject(RejectionReason.MISSING_FIELDS, "Evento sem id.")
-        if event_id in self._seen:
+        if not self.seen_store.mark_if_new(_PROVIDER, event_id):
             return self._reject(
                 RejectionReason.DUPLICATE, "Evento ja processado; efeito nao repetido."
             )
-        self._seen.add(event_id)
         return WebhookVerdict(True, detail="Aceito.")
 
     def already_seen(self, event_id: str) -> bool:
-        return event_id in self._seen
+        return self.seen_store.contains(_PROVIDER, event_id)
 
 
 @dataclass(frozen=True, slots=True)

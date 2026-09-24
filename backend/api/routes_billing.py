@@ -178,8 +178,18 @@ async def asaas_webhook(request: Request) -> JSONResponse:
     Sempre responde 200 para um token valido, mesmo em duplicata ou payment_id desconhecido
     -- o Asaas reenvia em qualquer resposta que nao seja 2xx, e "ja processado"/"cobranca
     desconhecida" nao sao falhas que justifiquem esse reenvio. So token invalido vira 401.
+
+    Item 1.2 do cronograma mestre (24/09/2026): unico endpoint sem autenticacao de usuario
+    deste app, entao o unico alvo publico de flood de aplicacao -- rate limit por IP de
+    origem, antes de qualquer outra verificacao (nem token invalido deve custar processamento
+    ilimitado). 429 para excedente, sem detalhe de quanto falta (nao ajuda um atacante a
+    calibrar, e o Asaas reenvia notificacoes legitimas de qualquer forma).
     """
     state = get_state(request)
+    client_ip = request.client.host if request.client else ""
+    if not state.asaas_webhook_rate_limiter.allow(client_ip, now=datetime.now(timezone.utc)):
+        return JSONResponse({"accepted": False, "reason": "RATE_LIMITED"}, status_code=429)
+
     received_token = request.headers.get("asaas-access-token")
 
     try:

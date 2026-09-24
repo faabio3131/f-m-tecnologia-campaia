@@ -121,7 +121,7 @@ import importlib
 import json
 import sqlite3
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Callable
 
@@ -520,3 +520,39 @@ class PersistentIdempotencyStore:
             },
         )
         return result, False
+
+
+class PersistentSeenEventStore:
+    """SQLite-backed drop-in for ``campaia_core.webhooks.SeenEventStoreLike``.
+
+    Cronograma mestre, Etapa 1, item 1.1 (24/09/2026): webhook dedupe (``WebhookReceiver``
+    and ``AsaasWebhookReceiver``) was in-memory only, losing the guarantee across a process
+    restart between two deliveries of the same "at-least-once" event -- same category of gap
+    ``PersistentIdempotencyStore`` above already fixes for charge/HTTP idempotency, now for
+    the receiving side. Swapped into ``AppState.asaas_webhook`` only when persistence is
+    enabled, same convention as every other persisted field here.
+
+    Known limitation, same one already accepted by ``PersistentIdempotencyStore`` above: the
+    get-then-put here is not atomic against concurrent callers for the exact same
+    ``(provider, event_id)``. This BFF has no real concurrency story yet (single SQLite
+    connection, no worker pool) -- fixing that is a bigger change than this item's scope.
+    """
+
+    def __init__(self, table: RecordTable) -> None:
+        self._table = table
+
+    @staticmethod
+    def _composite_id(provider: str, event_id: str) -> str:
+        return f"{provider}\x1f{event_id}"
+
+    def mark_if_new(self, provider: str, event_id: str) -> bool:
+        key = self._composite_id(provider, event_id)
+        if self._table.get(key) is not None:
+            return False
+        self._table.put(
+            key, provider, {"provider": provider, "event_id": event_id, "seen_at": datetime.now(timezone.utc)}
+        )
+        return True
+
+    def contains(self, provider: str, event_id: str) -> bool:
+        return self._table.get(self._composite_id(provider, event_id)) is not None
