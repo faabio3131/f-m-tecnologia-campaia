@@ -31,6 +31,25 @@ class MeResponse(BaseModel):
     mfa_enabled: bool
 
 
+# --------------------------------------------------------------------------- auth / sessao (item 1.3/WP-02)
+
+
+class SessionLoginRequest(ApiModel):
+    #: ID token do Google Identity Platform, obtido pelo frontend apos o usuario
+    #: autenticar -- nunca um token opaco de dev/teste (isso e o header Bearer legado).
+    id_token: str
+
+
+class SessionLoginResponse(BaseModel):
+    user_id: str
+    tenant_id: str
+    business_unit_id: str | None
+    roles: list[str]
+    #: Cliente deve devolver este valor no header X-CSRF-Token em toda mutacao
+    #: subsequente (double-submit cookie, ver api/session.py).
+    csrf_token: str
+
+
 # --------------------------------------------------------------------------- brand profiles
 
 
