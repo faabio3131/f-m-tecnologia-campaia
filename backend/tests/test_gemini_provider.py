@@ -141,11 +141,12 @@ class GeminiProviderRequestShapeTests(unittest.TestCase):
         self.assertIn("PLAN_CAMPAIGN", seen["body"]["input"])
         self.assertIn("objetivo", seen["body"]["input"])
 
-    def test_prompt_tells_the_model_the_json_type_of_each_field(self) -> None:
-        """Achado de verificacao real (24/09/2026): sem isto, o Gemini devolveu "canais"
-        como uma frase corrida em vez de array JSON -- o schema real exige `list`, entao a
-        resposta teria sido rejeitada como SCHEMA_INVALID por OutputSchema.validate(). O
-        prompt precisa dizer o TIPO de cada campo, nao so o nome."""
+    def test_request_includes_response_format_with_correct_shape(self) -> None:
+        """Forma confirmada por chamada real contra a API (24/09/2026, ver
+        docs/evidence/EVIDENCIA_GEMINI_PROVIDER_20260924.md): `type: "text"` +
+        `mime_type: "application/json"` + `schema` -- NAO o estilo OpenAI
+        (`type: "json_schema"`) nem `type: "object"` no nivel superior, ambos testados
+        contra a API real e rejeitados/vazios."""
         seen: dict = {}
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -155,14 +156,83 @@ class GeminiProviderRequestShapeTests(unittest.TestCase):
         provider = self._provider(handler)
         provider.generate(_request())
 
-        prompt = seen["body"]["input"]
-        # "canais" e do tipo list em _SCHEMA -- o prompt precisa deixar claro que e um
-        # array JSON, nao uma string com itens separados por virgula.
-        self.assertIn("canais", prompt)
-        self.assertIn("array", prompt)
-        # "objetivo" e do tipo str -- continua pedido como string.
-        self.assertIn("objetivo", prompt)
-        self.assertIn("string", prompt)
+        response_format = seen["body"]["response_format"]
+        self.assertEqual(response_format["type"], "text")
+        self.assertEqual(response_format["mime_type"], "application/json")
+        self.assertEqual(response_format["schema"]["type"], "object")
+        self.assertEqual(sorted(response_format["schema"]["required"]), sorted(_SCHEMA.required))
+
+    def test_response_format_carries_the_json_type_of_each_field(self) -> None:
+        """Achado de verificacao real (24/09/2026): sem imposicao de tipo, o Gemini devolveu
+        "canais" como uma frase corrida em vez de array JSON -- o schema real exige `list`,
+        entao a resposta teria sido rejeitada como SCHEMA_INVALID por OutputSchema.validate().
+        Agora e `response_format.schema.properties`, nao o texto do prompt, quem impoe o
+        tipo de cada campo (saida estruturada nativa e a PRIMEIRA barreira)."""
+        seen: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen["body"] = json.loads(request.read())
+            return httpx.Response(200, json=_interaction_response(_HAPPY_OUTPUT))
+
+        provider = self._provider(handler)
+        provider.generate(_request())
+
+        properties = seen["body"]["response_format"]["schema"]["properties"]
+        # "canais" e do tipo list em _SCHEMA -- precisa virar array JSON com items string.
+        self.assertEqual(properties["canais"], {"type": "array", "items": {"type": "string"}})
+        # "objetivo"/"funil"/"justificativa" sao do tipo str -- continuam string.
+        self.assertEqual(properties["objetivo"], {"type": "string"})
+
+    def test_response_format_maps_bool_int_float_dict_types(self) -> None:
+        schema = OutputSchema(
+            "kitchen-sink",
+            frozenset({"ativo", "quantidade", "peso", "metadados"}),
+            {"ativo": bool, "quantidade": int, "peso": float, "metadados": dict},
+        )
+        seen: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen["body"] = json.loads(request.read())
+            return httpx.Response(
+                200,
+                json=_interaction_response(
+                    {"ativo": True, "quantidade": 1, "peso": 1.5, "metadados": {}}
+                ),
+            )
+
+        provider = GeminiProvider(
+            config=_config(),
+            schemas={"kitchen-sink": schema},
+            transport=httpx.MockTransport(handler),
+        )
+        provider.generate(_request(output_schema_id="kitchen-sink"))
+
+        properties = seen["body"]["response_format"]["schema"]["properties"]
+        self.assertEqual(properties["ativo"], {"type": "boolean"})
+        self.assertEqual(properties["quantidade"], {"type": "integer"})
+        self.assertEqual(properties["peso"], {"type": "number"})
+        self.assertEqual(properties["metadados"], {"type": "object"})
+
+    def test_unknown_python_type_in_schema_fails_before_any_network_call(self) -> None:
+        class TipoNaoMapeado:
+            pass
+
+        schema = OutputSchema(
+            "schema-com-tipo-desconhecido",
+            frozenset({"campo_esquisito"}),
+            {"campo_esquisito": TipoNaoMapeado},
+        )
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise AssertionError("nao deveria chamar a rede com um tipo nao mapeavel")
+
+        provider = GeminiProvider(
+            config=_config(),
+            schemas={"schema-com-tipo-desconhecido": schema},
+            transport=httpx.MockTransport(handler),
+        )
+        with self.assertRaises(ProviderError):
+            provider.generate(_request(output_schema_id="schema-com-tipo-desconhecido"))
 
     def test_happy_path_parses_output_and_computes_cost(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:

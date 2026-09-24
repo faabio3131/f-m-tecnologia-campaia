@@ -209,8 +209,105 @@ duplicada, isolando o parâmetro), não como bloqueio da Etapa 1.
 | exp. 1 | gemini-3.5-flash-lite | 400 — `response_format` existe, mas `type: "json_schema"` não é aceito |
 | exp. 2-3 | gemini-3.5-flash-lite | 200 com `response_format.type: "object"`, mas saída vazia — não adotado |
 
-**Conclusão geral:** a integração está funcional e correta no que mais importa — autentica,
-formata a requisição certa, processa toda a variedade de erros reais encontrados (503, 429,
-400) como `ProviderError`, e o fail-closed nunca deixou passar uma saída malformada em nenhuma
-das 6 tentativas. A confiabilidade de o modelo acertar o tipo de cada campo de primeira ainda
-não é 100%, é uma melhoria de qualidade a perseguir depois, não um bloqueador desta etapa.
+**Conclusão geral (histórico, superada pela seção seguinte):** a integração estava funcional e
+correta no que mais importava — autentica, formata a requisição certa, processa toda a
+variedade de erros reais encontrados (503, 429, 400) como `ProviderError`, e o fail-closed
+nunca deixou passar uma saída malformada em nenhuma das 6 tentativas. A confiabilidade de o
+modelo acertar o tipo de cada campo de primeira ainda não era 100% — foi resolvida pela saída
+estruturada nativa, registrada abaixo.
+
+## Correção definitiva — saída estruturada nativa implementada (mesmo dia, sessão
+`session_01BLt2GfDQr8w6czS56PpTqD`, HEAD `66fb207` → commits desta sessão)
+
+**FATO CONFIRMADO — causa do experimento anterior (seção "não adotado" acima) identificada:**
+o formato testado antes (`response_format: {"type": "object", "schema": {...}}`) estava
+**errado** porque colocava `"type": "object"` no **nível superior** de `response_format` — o
+`"object"` pertence ao **JSON Schema**, não ao nível superior do campo. Por isso a API aceitava
+sintaticamente (200) mas devolvia saída vazia (`{ }`, 4 tokens de saída, reproduzido de forma
+idêntica mesmo trocando o conteúdo do prompt — o que isolou a causa como a forma do
+`response_format`, não o prompt).
+
+**FATO CONFIRMADO — forma correta, testada isoladamente antes de qualquer alteração de
+código de produto (fora do `GeminiProvider`, script isolado, 1 chamada):**
+
+```json
+{
+  "model": "gemini-3.5-flash-lite",
+  "input": "<prompt>",
+  "store": false,
+  "response_format": {
+    "type": "text",
+    "mime_type": "application/json",
+    "schema": {
+      "type": "object",
+      "properties": { "...": "..." },
+      "required": ["objetivo", "funil", "canais", "justificativa"]
+    }
+  }
+}
+```
+
+- HTTP `200`.
+- `model_output` não vazio, JSON real.
+- `"canais"` veio como **array JSON de verdade**: `["Instagram", "Facebook Ads", "Google
+  Search"]`.
+- Todos os 4 campos obrigatórios presentes.
+
+**Implementação no `GeminiProvider` (`campaia_core/gemini_provider.py`):**
+
+- `_json_schema_property(schema, campo)`: traduz o tipo Python de cada campo do
+  `OutputSchema` (`schema.types`) para JSON Schema — `str→string`, `list→array` (com
+  `items: {"type": "string"}`, único caso de lista textual no catálogo atual), `bool→boolean`,
+  `int→integer`, `float→number`, `dict→object`. Tipo Python sem tradução conhecida **nunca é
+  adivinhado** — levanta `ProviderError` antes de qualquer chamada de rede (fail-closed).
+- `_build_response_format(schema)`: monta `{"type": "text", "mime_type": "application/json",
+  "schema": {"type": "object", "properties": ..., "required": sorted(schema.required)}}` a
+  partir de **qualquer** `OutputSchema` registrado — não hardcoda `campaign-plan`, funciona
+  para qualquer schema do catálogo de agentes.
+- `generate()`: chama `_build_response_format(schema)` **antes** de `_build_prompt()` e antes
+  de qualquer requisição de rede (um tipo não mapeável aborta aqui, sem gastar chamada real);
+  inclui `response_format` no corpo da requisição.
+- `_build_prompt()` simplificado: a instrução de TIPO por campo (`_JSON_TYPE_HINTS`/
+  `_field_type_hint`, do PR #25) foi **removida** — a estrutura agora é imposta pelo
+  `response_format`, não pelo texto. O prompt mantém a semântica da tarefa (contexto, nomes
+  dos campos a preencher, instrução de honestidade quando falta dado).
+- `OutputSchema.validate()` em `AIGateway.execute()` **não foi removida** — continua sendo a
+  segunda barreira, exatamente como antes. Todos os comportamentos de fail-closed preexistentes
+  (JSON inválido, tipo incorreto, campo ausente, schema desconhecido, timeout, 429, 5xx,
+  moderação, `usage` ausente, credencial ausente) foram preservados e continuam cobertos por
+  teste.
+
+**Teste de integração real pós-implementação (usando o próprio `GeminiProvider` atualizado,
+não um script à parte), 3 chamadas reais com `model="gemini-3.5-flash-lite"`:**
+
+| # | HTTP | `canais` | `OutputSchema.validate()` |
+|---|---|---|---|
+| 1 | 200 | `["Instagram", "Facebook"]` | OK |
+| 2 | 200 | `["Instagram", "Facebook Ads", "YouTube"]` | OK |
+| 3 | 200 | `["Instagram", "Facebook Ads"]` | OK |
+
+3 de 3 — `canais` veio como `list` real nas três chamadas (antes da correção: 1 de 2 chamadas
+de sucesso vinha como string). `cost_units` calculado normalmente em todas (`0.000658`,
+`0.000595`, `0.000636`), `model` retornado corretamente em todas.
+
+**Testes automatizados** (`tests/test_gemini_provider.py`, nunca chamada de rede real —
+`httpx.MockTransport`): 4 testes novos/reescritos —
+`test_request_includes_response_format_with_correct_shape`,
+`test_response_format_carries_the_json_type_of_each_field` (substitui
+`test_prompt_tells_the_model_the_json_type_of_each_field`, cuja premissa — tipo garantido pelo
+texto do prompt — não existe mais),
+`test_response_format_maps_bool_int_float_dict_types`,
+`test_unknown_python_type_in_schema_fails_before_any_network_call`. Total do módulo: 17 testes
+(14 anteriores − 1 substituído + 4 novos = 17), todos verdes — confirmado rodando
+`python3 -m unittest tests.test_gemini_provider -v`.
+
+**Suítes completas neste HEAD:** `python3 -m unittest discover -s tests` → **360 testes, OK**;
+`python3 -m unittest discover -s tests_api -t .` → **107 testes, OK**. Nenhuma regressão.
+
+**Nenhuma credencial foi registrada** neste documento ou em qualquer commit — os testes de
+integração real usaram o mecanismo de injeção de credencial do proxy da sessão (placeholder
+`"proxy-injetado"` no código, nunca a chave real, que nunca aparece como variável de ambiente
+de processo nesta sandbox). Ver pendência nº 3 abaixo sobre produção.
+
+**Pendência nº 1 da seção anterior está resolvida** — a saída estruturada nativa foi isolada,
+implementada e validada com 3/3 chamadas reais de sucesso.

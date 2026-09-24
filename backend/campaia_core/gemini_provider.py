@@ -13,16 +13,15 @@ deliberadamente: cada chamada deste gateway e uma requisicao isolada (um agente 
 turno de conversa), e nao ha motivo para o Google reter historico do lado dele — mesma
 disciplina de minimizacao de dado ja aplicada por `sanitizer.py`.
 
-IMPORTANTE — o que NAO foi confirmado por chamada real (mesma situacao do Asaas antes da sua
-propria verificacao de sandbox, ver `docs/evidence/VERIFICACAO_REAL_ASAAS_SANDBOX_20260924.md`):
-o parametro exato de saida estruturada nativa (`response_format`/`json_schema`) tem
-divergencia entre fontes secundarias sobre o nome exato do campo. Por isso este adaptador
-NAO aposta nesse parametro — em vez disso, instrui o modelo por prompt a responder só com
-JSON valido contendo exatamente os campos exigidos, e deixa a validacao de schema (que ja
-existe e e obrigatoria em `AIGateway.execute` via `OutputSchema.validate`) rejeitar qualquer
-saida fora do contrato, exatamente como aconteceria com qualquer outro provedor. Adicionar o
-parametro nativo de saida estruturada fica registrado como melhoria futura, a fazer só depois
-de confirmar o campo certo contra uma chamada real (mesmo padrao do Asaas).
+Saida estruturada nativa (`response_format`) confirmada por chamada real em 24/09/2026 (ver
+docs/evidence/EVIDENCIA_GEMINI_PROVIDER_20260924.md): a forma correta na Interactions API e
+`{"type": "text", "mime_type": "application/json", "schema": <JSON Schema>}` — NAO o formato
+estilo OpenAI (`type: "json_schema"`) nem `type: "object"` no nivel superior de
+`response_format`; ambos foram testados contra a API real e rejeitados (400) ou devolveram
+saida vazia. `_build_response_format` traduz o `OutputSchema` (contrato interno) para essa
+forma. Isso e a PRIMEIRA barreira contra saida fora do contrato — `OutputSchema.validate()`
+em `AIGateway.execute` continua sendo a SEGUNDA barreira e nao foi removida; a API externa
+nao substitui a validacao de dominio do CampaIA.
 """
 
 from __future__ import annotations
@@ -85,48 +84,76 @@ class GeminiConfig:
         )
 
 
-#: Achado de verificacao real contra a API (24/09/2026, sessao irmã, ver
-#: docs/evidence/EVIDENCIA_GEMINI_PROVIDER_20260924.md): sem instrucao de TIPO por campo, o
-#: Gemini devolveu "canais" como uma frase corrida em vez de um array JSON — o schema real do
-#: agente "strategist" (`agents.py`) exige `list`, entao essa saida teria sido rejeitada como
-#: SCHEMA_INVALID por `OutputSchema.validate()`. So pedir os NOMES dos campos nao basta; o
-#: prompt precisa dizer que tipo de valor JSON cada campo exige.
-_JSON_TYPE_HINTS: dict[type, str] = {
+#: Mapeamento deterministico de tipo Python (`OutputSchema.types`) para o nome de tipo do
+#: JSON Schema exigido por `response_format`. `list` nao entra aqui — tratado a parte em
+#: `_json_schema_property` porque JSON Schema exige um `items` junto do `type: "array"`, nao
+#: so o nome do tipo.
+_JSON_SCHEMA_TYPE_NAMES: dict[type, str] = {
     str: "string",
-    list: "array de strings (JSON array, nunca uma frase com itens separados por virgula)",
-    bool: "boolean (true ou false)",
-    int: "number (inteiro)",
+    bool: "boolean",
+    int: "integer",
     float: "number",
     dict: "object",
 }
 
 
-def _field_type_hint(schema: OutputSchema, field: str) -> str:
-    tipo = schema.types.get(field)
-    return _JSON_TYPE_HINTS.get(tipo, "string") if tipo is not None else "string"
+def _json_schema_property(schema: OutputSchema, campo: str) -> dict:
+    """Traduz o tipo Python de um campo do `OutputSchema` para JSON Schema.
+
+    Fail-closed: um tipo Python sem tradução conhecida nunca e adivinhado -- vira
+    `ProviderError` antes de qualquer chamada de rede (ver `_build_response_format`).
+    """
+    tipo = schema.types.get(campo)
+    if tipo is None:
+        return {"type": "string"}
+    if tipo is list:
+        # Todos os campos `list` do catalogo atual (`agents.py`) representam lista textual
+        # (ex.: "canais") -- nao ha, hoje, contrato de lista de outro tipo primitivo.
+        return {"type": "array", "items": {"type": "string"}}
+    nome = _JSON_SCHEMA_TYPE_NAMES.get(tipo)
+    if nome is None:
+        raise ProviderError(
+            f"GeminiProvider nao sabe converter o tipo Python '{tipo.__name__}' do campo "
+            f"'{campo}' para JSON Schema -- fail-closed: nao adivinha o tipo. Adicione a "
+            f"traducao em _JSON_SCHEMA_TYPE_NAMES antes de registrar esse schema."
+        )
+    return {"type": nome}
+
+
+def _build_response_format(schema: OutputSchema) -> dict:
+    """Traduz o `OutputSchema` (contrato interno, generico para qualquer agente) para o
+    `response_format` nativo da Interactions API do Gemini -- forma confirmada por chamada
+    real (ver nota do modulo): `{"type": "text", "mime_type": "application/json", "schema":
+    <JSON Schema>}`. Chamado antes de qualquer requisicao de rede -- um tipo nao mapeavel
+    aborta aqui, fail-closed, sem gastar uma chamada real.
+    """
+    properties = {
+        campo: _json_schema_property(schema, campo) for campo in sorted(schema.required)
+    }
+    return {
+        "type": "text",
+        "mime_type": "application/json",
+        "schema": {
+            "type": "object",
+            "properties": properties,
+            "required": sorted(schema.required),
+        },
+    }
 
 
 def _build_prompt(request: AIRequest, schema: OutputSchema) -> str:
-    """Monta o prompt a partir do contexto do agente e do contrato de saida exigido.
+    """Monta o prompt a partir do contexto do agente e da tarefa.
 
-    Instrucao explicita de "responda so com JSON", com o TIPO exigido de cada campo (nao so o
-    nome) e a defesa real aqui — o parametro nativo de saida estruturada da API (ver nota do
-    modulo) fica para quando o campo exato for confirmado; ate lá, a validacao de
-    `OutputSchema` em `AIGateway.execute` e quem garante que uma saida fora do contrato nunca
-    passa adiante.
+    A ESTRUTURA da saida (JSON, campos, tipos) e imposta por `response_format`
+    (`_build_response_format`), nao pelo texto do prompt -- o prompt so precisa da
+    SEMANTICA da tarefa: o que preencher e a instrucao de honestidade quando falta dado.
     """
-    campos = "; ".join(
-        f'"{campo}" ({_field_type_hint(schema, campo)})' for campo in sorted(schema.required)
-    )
+    campos = ", ".join(sorted(schema.required))
     contexto = json.dumps(request.input, ensure_ascii=False, sort_keys=True)
     return (
         f"Tarefa: {request.task.value}.\n"
         f"Contexto (JSON): {contexto}\n\n"
-        f"Responda SOMENTE com um objeto JSON valido, sem texto antes ou depois, sem bloco "
-        f"de codigo markdown, contendo exatamente estes campos obrigatorios, cada um com o "
-        f"TIPO de valor JSON indicado (respeite o tipo exatamente — um campo do tipo array "
-        f"deve ser um array JSON de verdade, nunca uma frase com itens separados por virgula "
-        f"dentro de uma string): {campos}. "
+        f"Preencha os campos {campos} de acordo com o contexto acima. "
         f"Se algum dado necessario nao estiver no contexto, não invente valores plausiveis — "
         f"registre a ausência de forma honesta dentro do proprio campo de texto correspondente."
     )
@@ -229,6 +256,9 @@ class GeminiProvider:
                 f"registrado — nao sabe que JSON pedir ao modelo."
             )
 
+        # Fail-closed antes da rede: um tipo Python nao mapeavel para JSON Schema aborta
+        # aqui, nunca depois de gastar uma chamada real.
+        response_format = _build_response_format(schema)
         prompt = _build_prompt(request, schema)
 
         # `response.elapsed` depende de instrumentacao de rede real que o `httpx.MockTransport`
@@ -238,7 +268,12 @@ class GeminiProvider:
         try:
             response = self._client.post(
                 "/interactions",
-                json={"model": self.config.model, "input": prompt, "store": False},
+                json={
+                    "model": self.config.model,
+                    "input": prompt,
+                    "store": False,
+                    "response_format": response_format,
+                },
             )
         except httpx.TimeoutException as exc:
             raise ProviderTimeout(f"{self.name}: tempo esgotado.") from exc
