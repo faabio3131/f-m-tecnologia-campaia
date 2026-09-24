@@ -69,6 +69,25 @@ def _map_status(asaas_status: str) -> GatewayChargeStatus:
     return GatewayChargeStatus.PENDING
 
 
+def _error_summary(response: httpx.Response) -> str:
+    """Extrai so `code`+`description` do corpo de erro do Asaas — nunca o corpo bruto.
+
+    Achado de fm-security-review (24/09/2026): o corpo de um erro de validacao pode ecoar de
+    volta um campo submetido (ex.: `cpfCnpj`, PII) dentro da mensagem. Logar/propagar o corpo
+    inteiro arrisca vazar isso em `PaymentGatewayError.details`, que scripts como
+    `asaas_smoke_test.py` imprimem para diagnostico. Extrair so os campos estruturados de
+    erro reduz — sem eliminar por completo — esse risco, mantendo o diagnostico util.
+    """
+    try:
+        data = response.json()
+        errors = data.get("errors", [])
+        return "; ".join(
+            f"{e.get('code', '?')}: {e.get('description', '?')}" for e in errors
+        ) or "(corpo de erro sem campo 'errors' reconhecivel)"
+    except (ValueError, AttributeError):
+        return "(corpo de erro nao pode ser interpretado como JSON)"
+
+
 def _raise_for_response(response: httpx.Response) -> None:
     if response.status_code in (401, 403):
         raise PaymentGatewayError(
@@ -81,7 +100,7 @@ def _raise_for_response(response: httpx.Response) -> None:
             PaymentGatewayErrorCode.VALIDATION_REJECTED,
             "Asaas rejeitou a requisicao.",
             status_code=response.status_code,
-            body=response.text,
+            error_summary=_error_summary(response),
         )
     if response.status_code == 429:
         raise PaymentGatewayError(
@@ -96,7 +115,7 @@ def _raise_for_response(response: httpx.Response) -> None:
             PaymentGatewayErrorCode.UNKNOWN,
             "Erro nao mapeado do Asaas.",
             status_code=response.status_code,
-            body=response.text,
+            error_summary=_error_summary(response),
         )
 
 
@@ -110,7 +129,11 @@ class AsaasConfig:
     pagamento formal), nunca um numero fixo dentro de `create_charge`.
     """
 
-    api_key: str | None
+    #: `repr=False` — achado de fm-security-review (24/09/2026): o repr padrao de dataclass
+    #: expunha a chave em claro (`print(config)`, log de excecao, traceback capturado por
+    #: depurador). Mesma disciplina de `SecretRef` (`connectors.py`), que redige por tipo,
+    #: nao por disciplina de quem escreve o log.
+    api_key: str | None = field(repr=False)
     mode: GatewayMode
     account_handle: str
     due_in_days: int
