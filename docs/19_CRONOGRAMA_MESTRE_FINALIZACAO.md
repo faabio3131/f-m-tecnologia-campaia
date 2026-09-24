@@ -42,15 +42,15 @@ produção quando o CNPJ sair).
 
 | # | Item | Tipo | Pendência |
 |---|---|---|---|
-| 1.1 | Dedupe do webhook do Asaas persistido (não só em memória) | TARGET | Nenhuma — engenharia pura |
-| 1.2 | Rate limiting no endpoint público `/webhooks/asaas` | TARGET | Nenhuma |
-| 1.3 | Autenticação real da API (hoje é token fixo de dev) — substituir por sessão real, alinhado ao provedor OAuth/OIDC já aprovado na ADR-0018 para o Web | TARGET | Decisão: qual provedor de identidade gerenciado (ex.: Auth0, Google Identity Platform, Clerk) — ADR-0018 aprovou o *padrão*, não o provedor específico |
+| 1.1 | Dedupe do webhook do Asaas persistido (não só em memória) | **CONCLUÍDO (24/09/2026, PR #17)** | — |
+| 1.2 | Rate limiting no endpoint público `/webhooks/asaas` | **CONCLUÍDO (24/09/2026, PR #17)** | — |
+| 1.3 | Autenticação real da API (hoje é token fixo de dev) — substituir por sessão real, alinhado ao provedor OAuth/OIDC já aprovado na ADR-0018 para o Web | TARGET | Decisão pendente: qual provedor de identidade gerenciado (ex.: Auth0, Google Identity Platform, Clerk) — Diretor optou por pesquisar/comparar antes de decidir (24/09/2026) |
 | 1.4 | Gestão de segredos real (Secret Manager do Google Cloud, já na direção de D-08/ADR-0019) — hoje tudo é variável de ambiente solta | TARGET | Nenhuma, depende só da infraestrutura provisionada (1.6) |
-| 1.5 | Tabela real de preços dos planos | DECISÃO PENDENTE | Você define valores (franquia, créditos incluídos, preço do crédito extra) |
-| 1.6 | Provisionamento real da infraestrutura (Cloud SQL, Secret Manager, Pub/Sub — D-08/ADR-0019) | TARGET | Autorização para contratar/configurar nuvem (ainda não dada — ADR-0019 diz "não contratar nesta missão") |
-| 1.7 | Conta Asaas de produção + troca de `ASAAS_MODE=SANDBOX` para `PRODUCTION` | DECISÃO PENDENTE | CNPJ da F&M (em andamento com sua contabilidade) |
-| 1.8 | `fm-certify-change` formal sobre todo o backend, HEAD único | TARGET | Nenhuma |
-| 1.9 | `fm-security-review` formal de ponta a ponta (não só nos módulos de billing) | TARGET | Nenhuma |
+| 1.5 | Tabela real de preços dos planos | **DECIDIDO (24/09/2026)** — ver nota | 4 planos (Essencial/Impulso/Performance/Escala) definidos com estrutura completa; provedor de IA generativa decidido em ADR-0021 (Google Gemini 3.8 Flash). Catálogo real vive fora do repositório (`CAMPAIA_PLAN_CATALOG_PATH`), nunca committado, conforme `plan_catalog.py`. Sujeito a ajuste após validação/testes reais de custo, por decisão explícita do Diretor |
+| 1.6 | Provisionamento real da infraestrutura (Cloud SQL, Secret Manager, Pub/Sub — D-08/ADR-0019) | TARGET | Diretor optou por NÃO autorizar ainda (24/09/2026) — revisitar quando a Etapa 1 estiver mais avançada |
+| 1.7 | Conta Asaas de produção + troca de `ASAAS_MODE=SANDBOX` para `PRODUCTION` | DECISÃO PENDENTE | CNPJ da F&M ainda não saiu (confirmado 24/09/2026) — permanece em Sandbox |
+| 1.8 | `fm-certify-change` formal sobre todo o backend, HEAD único | **CONCLUÍDO (24/09/2026)** — CERTIFICADO COM PENDÊNCIAS NÃO BLOQUEANTES | Ver `docs/evidence/FM_CERTIFY_CHANGE_ETAPA1_1.1_1.2_1.8_1.9_20260924.md` |
+| 1.9 | `fm-security-review` formal de ponta a ponta (não só nos módulos de billing) | **CONCLUÍDO (24/09/2026, PR #18)** | Achado de escopo de unidade de negócio corrigido e testado; ver `docs/evidence/FM_SECURITY_REVIEW_BACKEND_FULL_20260924.md` |
 
 **Critério de saída da Etapa 1:** backend com autenticação real, segredos geridos, 100% dos
 achados de segurança conhecidos corrigidos ou formalmente aceitos, `fm-certify-change` com
