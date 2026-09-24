@@ -31,10 +31,14 @@ def main() -> int:
     print(f"Cliente HTTP construido com sucesso para o provider {gateway.provider}.")
 
     smoke_id = uuid.uuid4().hex[:12]
+    # CPF de teste classico, publicamente documentado como exemplo em tutoriais brasileiros
+    # (111.444.777-35) — matematicamente valido (checksum conferido), nao pertence a pessoa
+    # real. Usado so para exercitar a validacao de cpfCnpj do Asaas neste smoke test.
     command = ChargeCommand(
         tenant_id="smoke-test",
         billing_id=f"smoke:{smoke_id}",
         customer_ref=f"smoke-customer-{smoke_id}",
+        customer_document="11144477735",
         amount=Decimal("1.00"),
         currency="BRL",
         competence="SMOKE-TEST",
@@ -45,6 +49,8 @@ def main() -> int:
         result = gateway.create_charge(command)
     except PaymentGatewayError as exc:
         print(f"FALHOU ao criar cobranca de teste: {exc.gateway_code.value} — {exc.message}")
+        if exc.details:
+            print(f"Detalhe devolvido pelo Asaas: {exc.details}")
         return 1
 
     print(f"Cobranca de teste criada: id={result.gateway_charge_id} status={result.status.value}")

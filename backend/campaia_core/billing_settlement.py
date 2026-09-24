@@ -32,6 +32,7 @@ def charge_subscription(
         tenant_id=charge.tenant_id,
         billing_id=charge.billing_id,
         customer_ref=charge.customer_ref,
+        customer_document=charge.customer_document,
         amount=charge.amount,
         currency=charge.currency,
         competence=charge.competence,

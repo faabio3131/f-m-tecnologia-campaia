@@ -64,8 +64,16 @@ class PlanDefinition:
 class Subscription:
     tenant_id: str
     customer_ref: str
+    #: CPF ou CNPJ do cliente. Obrigatorio: qualquer gateway de pagamento brasileiro real
+    #: (Asaas confirmado; provavelmente qualquer outro no mercado BR) exige identificar o
+    #: contribuinte para criar uma cobranca — nao e um dado opcional nem aproximavel.
+    customer_document: str
     plan: PlanDefinition
     status: SubscriptionStatus = SubscriptionStatus.ACTIVE
+
+    def __post_init__(self) -> None:
+        if not self.customer_document.strip():
+            raise ValueError("customer_document (CPF/CNPJ) e obrigatorio.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +89,7 @@ class SubscriptionCharge:
     billing_id: str
     tenant_id: str
     customer_ref: str
+    customer_document: str
     competence: str
     currency: str
     line_items: tuple[ChargeLineItem, ...]
@@ -130,6 +139,7 @@ def compute_cycle_charge(
         billing_id=billing_id,
         tenant_id=subscription.tenant_id,
         customer_ref=subscription.customer_ref,
+        customer_document=subscription.customer_document,
         competence=competence,
         currency=plan.currency,
         line_items=tuple(line_items),

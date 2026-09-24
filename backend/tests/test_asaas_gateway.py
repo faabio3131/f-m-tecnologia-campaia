@@ -31,6 +31,7 @@ def _command(idempotency_key: str = "idem-1") -> ChargeCommand:
         tenant_id="tenant-1",
         billing_id="sub:tenant-1:2026-09",
         customer_ref="customer-1",
+        customer_document="11144477735",
         amount=Decimal("199.90"),
         currency="BRL",
         competence="2026-09",
@@ -110,6 +111,10 @@ class AsaasGatewayRequestShapeTests(unittest.TestCase):
             if request.method == "GET" and request.url.path.endswith("/customers"):
                 return httpx.Response(200, json={"data": []})
             if request.method == "POST" and request.url.path.endswith("/customers"):
+                import json
+
+                customer_payload = json.loads(request.read())
+                self.assertEqual(customer_payload["cpfCnpj"], "11144477735")
                 return httpx.Response(200, json={"id": "cus_new"})
             if request.method == "POST" and request.url.path.endswith("/payments"):
                 body = request.read()

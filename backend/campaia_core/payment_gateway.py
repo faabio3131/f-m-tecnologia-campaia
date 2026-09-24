@@ -72,6 +72,10 @@ class ChargeCommand:
     tenant_id: str
     billing_id: str
     customer_ref: str
+    #: CPF ou CNPJ do cliente cobrado. Obrigatorio no contrato (nao especifico do Asaas):
+    #: qualquer emissao fiscal brasileira real exige identificar o contribuinte, e o
+    #: adaptador de gateway nao inventa nem aproxima este dado.
+    customer_document: str
     amount: Decimal
     currency: str
     competence: str
@@ -95,6 +99,10 @@ def require_idempotency(command: ChargeCommand) -> None:
     if not command.idempotency_key:
         raise PaymentGatewayError(
             PaymentGatewayErrorCode.VALIDATION_REJECTED, "Cobranca sem idempotency_key."
+        )
+    if not command.customer_document:
+        raise PaymentGatewayError(
+            PaymentGatewayErrorCode.VALIDATION_REJECTED, "Cobranca sem customer_document."
         )
     if command.amount <= 0:
         raise PaymentGatewayError(

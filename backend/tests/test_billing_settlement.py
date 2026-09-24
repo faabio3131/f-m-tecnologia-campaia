@@ -20,7 +20,10 @@ class BillingSettlementTests(unittest.TestCase):
             extra_credit_unit_price=Decimal("1.50"),
         )
         self.subscription = Subscription(
-            tenant_id="tenant-1", customer_ref="customer-1", plan=plan
+            tenant_id="tenant-1",
+            customer_ref="customer-1",
+            customer_document="11144477735",
+            plan=plan,
         )
         self.gateway = PaymentGatewaySimulator()
 

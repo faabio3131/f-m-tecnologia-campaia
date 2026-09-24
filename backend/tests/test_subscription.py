@@ -25,6 +25,7 @@ class SubscriptionChargeTests(unittest.TestCase):
         return Subscription(
             tenant_id="tenant-1",
             customer_ref="customer-1",
+            customer_document="11144477735",
             plan=self.plan(),
             status=status,
         )
@@ -77,6 +78,15 @@ class SubscriptionChargeTests(unittest.TestCase):
                 monthly_price=Decimal("0"),
                 included_credits=Decimal("10"),
                 extra_credit_unit_price=Decimal("1"),
+            )
+
+    def test_subscription_rejects_blank_customer_document(self) -> None:
+        with self.assertRaises(ValueError):
+            Subscription(
+                tenant_id="tenant-1",
+                customer_ref="customer-1",
+                customer_document="  ",
+                plan=self.plan(),
             )
 
     def test_plan_definition_rejects_non_brl_currency(self) -> None:

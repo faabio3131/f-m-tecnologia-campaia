@@ -174,7 +174,7 @@ class AsaasGateway:
         if key in self._created:
             return self._created[key]  # retry nao duplica cobranca real no Asaas
 
-        customer_id = self._ensure_customer(command.customer_ref)
+        customer_id = self._ensure_customer(command.customer_ref, command.customer_document)
         due_date = date.today() + timedelta(days=self.config.due_in_days)
         response = self._client.post(
             "/payments",
@@ -206,9 +206,11 @@ class AsaasGateway:
 
     # ------------------------------------------------------------------ apoio
 
-    def _ensure_customer(self, customer_ref: str) -> str:
+    def _ensure_customer(self, customer_ref: str, customer_document: str) -> str:
         """Busca o cliente pelo `externalReference` antes de criar — nunca duplica cliente
-        no Asaas a cada cobranca do mesmo tenant."""
+        no Asaas a cada cobranca do mesmo tenant. `cpfCnpj` e exigido pela API do Asaas
+        (confirmado em docs.asaas.com/reference/create-new-customer, 24/09/2026) — sem ele
+        a criacao de cliente e recusada com VALIDATION_REJECTED."""
         response = self._client.get("/customers", params={"externalReference": customer_ref})
         _raise_for_response(response)
         existing = response.json().get("data", [])
@@ -217,7 +219,11 @@ class AsaasGateway:
 
         response = self._client.post(
             "/customers",
-            json={"name": customer_ref, "externalReference": customer_ref},
+            json={
+                "name": customer_ref,
+                "cpfCnpj": customer_document,
+                "externalReference": customer_ref,
+            },
         )
         _raise_for_response(response)
         return response.json()["id"]

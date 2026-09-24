@@ -18,6 +18,7 @@ class PaymentGatewaySimulatorTests(unittest.TestCase):
             tenant_id="tenant-1",
             billing_id="sub:tenant-1:2026-09",
             customer_ref="customer-1",
+            customer_document="11144477735",
             amount=Decimal("199.90"),
             currency="BRL",
             competence="2026-09",
@@ -80,6 +81,7 @@ class PaymentGatewaySimulatorTests(unittest.TestCase):
             tenant_id="tenant-1",
             billing_id="b",
             customer_ref="c",
+            customer_document="11144477735",
             amount=Decimal("10"),
             currency="USD",
             competence="2026-09",
@@ -94,7 +96,23 @@ class PaymentGatewaySimulatorTests(unittest.TestCase):
             tenant_id="tenant-1",
             billing_id="b",
             customer_ref="c",
+            customer_document="11144477735",
             amount=Decimal("0"),
+            currency="BRL",
+            competence="2026-09",
+            idempotency_key="idem-x",
+        )
+        with self.assertRaises(PaymentGatewayError):
+            gateway.create_charge(bad)
+
+    def test_missing_customer_document_is_rejected(self) -> None:
+        gateway = PaymentGatewaySimulator()
+        bad = ChargeCommand(
+            tenant_id="tenant-1",
+            billing_id="b",
+            customer_ref="c",
+            customer_document="",
+            amount=Decimal("10"),
             currency="BRL",
             competence="2026-09",
             idempotency_key="idem-x",
