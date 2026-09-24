@@ -1,8 +1,9 @@
-"""Request-level dependencies: fake bearer auth, step-up, idempotency key extraction.
+"""Request-level dependencies: real session auth, dev bearer fixture, step-up,
+idempotency key extraction.
 
 Invariant #1 from the spec: tenant_id is NEVER accepted from the client. It is derived
-here, from the bearer token only, and nowhere else in the app reads a client-supplied
-tenant_id.
+here, from the authenticated principal only, and nowhere else in the app reads a
+client-supplied tenant_id.
 """
 
 from __future__ import annotations
@@ -14,22 +15,48 @@ from starlette.requests import Request
 from campaia_core.permissions import Principal
 
 from .errors import ApiError
+from .session import CSRF_HEADER_NAME, SESSION_COOKIE_NAME
 from .state import AppState, TokenPrincipal
 
 MIN_IDEMPOTENCY_KEY_LEN = 16
 MAX_IDEMPOTENCY_KEY_LEN = 128
+
+#: Metodos que mutam estado -- exigem CSRF valido quando autenticados via sessao real
+#: (cookie). O fixture de bearer token (dev/teste) nunca passa por aqui: nao usa cookie,
+#: entao nao ha CSRF a verificar nesse caminho (mesma logica de qualquer API sem cookie).
+_MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 
 def get_state(request: Request) -> AppState:
     return request.app.state.campaia
 
 
-def require_auth(request: Request) -> TokenPrincipal:
-    """Resolve the bearer token to a fixture principal. 401 on anything else.
+def _require_auth_via_session(request: Request, state: AppState) -> TokenPrincipal | None:
+    """Caminho real (ADR-0018): sessao server-side via cookie HttpOnly. Devolve None se
+    nao houver cookie (deixa require_auth tentar o fixture de dev/teste); levanta
+    ApiError fail-closed se o cookie EXISTIR mas for invalido/expirado -- um cookie
+    presente e ruim nunca cai silenciosamente para outro mecanismo."""
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if session_id is None:
+        return None
 
-    The token is an opaque local-dev fixture string (e.g. "demo-owner-token"), looked up
-    in an in-memory dict -- never parsed, never treated as a JWT/credential format.
-    """
+    record = state.sessions.get(session_id)
+    now = datetime.now(timezone.utc)
+    if record is None or record.is_expired(now=now):
+        raise ApiError("UNAUTHENTICATED", "Sessao invalida ou expirada.")
+
+    if request.method in _MUTATING_METHODS:
+        presented = request.headers.get(CSRF_HEADER_NAME)
+        if not record.csrf_token_valid(presented):
+            raise ApiError("PERMISSION_DENIED", "Token CSRF ausente ou invalido.")
+
+    return record.principal
+
+
+def _require_auth_via_dev_fixture(request: Request, state: AppState) -> TokenPrincipal:
+    """Fixture de bearer token, SOMENTE para test/dev-local (AppState garante, por
+    construcao, que `state.tokens` fica vazio fora desses ambientes -- ver
+    api/state.py::DEV_AUTH_FIXTURE_ALLOWED_ENVS). Nunca um formato de credencial real."""
     header = request.headers.get("authorization", "")
     if not header.startswith("Bearer "):
         raise ApiError("UNAUTHENTICATED", "Missing or malformed Authorization header.")
@@ -37,11 +64,23 @@ def require_auth(request: Request) -> TokenPrincipal:
     if not token:
         raise ApiError("UNAUTHENTICATED", "Empty bearer token.")
 
-    state = get_state(request)
     principal = state.tokens.get(token)
     if principal is None:
         raise ApiError("UNAUTHENTICATED", "Unknown or expired token.")
     return principal
+
+
+def require_auth(request: Request) -> TokenPrincipal:
+    """Sessao real (cookie) primeiro; fixture de bearer token (test/dev-local) só como
+    fallback quando nao ha cookie de sessao nenhum. 401/403 fail-closed em qualquer outro
+    caso -- nunca um bypass silencioso entre os dois mecanismos."""
+    state = get_state(request)
+
+    principal = _require_auth_via_session(request, state)
+    if principal is not None:
+        return principal
+
+    return _require_auth_via_dev_fixture(request, state)
 
 
 def note_step_up_header(request: Request, fixture: TokenPrincipal) -> None:

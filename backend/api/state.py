@@ -10,6 +10,14 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    # Import tardio evitado em runtime (identity_directory.py/session.py importam
+    # TokenPrincipal deste modulo -- import no topo criaria ciclo); seguro aqui porque
+    # `from __future__ import annotations` faz toda anotacao de tipo ser string.
+    from .identity_directory import IdentityDirectory
+    from .session import SessionStore
 
 from campaia_core.agents import AGENTS, AgentRunner
 from campaia_core.ai_gateway import AIGateway, AIProvider
@@ -17,6 +25,12 @@ from campaia_core.ai_simulator import SimulatedAIProvider
 from campaia_core.asaas_gateway import AsaasConfig, AsaasGateway
 from campaia_core.asaas_webhook import AsaasWebhookReceiver
 from campaia_core.autonomy import AutonomySettings
+from campaia_core.identity_provider import (
+    AlwaysRejectIdTokenVerifier,
+    FirebaseIdentityConfig,
+    FirebaseIdTokenVerifier,
+    IdTokenVerifier,
+)
 from campaia_core.infra import Capability, CapabilityRegistry, IdempotencyStore
 from campaia_core.payment_gateway import PaymentGatewayConnector
 from campaia_core.payment_simulator import PaymentGatewaySimulator
@@ -60,6 +74,16 @@ class TokenPrincipal:
         )
 
 
+#: Item 1.3/WP-02 (24/09/2026): ambientes onde o fixture de bearer token de dev pode
+#: existir. Fora destes, `AppState.__post_init__` recusa a inicializacao -- nunca so
+#: "esconde a opcao" (exigencia literal do WP-02, docs/web/06_ROADMAP_WORK_PACKAGES.md).
+DEV_AUTH_FIXTURE_ALLOWED_ENVS = frozenset({"test", "dev-local"})
+
+
+def _default_env() -> str:
+    return os.environ.get("CAMPAIA_ENV", "production")
+
+
 def _seed_tokens() -> dict[str, TokenPrincipal]:
     """Local dev fixtures only. Never anything resembling a real token format."""
     return {
@@ -101,6 +125,39 @@ def _seed_tokens() -> dict[str, TokenPrincipal]:
             business_unit_id="bu-2",
         ),
     }
+
+
+def _default_id_token_verifier() -> IdTokenVerifier:
+    """Nunca um verificador permissivo por padrao (diferente do simulador de IA/pagamento
+    abaixo) -- aceitar qualquer id_token como valido seria um buraco de autenticacao, nao
+    um estagiario harmless. Real so quando FIREBASE_PROJECT_ID estiver configurado (item
+    1.6 provisionado); ate la, `AlwaysRejectIdTokenVerifier` (nunca autentica ninguem)."""
+    config = FirebaseIdentityConfig.from_env()
+    if config is not None:
+        return FirebaseIdTokenVerifier(config)
+    return AlwaysRejectIdTokenVerifier()
+
+
+def _default_identity_directory(env: str):
+    # Import tardio: identity_directory.py importa TokenPrincipal deste modulo -- import
+    # no topo do arquivo criaria ciclo (mesmo padrao ja usado para gemini_provider abaixo).
+    from .identity_directory import InMemoryIdentityDirectory, seed_dev_identity_directory
+
+    if env in DEV_AUTH_FIXTURE_ALLOWED_ENVS:
+        return seed_dev_identity_directory()
+    return InMemoryIdentityDirectory()
+
+
+def _default_session_store():
+    from .session import InMemorySessionStore
+
+    return InMemorySessionStore()
+
+
+def _default_allowed_origins() -> frozenset[str]:
+    from .session import default_allowed_origins
+
+    return default_allowed_origins()
 
 
 def _default_billing_gateway() -> PaymentGatewayConnector:
@@ -188,7 +245,17 @@ class AppState:
     #: presence a no-op for every pre-existing (persistence-unaware) caller of AppState().
     db_path: str | None = None
 
-    tokens: dict[str, TokenPrincipal] = field(default_factory=_seed_tokens)
+    #: Item 1.3/WP-02 (24/09/2026). "production" (o default quando a variavel de ambiente
+    #: nao esta setada) e o ambiente mais restritivo -- nunca populado com fixture de auth
+    #: por acidente. Passar env="test"/"dev-local" explicitamente (ou setar CAMPAIA_ENV) e
+    #: o UNICO jeito de habilitar o fixture de bearer token abaixo.
+    env: str = field(default_factory=_default_env)
+
+    #: Fixture de bearer token de dev/teste -- vazio por padrao (seguro). So populado
+    #: automaticamente quando `env` esta em DEV_AUTH_FIXTURE_ALLOWED_ENVS (ver
+    #: __post_init__); populado por fora disso em qualquer outro ambiente faz a
+    #: inicializacao recusar (RuntimeError), nunca so ignorar silenciosamente.
+    tokens: dict[str, TokenPrincipal] = field(default_factory=dict)
     # Step-up tokens are accepted at face value in this sandbox (no real re-auth flow) --
     # we still track a per-(tenant,user) "recent step-up" timestamp so that
     # campaia_core.permissions.authorize's STEP_UP_MAX_AGE window is honoured for real
@@ -235,7 +302,40 @@ class AppState:
     ai_provider: AIProvider = field(default_factory=_default_ai_provider)
     agent_runner: AgentRunner = field(init=False)
 
+    #: Item 1.3/WP-02 (24/09/2026): autenticacao real. `id_token_verifier` nunca e
+    #: permissivo por padrao (ver `_default_id_token_verifier`) -- so vira o adaptador
+    #: real do Google Identity Platform quando FIREBASE_PROJECT_ID estiver configurado
+    #: (item 1.6 provisionado). `identity_directory` (None aqui) e resolvido em
+    #: __post_init__ porque seu default depende de `env` -- dataclass default_factory
+    #: nao tem acesso a outros campos. `sessions` fica em memoria nesta etapa (decisao do
+    #: Diretor) -- nao e persistente/homologado para producao por causa disso.
+    id_token_verifier: IdTokenVerifier = field(default_factory=_default_id_token_verifier)
+    identity_directory: "IdentityDirectory | None" = None
+    sessions: "SessionStore" = field(default_factory=_default_session_store)
+    #: Achado de fm-security-review (24/09/2026), corrigido por decisao do Diretor:
+    #: login-CSRF em POST /auth/session. Vazio por padrao -- fail-closed: nenhuma origem
+    #: e aceita enquanto CAMPAIA_ALLOWED_ORIGINS nao estiver configurada. NUNCA um
+    #: wildcard (nem aqui nem em session.parse_allowed_origins).
+    allowed_origins: frozenset[str] = field(default_factory=_default_allowed_origins)
+
     def __post_init__(self) -> None:
+        # Fixture de bearer token de dev/teste: so populado automaticamente quando `env`
+        # permite; populado por qualquer outro meio fora desses ambientes recusa a
+        # inicializacao (fail-closed por construcao -- exigencia literal do WP-02, nunca
+        # so "esconder a opcao").
+        if self.env in DEV_AUTH_FIXTURE_ALLOWED_ENVS and not self.tokens:
+            self.tokens = _seed_tokens()
+        if self.tokens and self.env not in DEV_AUTH_FIXTURE_ALLOWED_ENVS:
+            raise RuntimeError(
+                f"AppState.tokens (fixture de autenticacao de teste) nao pode estar "
+                f"populado fora de {sorted(DEV_AUTH_FIXTURE_ALLOWED_ENVS)} -- env atual: "
+                f"{self.env!r}. Isto e fail-closed por construcao (item 1.3/WP-02): o "
+                f"fixture de auth nunca pode ficar disponivel em preview/staging/produção, "
+                f"mesmo por engano de configuracao."
+            )
+        if self.identity_directory is None:
+            self.identity_directory = _default_identity_directory(self.env)
+
         #: Handle to the open SQLite connection when db_path is set, else None. Not a
         #: dataclass field (nothing outside this method needs to construct one) -- kept
         #: only so callers that DO want to close it explicitly (see tests_api's

@@ -65,7 +65,7 @@ class PersistenceTestCase(unittest.TestCase):
 
     def new_client(self) -> TestClient:
         """A fresh app/state instance pointed at this test's db file."""
-        return TestClient(create_app(db_path=self.db_path))
+        return TestClient(create_app(db_path=self.db_path, env="test"))
 
     def teardown_client(self, client: TestClient) -> None:
         """Drop every reference to the client/app/state so they are actually garbage
@@ -478,8 +478,8 @@ class TestEphemeralModeUnaffected(unittest.TestCase):
     """
 
     def test_default_app_instances_do_not_share_state(self) -> None:
-        c1 = TestClient(create_app())
-        c2 = TestClient(create_app())
+        c1 = TestClient(create_app(env="test"))
+        c2 = TestClient(create_app(env="test"))
 
         r = c1.post(
             "/brand-profiles",
