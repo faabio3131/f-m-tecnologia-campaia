@@ -56,9 +56,23 @@ def _authorize(request: Request, permission: Permission, *, amount: Decimal | No
     return fixture, state, principal
 
 
-def _get_campaign_or_404(state, tenant_id: str, campaign_id: str):
+def _get_campaign_or_404(state, tenant_id: str, campaign_id: str, *, principal=None):
     record = state.campaigns.get(tenant_id, campaign_id)
     if record is None:
+        raise ApiError("NOT_FOUND", "Campaign not found.")
+    # Escopo de unidade de negocio (achado da revisao de seguranca de 24/09/2026, item
+    # 1.9): `_authorize` acima so verifica a unidade do PROPRIO CHAMADOR contra ele mesmo
+    # (tautologia -- nunca nega), porque na hora em que ele roda ainda nao sabe qual
+    # campanha sera acessada. Este e o unico ponto, ja com o registro real em maos, onde a
+    # unidade de negocio DA CAMPANHA pode ser comparada contra as unidades do principal --
+    # mesma semantica de `authorize()` (NOT_FOUND, nunca PERMISSION_DENIED, para nao
+    # revelar que a campanha existe em outra unidade).
+    if (
+        principal is not None
+        and principal.business_unit_ids is not None
+        and record.business_unit_id is not None
+        and record.business_unit_id not in principal.business_unit_ids
+    ):
         raise ApiError("NOT_FOUND", "Campaign not found.")
     return record
 
@@ -67,7 +81,7 @@ def _get_campaign_or_404(state, tenant_id: str, campaign_id: str):
 
 
 async def create_brief(request: Request) -> JSONResponse:
-    fixture, state, _principal = _authorize(request, Permission.CAMPAIGN_CREATE)
+    fixture, state, principal = _authorize(request, Permission.CAMPAIGN_CREATE)
     idem_key = require_idempotency_key(request)
     body = await parse_body(request, BriefCreate)
 
@@ -76,11 +90,29 @@ async def create_brief(request: Request) -> JSONResponse:
         if conn is None:
             raise ApiError("NOT_FOUND", "connection_id does not reference a known connection.")
 
+    # Achado da revisao de seguranca de 24/09/2026 (item 1.9): sem isto, o corpo da
+    # requisicao podia atribuir a campanha a QUALQUER unidade de negocio do tenant, nao so
+    # as do proprio criador -- o que tornava o escopo de unidade sem sentido (a campanha
+    # nasceria fora do alcance de quem a criou, mas dentro do alcance de outra pessoa
+    # daquela unidade, sem nenhum controle de quem pode atribuir o que). Um principal sem
+    # restricao (business_unit_ids is None, ex. OWNER) continua podendo escolher
+    # livremente; um principal restrito so pode criar dentro das proprias unidades.
+    business_unit_id = body.business_unit_id or fixture.business_unit_id
+    if (
+        principal.business_unit_ids is not None
+        and business_unit_id is not None
+        and business_unit_id not in principal.business_unit_ids
+    ):
+        raise ApiError(
+            "VALIDATION_FAILED",
+            "business_unit_id nao pertence as unidades de negocio do usuario.",
+        )
+
     def _do_create():
         record = state.campaigns.create(
             fixture.tenant_id,
             brief=body.model_dump(mode="json"),
-            business_unit_id=body.business_unit_id or fixture.business_unit_id,
+            business_unit_id=business_unit_id,
             created_by=fixture.user_id,
         )
         record.planned_channels = tuple(body.channels)
@@ -105,8 +137,17 @@ async def create_brief(request: Request) -> JSONResponse:
 
 
 async def list_campaigns(request: Request) -> JSONResponse:
-    fixture, state, _principal = _authorize(request, Permission.CAMPAIGN_VIEW)
+    fixture, state, principal = _authorize(request, Permission.CAMPAIGN_VIEW)
     records = state.campaigns.list_for_tenant(fixture.tenant_id)
+    # Mesmo escopo de unidade de negocio aplicado em _get_campaign_or_404 -- sem isto, a
+    # listagem devolveria campanhas de QUALQUER unidade do tenant para um principal
+    # restrito, mesmo que ele nunca conseguisse abrir uma individualmente.
+    if principal.business_unit_ids is not None:
+        records = [
+            r
+            for r in records
+            if r.business_unit_id is None or r.business_unit_id in principal.business_unit_ids
+        ]
 
     state_filter = request.query_params.get("state")
     if state_filter:
@@ -123,8 +164,10 @@ async def list_campaigns(request: Request) -> JSONResponse:
 
 
 async def get_campaign(request: Request) -> JSONResponse:
-    fixture, state, _principal = _authorize(request, Permission.CAMPAIGN_VIEW)
-    record = _get_campaign_or_404(state, fixture.tenant_id, request.path_params["campaignId"])
+    fixture, state, principal = _authorize(request, Permission.CAMPAIGN_VIEW)
+    record = _get_campaign_or_404(
+        state, fixture.tenant_id, request.path_params["campaignId"], principal=principal
+    )
     return json_response(serialize_campaign(record))
 
 
@@ -156,17 +199,21 @@ def _run_strategist(state, fixture, record) -> dict:
 
 
 async def get_plan(request: Request) -> JSONResponse:
-    fixture, state, _principal = _authorize(request, Permission.CAMPAIGN_VIEW)
-    record = _get_campaign_or_404(state, fixture.tenant_id, request.path_params["campaignId"])
+    fixture, state, principal = _authorize(request, Permission.CAMPAIGN_VIEW)
+    record = _get_campaign_or_404(
+        state, fixture.tenant_id, request.path_params["campaignId"], principal=principal
+    )
     return json_response(
         PlanResponse(campaign_id=record.campaign_id, plan_version=record.plan_version, plan=record.plan)
     )
 
 
 async def regenerate_plan(request: Request) -> JSONResponse:
-    fixture, state, _principal = _authorize(request, Permission.CAMPAIGN_EDIT)
+    fixture, state, principal = _authorize(request, Permission.CAMPAIGN_EDIT)
     idem_key = require_idempotency_key(request)
-    record = _get_campaign_or_404(state, fixture.tenant_id, request.path_params["campaignId"])
+    record = _get_campaign_or_404(
+        state, fixture.tenant_id, request.path_params["campaignId"], principal=principal
+    )
 
     def _do_regenerate():
         plan = _run_strategist(state, fixture, record)
@@ -198,8 +245,10 @@ async def regenerate_plan(request: Request) -> JSONResponse:
 
 
 async def validate_campaign(request: Request) -> JSONResponse:
-    fixture, state, _principal = _authorize(request, Permission.CAMPAIGN_EDIT)
-    record = _get_campaign_or_404(state, fixture.tenant_id, request.path_params["campaignId"])
+    fixture, state, principal = _authorize(request, Permission.CAMPAIGN_EDIT)
+    record = _get_campaign_or_404(
+        state, fixture.tenant_id, request.path_params["campaignId"], principal=principal
+    )
 
     if record.campaign.state in (CampaignState.DRAFT,):
         # Advance the local state machine through the pre-validation states so /validate
@@ -256,7 +305,9 @@ async def publish_campaign(request: Request) -> JSONResponse:
     fixture, state, principal = _authorize(request, Permission.CAMPAIGN_PUBLISH)
     require_step_up(request, fixture)
     idem_key = require_idempotency_key(request)
-    record = _get_campaign_or_404(state, fixture.tenant_id, request.path_params["campaignId"])
+    record = _get_campaign_or_404(
+        state, fixture.tenant_id, request.path_params["campaignId"], principal=principal
+    )
     body = await parse_body(request, PublishRequest)
 
     decision = record.last_policy_decision
@@ -388,9 +439,11 @@ async def publish_campaign(request: Request) -> JSONResponse:
 
 
 async def pause_campaign(request: Request) -> JSONResponse:
-    fixture, state, _principal = _authorize(request, Permission.CAMPAIGN_EDIT)
+    fixture, state, principal = _authorize(request, Permission.CAMPAIGN_EDIT)
     idem_key = require_idempotency_key(request)
-    record = _get_campaign_or_404(state, fixture.tenant_id, request.path_params["campaignId"])
+    record = _get_campaign_or_404(
+        state, fixture.tenant_id, request.path_params["campaignId"], principal=principal
+    )
 
     def _do_pause():
         try:
@@ -433,10 +486,12 @@ async def pause_campaign(request: Request) -> JSONResponse:
 
 
 async def patch_budget(request: Request) -> JSONResponse:
-    fixture, state, _principal = _authorize(request, Permission.BUDGET_CHANGE)
+    fixture, state, principal = _authorize(request, Permission.BUDGET_CHANGE)
     require_step_up(request, fixture)
     idem_key = require_idempotency_key(request)
-    record = _get_campaign_or_404(state, fixture.tenant_id, request.path_params["campaignId"])
+    record = _get_campaign_or_404(
+        state, fixture.tenant_id, request.path_params["campaignId"], principal=principal
+    )
     body = await parse_body(request, BudgetPatchRequest)
 
     approval = state.approvals.get(fixture.tenant_id, body.approval_id)
@@ -490,7 +545,7 @@ def _try_pause(record, reason: str, affected: list[str]) -> None:
 
 
 async def kill_switch(request: Request) -> JSONResponse:
-    fixture, state, _principal = _authorize(request, Permission.KILL_SWITCH)
+    fixture, state, principal = _authorize(request, Permission.KILL_SWITCH)
     idem_key = require_idempotency_key(request)
     body = await parse_body(request, KillSwitchRequest)
 
@@ -518,7 +573,9 @@ async def kill_switch(request: Request) -> JSONResponse:
         if body.scope == "CAMPAIGN":
             if not body.target_id:
                 raise ApiError("VALIDATION_FAILED", "target_id is required when scope=CAMPAIGN.")
-            record = _get_campaign_or_404(state, fixture.tenant_id, body.target_id)
+            record = _get_campaign_or_404(
+                state, fixture.tenant_id, body.target_id, principal=principal
+            )
             try:
                 record.campaign.apply_kill_switch(reason=body.reason or "kill-switch")
             except InvalidStateTransition as exc:
@@ -624,8 +681,10 @@ async def get_insights(request: Request) -> JSONResponse:
     yet (achado 14) -- validating them now means client integration against these params
     can start before the analytics layer exists.
     """
-    fixture, state, _principal = _authorize(request, Permission.CAMPAIGN_VIEW)
-    record = _get_campaign_or_404(state, fixture.tenant_id, request.path_params["campaignId"])
+    fixture, state, principal = _authorize(request, Permission.CAMPAIGN_VIEW)
+    record = _get_campaign_or_404(
+        state, fixture.tenant_id, request.path_params["campaignId"], principal=principal
+    )
 
     from_raw = request.query_params.get("from")
     to_raw = request.query_params.get("to")
