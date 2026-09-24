@@ -85,21 +85,48 @@ class GeminiConfig:
         )
 
 
+#: Achado de verificacao real contra a API (24/09/2026, sessao irmã, ver
+#: docs/evidence/EVIDENCIA_GEMINI_PROVIDER_20260924.md): sem instrucao de TIPO por campo, o
+#: Gemini devolveu "canais" como uma frase corrida em vez de um array JSON — o schema real do
+#: agente "strategist" (`agents.py`) exige `list`, entao essa saida teria sido rejeitada como
+#: SCHEMA_INVALID por `OutputSchema.validate()`. So pedir os NOMES dos campos nao basta; o
+#: prompt precisa dizer que tipo de valor JSON cada campo exige.
+_JSON_TYPE_HINTS: dict[type, str] = {
+    str: "string",
+    list: "array de strings (JSON array, nunca uma frase com itens separados por virgula)",
+    bool: "boolean (true ou false)",
+    int: "number (inteiro)",
+    float: "number",
+    dict: "object",
+}
+
+
+def _field_type_hint(schema: OutputSchema, field: str) -> str:
+    tipo = schema.types.get(field)
+    return _JSON_TYPE_HINTS.get(tipo, "string") if tipo is not None else "string"
+
+
 def _build_prompt(request: AIRequest, schema: OutputSchema) -> str:
     """Monta o prompt a partir do contexto do agente e do contrato de saida exigido.
 
-    Instrucao explicita de "responda so com JSON" e a defesa real aqui — o parametro nativo
-    de saida estruturada da API (ver nota do modulo) fica para quando o campo exato for
-    confirmado; ate lá, a validacao de `OutputSchema` em `AIGateway.execute` e quem garante
-    que uma saida fora do contrato nunca passa adiante.
+    Instrucao explicita de "responda so com JSON", com o TIPO exigido de cada campo (nao so o
+    nome) e a defesa real aqui — o parametro nativo de saida estruturada da API (ver nota do
+    modulo) fica para quando o campo exato for confirmado; ate lá, a validacao de
+    `OutputSchema` em `AIGateway.execute` e quem garante que uma saida fora do contrato nunca
+    passa adiante.
     """
-    campos = ", ".join(sorted(schema.required))
+    campos = "; ".join(
+        f'"{campo}" ({_field_type_hint(schema, campo)})' for campo in sorted(schema.required)
+    )
     contexto = json.dumps(request.input, ensure_ascii=False, sort_keys=True)
     return (
         f"Tarefa: {request.task.value}.\n"
         f"Contexto (JSON): {contexto}\n\n"
         f"Responda SOMENTE com um objeto JSON valido, sem texto antes ou depois, sem bloco "
-        f"de codigo markdown, contendo exatamente estes campos obrigatorios: {campos}. "
+        f"de codigo markdown, contendo exatamente estes campos obrigatorios, cada um com o "
+        f"TIPO de valor JSON indicado (respeite o tipo exatamente — um campo do tipo array "
+        f"deve ser um array JSON de verdade, nunca uma frase com itens separados por virgula "
+        f"dentro de uma string): {campos}. "
         f"Se algum dado necessario nao estiver no contexto, não invente valores plausiveis — "
         f"registre a ausência de forma honesta dentro do proprio campo de texto correspondente."
     )

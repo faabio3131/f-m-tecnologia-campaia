@@ -141,6 +141,29 @@ class GeminiProviderRequestShapeTests(unittest.TestCase):
         self.assertIn("PLAN_CAMPAIGN", seen["body"]["input"])
         self.assertIn("objetivo", seen["body"]["input"])
 
+    def test_prompt_tells_the_model_the_json_type_of_each_field(self) -> None:
+        """Achado de verificacao real (24/09/2026): sem isto, o Gemini devolveu "canais"
+        como uma frase corrida em vez de array JSON -- o schema real exige `list`, entao a
+        resposta teria sido rejeitada como SCHEMA_INVALID por OutputSchema.validate(). O
+        prompt precisa dizer o TIPO de cada campo, nao so o nome."""
+        seen: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen["body"] = json.loads(request.read())
+            return httpx.Response(200, json=_interaction_response(_HAPPY_OUTPUT))
+
+        provider = self._provider(handler)
+        provider.generate(_request())
+
+        prompt = seen["body"]["input"]
+        # "canais" e do tipo list em _SCHEMA -- o prompt precisa deixar claro que e um
+        # array JSON, nao uma string com itens separados por virgula.
+        self.assertIn("canais", prompt)
+        self.assertIn("array", prompt)
+        # "objetivo" e do tipo str -- continua pedido como string.
+        self.assertIn("objetivo", prompt)
+        self.assertIn("string", prompt)
+
     def test_happy_path_parses_output_and_computes_cost(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(
