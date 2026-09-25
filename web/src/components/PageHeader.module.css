@@ -1,0 +1,30 @@
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--campaia-space-4);
+  margin-bottom: var(--campaia-space-5);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--campaia-font-size-xl);
+  color: var(--campaia-color-text);
+}
+
+.description {
+  margin: var(--campaia-space-1) 0 0;
+  color: var(--campaia-color-text-muted);
+}
+
+.actions {
+  display: flex;
+  gap: var(--campaia-space-2);
+}
+
+@media (max-width: 480px) {
+  .header {
+    flex-direction: column;
+  }
+}

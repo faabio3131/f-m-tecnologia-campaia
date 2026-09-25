@@ -2,18 +2,29 @@
 // Usada pelo CLI (scripts/check-security-boundaries.mjs) e pelos testes
 // (tests/boundaries.test.ts), para evitar spawn de subprocesso nos testes.
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, extname } from "node:path";
+import { join, extname, sep } from "node:path";
 
 const SCAN_EXTENSIONS = new Set([".ts", ".tsx", ".css"]);
 const EXCLUDED_FILES = new Set(["bff-openapi.generated.ts"]);
 
-/** @type {{name: string, pattern: RegExp, message: string}[]} */
+/** @type {{name: string, pattern: RegExp, message: string, exemptPathSubstrings?: string[]}[]} */
 export const FORBIDDEN_PATTERNS = [
   {
     name: "network-call",
     pattern: /\b(fetch|axios|XMLHttpRequest)\s*\(/,
     message:
-      "chamada de rede detectada (fetch/axios/XMLHttpRequest) -- WP-01 nao deve chamar o BFF",
+      "chamada de rede detectada (fetch/axios/XMLHttpRequest) fora da camada de API " +
+      "central da Etapa 2 -- so src/lib/api/ e src/providers/AuthProvider.tsx podem " +
+      "chamar o BFF; a pagina de fundacao do WP-01 (app/page.tsx) continua com a " +
+      "garantia original de zero chamada de rede.",
+    // Etapa 2 (WP-02 Web): a camada real de API/sessao PRECISA chamar o BFF -- a
+    // garantia de "zero rede" do WP-01 continua valendo para o resto de web/src
+    // (em particular app/page.tsx, a pagina de fundacao com E2E proprio provando
+    // isso), so essas duas localizacoes sao isentas desta regra especifica.
+    exemptPathSubstrings: [
+      `${sep}lib${sep}api${sep}`,
+      `${sep}providers${sep}AuthProvider.tsx`,
+    ],
   },
   {
     name: "browser-storage",
@@ -44,6 +55,16 @@ export const FORBIDDEN_PATTERNS = [
     name: "aws-style-key",
     pattern: /AKIA[0-9A-Z]{16}/,
     message: "padrao de chave de acesso estilo AWS detectado",
+  },
+  {
+    name: "private-data-caching",
+    // Etapa 2, secao 23: dado autenticado nunca pode ser cacheado globalmente
+    // (static caching, ISR compartilhado, cache cross-user/cross-tenant).
+    pattern: /export\s+const\s+revalidate|force-cache|unstable_cache/,
+    message:
+      "diretiva de cache estatico/ISR detectada em rota autenticada -- dado de " +
+      "sessao/tenant nunca pode ser cacheado globalmente (Etapa 2, secao 23)",
+    onlyPathSubstrings: [`${sep}app${sep}(app)${sep}(authenticated)${sep}`],
   },
 ];
 
@@ -78,7 +99,18 @@ export function checkSecurityBoundaries(srcRoot) {
   for (const file of files) {
     const content = readFileSync(file, "utf8");
     const lines = content.split("\n");
-    for (const { name, pattern, message } of FORBIDDEN_PATTERNS) {
+    for (const {
+      name,
+      pattern,
+      message,
+      exemptPathSubstrings,
+      onlyPathSubstrings,
+    } of FORBIDDEN_PATTERNS) {
+      const exempt = (exemptPathSubstrings ?? []).some((s) => file.includes(s));
+      if (exempt) continue;
+      if (onlyPathSubstrings && !onlyPathSubstrings.some((s) => file.includes(s))) {
+        continue;
+      }
       lines.forEach((line, index) => {
         if (pattern.test(line)) {
           violations.push({ file, rule: name, message, line: index + 1 });

@@ -5,3 +5,4 @@
 import type { components } from "./bff-openapi.generated";
 
 export type Me = components["schemas"]["Me"];
+export type ApiErrorBody = components["schemas"]["Error"];

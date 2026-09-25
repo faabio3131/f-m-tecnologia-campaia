@@ -1,0 +1,109 @@
+.shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.skipLink {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+}
+
+.skipLink:focus {
+  left: var(--campaia-space-2);
+  top: var(--campaia-space-2);
+  z-index: 10;
+  background: var(--campaia-color-surface);
+  padding: var(--campaia-space-2);
+  border-radius: var(--campaia-radius-sm);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--campaia-space-4);
+  padding: var(--campaia-space-3) var(--campaia-space-5);
+  border-bottom: 1px solid var(--campaia-color-border);
+  background: var(--campaia-color-surface);
+}
+
+.brand {
+  font-weight: 700;
+  font-size: var(--campaia-font-size-lg);
+  color: var(--campaia-color-primary);
+}
+
+.topbarContext {
+  display: flex;
+  align-items: center;
+  gap: var(--campaia-space-3);
+}
+
+.userId {
+  color: var(--campaia-color-text-muted);
+  font-size: var(--campaia-font-size-sm);
+}
+
+.body {
+  display: flex;
+  flex: 1;
+}
+
+.sidebar {
+  width: 220px;
+  border-right: 1px solid var(--campaia-color-border);
+  padding: var(--campaia-space-4);
+}
+
+.navList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-1);
+}
+
+.navItem,
+.navItemActive {
+  display: block;
+  padding: var(--campaia-space-2) var(--campaia-space-3);
+  border-radius: var(--campaia-radius-sm);
+  color: var(--campaia-color-text);
+  text-decoration: none;
+  font-size: var(--campaia-font-size-sm);
+}
+
+.navItem:hover {
+  background: var(--campaia-color-bg);
+}
+
+.navItemActive {
+  background: var(--campaia-color-primary);
+  color: var(--campaia-color-primary-contrast);
+  font-weight: 600;
+}
+
+.main {
+  flex: 1;
+  padding: var(--campaia-space-6);
+}
+
+@media (max-width: 768px) {
+  .body {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--campaia-color-border);
+  }
+
+  .navList {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}

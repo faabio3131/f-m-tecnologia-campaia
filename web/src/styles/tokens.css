@@ -41,6 +41,13 @@
 
   --campaia-motion-duration: 150ms;
   --campaia-motion-easing: ease;
+
+  /* Breakpoints (Etapa 2 Web) -- referencia para media queries dos componentes;
+     CSS nao le custom properties em @media, entao os valores em px sao repetidos
+     nos media queries dos componentes, mas centralizados aqui como fonte unica. */
+  --campaia-breakpoint-sm: 480px;
+  --campaia-breakpoint-md: 768px;
+  --campaia-breakpoint-lg: 1024px;
 }
 
 @media (prefers-color-scheme: dark) {
