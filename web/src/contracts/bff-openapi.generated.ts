@@ -4,6 +4,61 @@
  */
 
 export interface paths {
+    "/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Recupera a sessao ativa e um novo csrf_token (apos reload, sem novo login) */
+        get: operations["getSession"];
+        put?: never;
+        /**
+         * Login real via Google Identity Platform -- troca id_token por sessao server-side
+         * @description Autoridade de identidade e sempre o backend: verifica o `id_token` do provedor,
+         *     resolve tenant/unidade/papeis pelo diretorio interno (nunca por claim do provedor,
+         *     nunca autoprovisiona). Em caso de sucesso, cria uma sessao server-side e devolve o
+         *     cookie de sessao `campaia_session` (HttpOnly; Secure; SameSite=Lax) -- nunca o
+         *     id_token bruto do Google. Nao exige `security` previa (nao ha sessao ainda);
+         *     protegido contra login-CSRF por validacao de Origin/Referer no servidor.
+         */
+        post: operations["login"];
+        /**
+         * Logout -- invalida a sessao server-side e limpa o cookie
+         * @description Sempre devolve 204, mesmo sem sessao ativa ou com sessao ja invalida/expirada --
+         *     nunca falha o logout do lado do cliente por um estado de sessao que ja nao importa.
+         */
+        delete: operations["logout"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/session/switch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Troca o vinculo (tenant/unidade) ATIVO da sessao para outro vinculo real da mesma identidade
+         * @description So aceita um `user_id` presente entre os vinculos capturados no login desta mesma
+         *     identidade (nunca um tenant/vinculo arbitrario de outra identidade -- validado
+         *     fail-closed pelo backend). Mesma sessao/cookie/csrf_secret depois da troca; invalida
+         *     implicitamente `step_up_at` (chave `(tenant_id, user_id)`), exigindo nova
+         *     reautenticacao para operacoes sensiveis no vinculo novo.
+         */
+        post: operations["switchMembership"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me": {
         parameters: {
             query?: never;
@@ -13,6 +68,28 @@ export interface paths {
         };
         /** Perfil, tenant, unidade e permissoes efetivas do usuario autenticado */
         get: operations["getMe"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/memberships": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lista os vinculos (tenant/unidade/papeis) reais da sessao atual, marcando o ativo
+         * @description Exige sessao real (cookie) -- o fixture de bearer token de dev/teste nao tem conceito
+         *     de vinculos multiplos e e recusado aqui (401). Vinculos vem exclusivamente do login
+         *     desta identidade, nunca de outra.
+         */
+        get: operations["listMemberships"];
         put?: never;
         post?: never;
         delete?: never;
@@ -438,6 +515,33 @@ export interface components {
             permissions?: string[];
             mfa_enabled?: boolean;
         };
+        /**
+         * @description Corpo real de POST/GET /auth/session e POST /auth/session/switch
+         *     (backend/api/models.py::SessionLoginResponse). user_id/tenant_id NAO sao UUID no
+         *     backend real hoje (ex.: "user-owner-1", "demo-tenant") -- por isso `type: string`
+         *     simples aqui, sem `format: uuid` (divergencia pre-existente do schema Me, fora do
+         *     escopo desta correcao pontual).
+         */
+        SessionUser: {
+            user_id: string;
+            tenant_id: string;
+            business_unit_id: string | null;
+            roles: string[];
+            /** @description Devolver no header X-CSRF-Token em toda mutacao subsequente sob cookieAuth. */
+            csrf_token: string;
+        };
+        MembershipItem: {
+            /** @description Identificador do VINCULO -- valor usado em POST /auth/session/switch. */
+            user_id: string;
+            tenant_id: string;
+            business_unit_id: string | null;
+            roles: string[];
+            /** @description true para exatamente um item -- o vinculo ativo na sessao agora. */
+            active: boolean;
+        };
+        MembershipsResponse: {
+            memberships: components["schemas"]["MembershipItem"][];
+        };
         BrandProfileInput: {
             name: string;
             tone: string;
@@ -631,6 +735,12 @@ export interface components {
         };
     };
     parameters: {
+        /**
+         * @description Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+         *     login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+         *     servidor. Ausente/invalido -> 403.
+         */
+        CsrfToken: string;
         /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
         IdempotencyKey: string;
         /** @description Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao. */
@@ -644,6 +754,125 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionUser"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    id_token: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK -- cookie de sessao setado via Set-Cookie */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionUser"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Identidade provada, mas sem vinculo com nenhum tenant do CampaIA (fail-closed, nunca autoprovisiona) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sessao invalidada (ou ja nao havia nenhuma) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    switchMembership: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+                 *     login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+                 *     servidor. Ausente/invalido -> 403.
+                 */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description user_id de um dos vinculos devolvidos por GET /me/memberships */
+                    user_id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK -- vinculo ativo trocado */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionUser"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description CSRF ausente/invalido, ou o vinculo solicitado nao pertence a esta identidade */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     getMe: {
         parameters: {
             query?: never;
@@ -660,6 +889,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Me"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listMemberships: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MembershipsResponse"];
                 };
             };
             401: components["responses"]["Unauthorized"];

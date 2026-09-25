@@ -6,3 +6,6 @@ import type { components } from "./bff-openapi.generated";
 
 export type Me = components["schemas"]["Me"];
 export type ApiErrorBody = components["schemas"]["Error"];
+export type SessionUser = components["schemas"]["SessionUser"];
+export type Membership = components["schemas"]["MembershipItem"];
+export type MembershipsResponse = components["schemas"]["MembershipsResponse"];
