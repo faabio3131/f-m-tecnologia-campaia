@@ -1,0 +1,11 @@
+[
+  {
+    "_comment": "EXEMPLO — valores fictícios (R$ 1,00) só para demonstrar o formato e permitir testar o carregador. Nunca usados como padrão pelo código. O Diretor define os valores reais dos planos e aponta CAMPAIA_PLAN_CATALOG_PATH para o arquivo real, gerido fora do controle de versão de código.",
+    "plan_id": "exemplo-essencial",
+    "name": "Exemplo Essencial",
+    "monthly_price": 1.00,
+    "included_credits": 1,
+    "extra_credit_unit_price": 1.00,
+    "currency": "BRL"
+  }
+]

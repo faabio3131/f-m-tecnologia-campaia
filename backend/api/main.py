@@ -20,7 +20,9 @@ from campaia_core.errors import CampaiaError
 from .errors import ApiError, from_domain_error
 from .routes_approvals import create_approval, decide_approval, list_approvals
 from .routes_audit import list_audit_events
+from .routes_auth import get_session, login, logout
 from .routes_autonomy import get_autonomy, put_autonomy
+from .routes_billing import asaas_webhook, create_charge, get_subscription, put_subscription
 from .routes_brand import create_brand_profile, list_brand_profiles
 from .routes_campaigns import (
     create_brief,
@@ -58,6 +60,13 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> JSONRespo
 
 
 routes = [
+    # Item 1.3/WP-02 (24/09/2026): sessao real. Sem require_auth -- e o proprio endpoint
+    # que estabelece/encerra a sessao que require_auth depois consome. GET devolve o
+    # csrf_token da sessao atual (recuperacao apos reload, achado de fm-security-review).
+    Route("/auth/session", login, methods=["POST"]),
+    Route("/auth/session", get_session, methods=["GET"]),
+    Route("/auth/session", logout, methods=["DELETE"]),
+
     Route("/me", get_me, methods=["GET"]),
 
     Route("/brand-profiles", list_brand_profiles, methods=["GET"]),
@@ -90,6 +99,14 @@ routes = [
     Route("/kill-switch", kill_switch, methods=["POST"]),
 
     Route("/audit-events", list_audit_events, methods=["GET"]),
+
+    # Motor de cobranca propria do CampaIA (B11 / ADR-0020).
+    Route("/billing/subscription", get_subscription, methods=["GET"]),
+    Route("/billing/subscription", put_subscription, methods=["PUT"]),
+    Route("/billing/charges", create_charge, methods=["POST"]),
+    # Unico endpoint deste app sem Bearer token de usuario -- quem chama e o Asaas, nao o
+    # app; a autenticidade vem do token estatico verificado por AsaasWebhookReceiver.
+    Route("/webhooks/asaas", asaas_webhook, methods=["POST"]),
 ]
 
 exception_handlers = {
@@ -99,16 +116,23 @@ exception_handlers = {
 }
 
 
-def create_app(db_path: str | None = None) -> Starlette:
+def create_app(db_path: str | None = None, env: str | None = None) -> Starlette:
     """``db_path=None`` (the default) is pure in-memory state, byte-for-byte identical to
     this app before persistence existed -- every pre-existing test relies on that. Passing
     a real path backs campaigns, approvals, connections, brand profiles, the audit log,
     idempotency records, and tenant autonomy settings with a SQLite file at that path (see
     api/db.py and api/state.py's AppState.__post_init__), so state survives a process
     restart when the same path is reused.
+
+    ``env=None`` (the default) lets `AppState` read `CAMPAIA_ENV` itself, defaulting to
+    the fail-closed "production" value (item 1.3/WP-02: no dev auth fixture). Test/local
+    dev call sites pass ``env="test"``/``"dev-local"`` explicitly.
     """
     app = Starlette(routes=routes, exception_handlers=exception_handlers)
-    app.state.campaia = AppState(db_path=db_path)
+    kwargs = {"db_path": db_path}
+    if env is not None:
+        kwargs["env"] = env
+    app.state.campaia = AppState(**kwargs)
     return app
 
 

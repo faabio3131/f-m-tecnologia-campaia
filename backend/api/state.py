@@ -7,15 +7,36 @@ is persisted across process restarts, and nothing here is a real credential.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING
 
-from campaia_core.agents import AgentRunner
-from campaia_core.ai_gateway import AIGateway
+if TYPE_CHECKING:
+    # Import tardio evitado em runtime (identity_directory.py/session.py importam
+    # TokenPrincipal deste modulo -- import no topo criaria ciclo); seguro aqui porque
+    # `from __future__ import annotations` faz toda anotacao de tipo ser string.
+    from .identity_directory import IdentityDirectory
+    from .session import SessionStore
+
+from campaia_core.agents import AGENTS, AgentRunner
+from campaia_core.ai_gateway import AIGateway, AIProvider
 from campaia_core.ai_simulator import SimulatedAIProvider
+from campaia_core.asaas_gateway import AsaasConfig, AsaasGateway
+from campaia_core.asaas_webhook import AsaasWebhookReceiver
 from campaia_core.autonomy import AutonomySettings
+from campaia_core.identity_provider import (
+    AlwaysRejectIdTokenVerifier,
+    FirebaseIdentityConfig,
+    FirebaseIdTokenVerifier,
+    IdTokenVerifier,
+)
 from campaia_core.infra import Capability, CapabilityRegistry, IdempotencyStore
+from campaia_core.payment_gateway import PaymentGatewayConnector
+from campaia_core.payment_simulator import PaymentGatewaySimulator
 from campaia_core.permissions import Principal, Role
+from campaia_core.rate_limit import FixedWindowRateLimiter
+from campaia_core.subscription import Subscription, SubscriptionCharge
 
 from .repositories import (
     ApprovalRepository,
@@ -51,6 +72,16 @@ class TokenPrincipal:
             mfa_enabled=self.mfa_enabled,
             step_up_at=step_up_at,
         )
+
+
+#: Item 1.3/WP-02 (24/09/2026): ambientes onde o fixture de bearer token de dev pode
+#: existir. Fora destes, `AppState.__post_init__` recusa a inicializacao -- nunca so
+#: "esconde a opcao" (exigencia literal do WP-02, docs/web/06_ROADMAP_WORK_PACKAGES.md).
+DEV_AUTH_FIXTURE_ALLOWED_ENVS = frozenset({"test", "dev-local"})
+
+
+def _default_env() -> str:
+    return os.environ.get("CAMPAIA_ENV", "production")
 
 
 def _seed_tokens() -> dict[str, TokenPrincipal]:
@@ -96,6 +127,92 @@ def _seed_tokens() -> dict[str, TokenPrincipal]:
     }
 
 
+def _default_id_token_verifier() -> IdTokenVerifier:
+    """Nunca um verificador permissivo por padrao (diferente do simulador de IA/pagamento
+    abaixo) -- aceitar qualquer id_token como valido seria um buraco de autenticacao, nao
+    um estagiario harmless. Real so quando FIREBASE_PROJECT_ID estiver configurado (item
+    1.6 provisionado); ate la, `AlwaysRejectIdTokenVerifier` (nunca autentica ninguem)."""
+    config = FirebaseIdentityConfig.from_env()
+    if config is not None:
+        return FirebaseIdTokenVerifier(config)
+    return AlwaysRejectIdTokenVerifier()
+
+
+def _default_identity_directory(env: str):
+    # Import tardio: identity_directory.py importa TokenPrincipal deste modulo -- import
+    # no topo do arquivo criaria ciclo (mesmo padrao ja usado para gemini_provider abaixo).
+    from .identity_directory import InMemoryIdentityDirectory, seed_dev_identity_directory
+
+    if env in DEV_AUTH_FIXTURE_ALLOWED_ENVS:
+        return seed_dev_identity_directory()
+    return InMemoryIdentityDirectory()
+
+
+def _default_session_store():
+    from .session import InMemorySessionStore
+
+    return InMemorySessionStore()
+
+
+def _default_allowed_origins() -> frozenset[str]:
+    from .session import default_allowed_origins
+
+    return default_allowed_origins()
+
+
+def _default_billing_gateway() -> PaymentGatewayConnector:
+    """Never a real gateway unless explicitly configured (same "never a real provider by
+    default" discipline as `ai_provider` below). If `ASAAS_API_KEY` is set in the
+    environment, use the real adapter (verified against the Asaas Sandbox 24/09/2026); else
+    fall back to the in-memory simulator, exactly like every other connector in this app."""
+    if os.environ.get("ASAAS_API_KEY"):
+        return AsaasGateway(config=AsaasConfig.from_env())
+    return PaymentGatewaySimulator()
+
+
+def _default_asaas_webhook_receiver() -> AsaasWebhookReceiver:
+    return AsaasWebhookReceiver(token_resolver=lambda: os.environ.get("ASAAS_WEBHOOK_TOKEN"))
+
+
+def _default_ai_provider() -> AIProvider:
+    """Never a real provider unless explicitly configured (same "never a real provider by
+    default" discipline as `_default_billing_gateway`). If `GEMINI_API_KEY` is set in the
+    environment, use the real adapter chosen in ADR-0021 (Google Gemini); else fall back to
+    the in-memory simulator, whose default output matches the "strategist" agent's
+    OutputSchema (`campaia_core/agents.py` AGENTS["strategist"]: requires objetivo/funil/
+    canais/justificativa) so `/plan/regenerate` works out of the box without any credential.
+    """
+    if os.environ.get("GEMINI_API_KEY"):
+        from campaia_core.gemini_provider import GeminiConfig, GeminiProvider
+
+        schemas = {spec.output_schema.schema_id: spec.output_schema for spec in AGENTS.values()}
+        return GeminiProvider(config=GeminiConfig.from_env(), schemas=schemas)
+    return SimulatedAIProvider(
+        output={
+            "objetivo": "Gerar demanda qualificada dentro do orcamento aprovado.",
+            "funil": "TOPO_MEIO",
+            "canais": ["GOOGLE_ADS", "META_ADS"],
+            "justificativa": "Saida simulada do SimulatedAIProvider (nunca um provedor real).",
+        }
+    )
+
+
+#: Item 1.2 do cronograma mestre (24/09/2026): limite do unico endpoint publico sem
+#: autenticacao de usuario (`/webhooks/asaas`). Generoso o bastante para nunca recusar
+#: trafego legitimo do Asaas (que nao documenta um volume esperado por segundo, mas isto e
+#: liquidacao de cobranca, nao um webhook de alta frequencia) e restritivo o bastante para
+#: barrar flood de aplicacao de uma unica origem.
+ASAAS_WEBHOOK_RATE_LIMIT_MAX_REQUESTS = 60
+ASAAS_WEBHOOK_RATE_LIMIT_WINDOW = timedelta(minutes=1)
+
+
+def _default_asaas_webhook_rate_limiter() -> FixedWindowRateLimiter:
+    return FixedWindowRateLimiter(
+        max_requests=ASAAS_WEBHOOK_RATE_LIMIT_MAX_REQUESTS,
+        window=ASAAS_WEBHOOK_RATE_LIMIT_WINDOW,
+    )
+
+
 def _seed_capabilities() -> CapabilityRegistry:
     registry = CapabilityRegistry()
     now = datetime.now(timezone.utc)
@@ -128,7 +245,17 @@ class AppState:
     #: presence a no-op for every pre-existing (persistence-unaware) caller of AppState().
     db_path: str | None = None
 
-    tokens: dict[str, TokenPrincipal] = field(default_factory=_seed_tokens)
+    #: Item 1.3/WP-02 (24/09/2026). "production" (o default quando a variavel de ambiente
+    #: nao esta setada) e o ambiente mais restritivo -- nunca populado com fixture de auth
+    #: por acidente. Passar env="test"/"dev-local" explicitamente (ou setar CAMPAIA_ENV) e
+    #: o UNICO jeito de habilitar o fixture de bearer token abaixo.
+    env: str = field(default_factory=_default_env)
+
+    #: Fixture de bearer token de dev/teste -- vazio por padrao (seguro). So populado
+    #: automaticamente quando `env` esta em DEV_AUTH_FIXTURE_ALLOWED_ENVS (ver
+    #: __post_init__); populado por fora disso em qualquer outro ambiente faz a
+    #: inicializacao recusar (RuntimeError), nunca so ignorar silenciosamente.
+    tokens: dict[str, TokenPrincipal] = field(default_factory=dict)
     # Step-up tokens are accepted at face value in this sandbox (no real re-auth flow) --
     # we still track a per-(tenant,user) "recent step-up" timestamp so that
     # campaia_core.permissions.authorize's STEP_UP_MAX_AGE window is honoured for real
@@ -152,23 +279,63 @@ class AppState:
     #: domain dataclass with no timestamp field of its own.
     tenant_autonomy_updated_at: dict[str, datetime] = field(default_factory=dict)
 
-    ai_gateway: AIGateway = field(default_factory=AIGateway)
-    #: Default output matches the "strategist" agent's OutputSchema (campaia_core/agents.py
-    #: AGENTS["strategist"]: requires objetivo/funil/canais/justificativa) so /plan/regenerate
-    #: works out of the box against the SimulatedAIProvider -- never a real AI provider.
-    ai_provider: SimulatedAIProvider = field(
-        default_factory=lambda: SimulatedAIProvider(
-            output={
-                "objetivo": "Gerar demanda qualificada dentro do orcamento aprovado.",
-                "funil": "TOPO_MEIO",
-                "canais": ["GOOGLE_ADS", "META_ADS"],
-                "justificativa": "Saida simulada do SimulatedAIProvider (nunca um provedor real).",
-            }
-        )
+    #: Motor de cobranca propria do CampaIA (B11/ADR-0020). Uma assinatura ativa por tenant.
+    #: Em memoria por enquanto -- persistencia fica para quando este motor tiver seu proprio
+    #: bloco de integracao com `db.py`, mesmo padrao ja usado pelos outros repositorios.
+    subscriptions: dict[str, Subscription] = field(default_factory=dict)
+    #: Cobrancas ja enviadas ao gateway, por `gateway_charge_id` -- e o que permite ao
+    #: webhook do Asaas encontrar de volta a que cobranca um pagamento confirmado pertence.
+    charges: dict[str, SubscriptionCharge] = field(default_factory=dict)
+    billing_gateway: PaymentGatewayConnector = field(default_factory=_default_billing_gateway)
+    asaas_webhook: AsaasWebhookReceiver = field(default_factory=_default_asaas_webhook_receiver)
+    #: Item 1.2 do cronograma mestre (24/09/2026) -- em memoria mesmo com `db_path`
+    #: configurado: contador de janela e efemero por natureza (nao ha valor em persistir um
+    #: contador que reseta a cada minuto), diferente do dedupe de evento acima.
+    asaas_webhook_rate_limiter: FixedWindowRateLimiter = field(
+        default_factory=_default_asaas_webhook_rate_limiter
     )
+
+    ai_gateway: AIGateway = field(default_factory=AIGateway)
+    #: `GEMINI_API_KEY` unset (the default, and every pre-existing test) -> in-memory
+    #: SimulatedAIProvider, byte-for-byte the prior behaviour. Set -> real GeminiProvider
+    #: (ADR-0021). See `_default_ai_provider`.
+    ai_provider: AIProvider = field(default_factory=_default_ai_provider)
     agent_runner: AgentRunner = field(init=False)
 
+    #: Item 1.3/WP-02 (24/09/2026): autenticacao real. `id_token_verifier` nunca e
+    #: permissivo por padrao (ver `_default_id_token_verifier`) -- so vira o adaptador
+    #: real do Google Identity Platform quando FIREBASE_PROJECT_ID estiver configurado
+    #: (item 1.6 provisionado). `identity_directory` (None aqui) e resolvido em
+    #: __post_init__ porque seu default depende de `env` -- dataclass default_factory
+    #: nao tem acesso a outros campos. `sessions` fica em memoria nesta etapa (decisao do
+    #: Diretor) -- nao e persistente/homologado para producao por causa disso.
+    id_token_verifier: IdTokenVerifier = field(default_factory=_default_id_token_verifier)
+    identity_directory: "IdentityDirectory | None" = None
+    sessions: "SessionStore" = field(default_factory=_default_session_store)
+    #: Achado de fm-security-review (24/09/2026), corrigido por decisao do Diretor:
+    #: login-CSRF em POST /auth/session. Vazio por padrao -- fail-closed: nenhuma origem
+    #: e aceita enquanto CAMPAIA_ALLOWED_ORIGINS nao estiver configurada. NUNCA um
+    #: wildcard (nem aqui nem em session.parse_allowed_origins).
+    allowed_origins: frozenset[str] = field(default_factory=_default_allowed_origins)
+
     def __post_init__(self) -> None:
+        # Fixture de bearer token de dev/teste: so populado automaticamente quando `env`
+        # permite; populado por qualquer outro meio fora desses ambientes recusa a
+        # inicializacao (fail-closed por construcao -- exigencia literal do WP-02, nunca
+        # so "esconder a opcao").
+        if self.env in DEV_AUTH_FIXTURE_ALLOWED_ENVS and not self.tokens:
+            self.tokens = _seed_tokens()
+        if self.tokens and self.env not in DEV_AUTH_FIXTURE_ALLOWED_ENVS:
+            raise RuntimeError(
+                f"AppState.tokens (fixture de autenticacao de teste) nao pode estar "
+                f"populado fora de {sorted(DEV_AUTH_FIXTURE_ALLOWED_ENVS)} -- env atual: "
+                f"{self.env!r}. Isto e fail-closed por construcao (item 1.3/WP-02): o "
+                f"fixture de auth nunca pode ficar disponivel em preview/staging/produção, "
+                f"mesmo por engano de configuracao."
+            )
+        if self.identity_directory is None:
+            self.identity_directory = _default_identity_directory(self.env)
+
         #: Handle to the open SQLite connection when db_path is set, else None. Not a
         #: dataclass field (nothing outside this method needs to construct one) -- kept
         #: only so callers that DO want to close it explicitly (see tests_api's
@@ -178,7 +345,12 @@ class AppState:
         #: is garbage collected.
         self.db = None
         if self.db_path is not None:
-            from .db import Database, PersistentIdempotencyStore, PersistentTenantAutonomy
+            from .db import (
+                Database,
+                PersistentIdempotencyStore,
+                PersistentSeenEventStore,
+                PersistentTenantAutonomy,
+            )
 
             self.db = Database(self.db_path)
             # Every field replaced below is a plain in-memory default_factory value at
@@ -196,6 +368,14 @@ class AppState:
             self.tenant_autonomy = PersistentTenantAutonomy(self.db.table("tenant_autonomy"))
             self.tenant_autonomy_updated_at = PersistentTenantAutonomy(
                 self.db.table("tenant_autonomy_updated_at")
+            )
+            # Item 1.1 do cronograma mestre (24/09/2026): o dedupe do webhook do Asaas
+            # tambem precisa sobreviver a um reinicio de processo entre duas entregas do
+            # mesmo evento -- token_resolver preservado do factory default, so o seen_store
+            # troca para a implementacao persistida.
+            self.asaas_webhook = AsaasWebhookReceiver(
+                token_resolver=self.asaas_webhook.token_resolver,
+                seen_store=PersistentSeenEventStore(self.db.table("asaas_webhook_seen_events")),
             )
             # capabilities and tokens are deliberately NOT persisted: both are
             # process-startup fixture/seed data (a hardcoded Capability Matrix and a

@@ -31,6 +31,25 @@ class MeResponse(BaseModel):
     mfa_enabled: bool
 
 
+# --------------------------------------------------------------------------- auth / sessao (item 1.3/WP-02)
+
+
+class SessionLoginRequest(ApiModel):
+    #: ID token do Google Identity Platform, obtido pelo frontend apos o usuario
+    #: autenticar -- nunca um token opaco de dev/teste (isso e o header Bearer legado).
+    id_token: str
+
+
+class SessionLoginResponse(BaseModel):
+    user_id: str
+    tenant_id: str
+    business_unit_id: str | None
+    roles: list[str]
+    #: Cliente deve devolver este valor no header X-CSRF-Token em toda mutacao
+    #: subsequente (double-submit cookie, ver api/session.py).
+    csrf_token: str
+
+
 # --------------------------------------------------------------------------- brand profiles
 
 
@@ -314,3 +333,37 @@ class ErrorResponse(BaseModel):
     message: str
     details: dict
     assisted_flow_url: str | None
+
+
+# --------------------------------------------------------------------------- billing (B11)
+
+
+class BillingSubscriptionUpsert(ApiModel):
+    plan_id: str
+    #: CPF ou CNPJ do cliente cobrado — obrigatorio, mesma exigencia do dominio
+    #: (subscription.Subscription, payment_gateway.ChargeCommand).
+    customer_document: str
+
+
+class BillingSubscriptionResponse(BaseModel):
+    tenant_id: str
+    customer_ref: str
+    customer_document: str
+    plan_id: str
+    plan_name: str
+    status: str
+
+
+class BillingChargeCreate(ApiModel):
+    competence: str
+    extra_credits_used: Decimal = Decimal("0")
+
+
+class BillingChargeResponse(BaseModel):
+    billing_id: str
+    tenant_id: str
+    competence: str
+    currency: str
+    amount: Decimal
+    gateway_charge_id: str
+    gateway_status: str

@@ -65,7 +65,7 @@ class PersistenceTestCase(unittest.TestCase):
 
     def new_client(self) -> TestClient:
         """A fresh app/state instance pointed at this test's db file."""
-        return TestClient(create_app(db_path=self.db_path))
+        return TestClient(create_app(db_path=self.db_path, env="test"))
 
     def teardown_client(self, client: TestClient) -> None:
         """Drop every reference to the client/app/state so they are actually garbage
@@ -420,14 +420,66 @@ class TestTenantAutonomySurvivesRestart(PersistenceTestCase):
         self.assertEqual(after["updated_at"], before["updated_at"])
 
 
+class TestAsaasWebhookDedupeSurvivesRestart(PersistenceTestCase):
+    """Item 1.1 do cronograma mestre (24/09/2026): o dedupe do webhook do Asaas era mantido
+    so em memoria -- reiniciar o processo entre duas entregas do mesmo evento ("pelo menos
+    uma vez") perdia a garantia contra reprocessar. Prova que, com `db_path` configurado, a
+    segunda entrega do mesmo `id` de evento continua sendo recusada mesmo apos um processo
+    novo (nova instancia de `AppState`, mesmo arquivo SQLite).
+    """
+
+    def _set_webhook_token(self, token: str) -> str | None:
+        old = os.environ.get("ASAAS_WEBHOOK_TOKEN")
+        os.environ["ASAAS_WEBHOOK_TOKEN"] = token
+        return old
+
+    def _restore_webhook_token(self, old: str | None) -> None:
+        if old is None:
+            os.environ.pop("ASAAS_WEBHOOK_TOKEN", None)
+        else:
+            os.environ["ASAAS_WEBHOOK_TOKEN"] = old
+
+    def test_duplicate_event_after_restart_is_still_rejected(self) -> None:
+        old = self._set_webhook_token("expected-token")
+        try:
+            payload = {
+                "id": "evt_restart_1",
+                "event": "PAYMENT_RECEIVED",
+                "payment": {"id": "pay_does_not_exist", "status": "RECEIVED"},
+            }
+            headers = {"asaas-access-token": "expected-token"}
+
+            c1 = self.new_client()
+            first = c1.post("/webhooks/asaas", headers=headers, json=payload)
+            self.assertEqual(first.status_code, 200, first.text)
+            self.assertTrue(first.json()["accepted"])
+
+            self.teardown_client(c1)
+
+            c2 = self.new_client()
+            second = c2.post("/webhooks/asaas", headers=headers, json=payload)
+            self.assertEqual(second.status_code, 200, second.text)
+            self.assertFalse(second.json()["accepted"])
+            self.assertEqual(second.json()["reason"], "DUPLICATE")
+
+            # Um evento nunca antes visto continua sendo aceito normalmente na nova
+            # instancia -- a persistencia so bloqueia o que ja foi visto, nunca mais.
+            fresh_payload = {**payload, "id": "evt_restart_2"}
+            third = c2.post("/webhooks/asaas", headers=headers, json=fresh_payload)
+            self.assertEqual(third.status_code, 200, third.text)
+            self.assertTrue(third.json()["accepted"])
+        finally:
+            self._restore_webhook_token(old)
+
+
 class TestEphemeralModeUnaffected(unittest.TestCase):
     """The default (no db_path) app must still be fully in-memory and never touch disk --
     two default instances must never share state.
     """
 
     def test_default_app_instances_do_not_share_state(self) -> None:
-        c1 = TestClient(create_app())
-        c2 = TestClient(create_app())
+        c1 = TestClient(create_app(env="test"))
+        c2 = TestClient(create_app(env="test"))
 
         r = c1.post(
             "/brand-profiles",

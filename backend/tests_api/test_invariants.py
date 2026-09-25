@@ -18,6 +18,81 @@ from tests_api.test_helpers import (
 )
 
 
+class TestBusinessUnitScopeEnforcedWithinSameTenant(unittest.TestCase):
+    """Achado da revisao de seguranca de 24/09/2026 (item 1.9 do cronograma mestre): antes
+    desta correcao, `_authorize()` sempre construia `Resource(business_unit_id=fixture.
+    business_unit_id)` -- a PROPRIA unidade do chamador, nao a do recurso alvo -- o que
+    tornava a checagem de unidade de negocio de `authorize()` uma tautologia (nunca nega).
+    Uma campanha atribuida a outra unidade de negocio do MESMO tenant continuava totalmente
+    visivel/editavel para qualquer principal com a permissao certa naquele tenant.
+
+    `OWNER` (fixture `demo-owner-token`) esta na unidade `bu-1` do `demo-tenant`. Estes
+    testes semeiam uma campanha em `bu-other` (outra unidade do MESMO tenant, nunca
+    atribuivel via HTTP por um principal restrito -- ver `test_create_brief_rejects_a_
+    business_unit_outside_the_callers_own`) diretamente no repositorio, para provar que a
+    camada HTTP agora nega acesso a ela por `OWNER` mesmo assim.
+    """
+
+    def _seed_cross_bu_campaign(self, client) -> str:
+        state = client.app.state.campaia
+        record = state.campaigns.create(
+            "demo-tenant",
+            brief=dict(DEFAULT_BRIEF),
+            business_unit_id="bu-other",
+            created_by="seed-script",
+        )
+        return record.campaign_id
+
+    def test_get_campaign_in_another_business_unit_is_not_found(self):
+        client = make_client()
+        campaign_id = self._seed_cross_bu_campaign(client)
+        r = client.get(f"/campaigns/{campaign_id}", headers=OWNER)
+        self.assertEqual(r.status_code, 404, r.text)
+        self.assertEqual(r.json()["code"], "NOT_FOUND")
+
+    def test_list_campaigns_excludes_another_business_unit(self):
+        client = make_client()
+        campaign_id = self._seed_cross_bu_campaign(client)
+        r = client.get("/campaigns", headers=OWNER)
+        self.assertEqual(r.status_code, 200, r.text)
+        ids = [item["id"] for item in r.json()["items"]]
+        self.assertNotIn(campaign_id, ids)
+
+    def test_pause_campaign_in_another_business_unit_is_not_found(self):
+        client = make_client()
+        campaign_id = self._seed_cross_bu_campaign(client)
+        r = client.post(
+            f"/campaigns/{campaign_id}/pause", headers={**OWNER, **unique_idem()}
+        )
+        self.assertEqual(r.status_code, 404, r.text)
+
+    def test_kill_switch_campaign_scope_in_another_business_unit_is_not_found(self):
+        client = make_client()
+        campaign_id = self._seed_cross_bu_campaign(client)
+        r = client.post(
+            "/kill-switch",
+            headers={**OWNER, **unique_idem()},
+            json={"scope": "CAMPAIGN", "target_id": campaign_id},
+        )
+        self.assertEqual(r.status_code, 404, r.text)
+
+    def test_create_brief_rejects_a_business_unit_outside_the_callers_own(self):
+        client = make_client()
+        body = {**DEFAULT_BRIEF, "business_unit_id": "bu-other"}
+        r = client.post("/briefs", headers={**OWNER, **unique_idem()}, json=body)
+        self.assertEqual(r.status_code, 422, r.text)
+        self.assertEqual(r.json()["code"], "VALIDATION_FAILED")
+
+    def test_own_business_unit_campaign_is_still_reachable(self):
+        """Sanity: the fix must not turn into a blanket 404 -- a campaign in the caller's
+        own business unit (the default, unchanged behaviour for every pre-existing test)
+        remains fully visible."""
+        client = make_client()
+        camp = create_campaign(client, headers=OWNER)
+        r = client.get(f"/campaigns/{camp['id']}", headers=OWNER)
+        self.assertEqual(r.status_code, 200, r.text)
+
+
 class TestTenantIdNeverFromClient(unittest.TestCase):
     def test_brief_with_client_tenant_id_is_rejected(self):
         client = make_client()

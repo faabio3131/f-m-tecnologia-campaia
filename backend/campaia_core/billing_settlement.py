@@ -1,0 +1,92 @@
+"""Fecha o ciclo aberto pelo bloqueio fiscal V2-16.5.
+
+Encadeia: cobranca calculada (subscription.py) -> gateway de pagamento
+(payment_gateway.py) -> fato liquidado -> handoff fiscal (fiscal_handoff.py).
+
+Fail-closed por desenho: `try_settle` so devolve um `SettledOwnBillingFact` quando o
+gateway confirma o pagamento (`GatewayChargeStatus.CONFIRMED`). Uma cobranca pendente ou
+recusada nunca vira fato liquidado — nunca inventa que foi pago (ver
+docs/evidence/V2_16_5_FISCAL_INTEGRATION_BLOCKER_20260913.md).
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+
+from .fiscal_handoff import CampaiaBillingKind, SettledOwnBillingFact
+from .payment_gateway import (
+    ChargeCommand,
+    ChargeResult,
+    GatewayChargeStatus,
+    PaymentGatewayConnector,
+)
+from .subscription import SubscriptionCharge
+
+
+def charge_subscription(
+    charge: SubscriptionCharge, gateway: PaymentGatewayConnector
+) -> ChargeResult:
+    """Envia a cobranca calculada ao gateway. Idempotente pelo `billing_id` do ciclo —
+    recalcular ou reenviar o mesmo ciclo nunca cria uma segunda cobranca no gateway."""
+    command = ChargeCommand(
+        tenant_id=charge.tenant_id,
+        billing_id=charge.billing_id,
+        customer_ref=charge.customer_ref,
+        customer_document=charge.customer_document,
+        amount=charge.amount,
+        currency=charge.currency,
+        competence=charge.competence,
+        idempotency_key=f"campaia:subscription:{charge.billing_id}",
+    )
+    return gateway.create_charge(command)
+
+
+def try_settle_from_status(
+    charge: SubscriptionCharge,
+    status: GatewayChargeStatus,
+    *,
+    settled_at: datetime,
+) -> SettledOwnBillingFact | None:
+    """Liquida a partir de um status ja conhecido — reutilizavel tanto por `try_settle`
+    (polling) quanto por um receptor de webhook (`asaas_webhook.py`), que ja recebe o status
+    mapeado no proprio evento e nao precisa consultar o gateway de novo.
+
+    Devolve `None` enquanto PENDING ou quando FAILED — nada e enviado ao fiscal ate a
+    confirmacao real do pagamento. Devolve o fato liquidado apenas quando CONFIRMED.
+    """
+    if status is not GatewayChargeStatus.CONFIRMED:
+        return None
+
+    if settled_at.tzinfo is None:
+        raise ValueError("settled_at deve ser timezone-aware.")
+
+    return SettledOwnBillingFact(
+        billing_id=charge.billing_id,
+        tenant_id=charge.tenant_id,
+        customer_ref=charge.customer_ref,
+        kind=CampaiaBillingKind.SAAS,
+        amount=charge.amount,
+        currency=charge.currency,
+        competence=charge.competence,
+        settled_at=settled_at,
+    )
+
+
+def try_settle(
+    charge: SubscriptionCharge,
+    charge_result: ChargeResult,
+    gateway: PaymentGatewayConnector,
+    *,
+    settled_at: datetime,
+) -> SettledOwnBillingFact | None:
+    """Consulta o gateway pelo status real da cobranca (polling) e liquida a partir dele.
+
+    Prefira `try_settle_from_status` quando o status ja vier de um webhook — evita uma
+    chamada de rede redundante e reage no momento em que o Asaas de fato notifica, nao no
+    proximo ciclo de consulta.
+    """
+    status = gateway.get_charge_status(charge_result.gateway_charge_id)
+    return try_settle_from_status(charge, status, settled_at=settled_at)
+
+
+__all__ = ["charge_subscription", "try_settle", "try_settle_from_status"]
