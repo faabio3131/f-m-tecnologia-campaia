@@ -109,3 +109,76 @@ baixa severidade aceito e documentado (tokens de teste inertes no bundle de prod
 item não verificado (`npm audit`) registrado como tal. Nenhum achado crítico ou de alta
 severidade. Isto não é uma certificação de segurança do produto — é o resultado desta
 revisão pontual, neste escopo, nesta data.
+
+---
+
+## Revisão adicional — WP-03 (troca real de tenant/unidade, 25/09/2026)
+
+**Escopo:** `backend/api/identity_directory.py` (`resolve_all`), `backend/api/session.py`
+(`SessionRecord.available_principals`, `SessionStore.switch_principal`),
+`backend/api/deps.py` (`require_session_record`), `backend/api/routes_auth.py`
+(`list_memberships`, `switch_membership`), `backend/api/models.py`, `backend/api/main.py`
+(novas rotas `GET /me/memberships`, `POST /auth/session/switch`),
+`web/src/providers/AuthProvider.tsx` (`switchMembership`),
+`web/src/components/TenantSwitcher.tsx`.
+
+### Verificado, sem achado
+
+1. **Escalada via troca**: `switch_membership` só aceita um `user_id` presente em
+   `record.available_principals` — capturado no login, exclusivamente da mesma
+   identidade (`identity_directory.resolve_all(email)`). Não há caminho para trocar para
+   um vínculo de outra identidade. Confirmado por teste real
+   (`test_switch_to_a_membership_not_owned_by_this_identity_is_rejected_fail_closed`).
+2. **CSRF**: a troca passa por `require_session_record` → mesma checagem de CSRF de
+   qualquer mutação via sessão (`_MUTATING_METHODS`). Confirmado por teste
+   (`test_switch_without_csrf_token_is_rejected`).
+3. **Invalidação de `step_up_at`**: a chave é `(tenant_id, user_id)` — uma troca real de
+   vínculo sempre muda pelo menos `tenant_id` (nos fixtures atuais, muda os dois), então a
+   chave nunca é reaproveitada. Confirmado por teste real fazendo uma operação
+   `REQUIRES_STEP_UP` antes e depois da troca
+   (`test_switching_tenant_requires_fresh_step_up_for_sensitive_operations`).
+4. **Isolamento cross-tenant dentro da mesma sessão após a troca**: `authorize()`
+   continua recebendo `Resource(tenant_id=fixture.tenant_id, ...)` onde `fixture` vem do
+   `principal` ATIVO (atualizado pela troca) — nenhuma mudança na lógica de autorização
+   em si. Confirmado por teste real criando um recurso antes da troca e listando depois
+   (`test_switching_tenant_never_leaks_a_resource_from_the_previous_tenant`).
+5. **`GET /me/memberships` não expõe vínculos de outras identidades**: só lê
+   `record.available_principals`, capturado exclusivamente da identidade que fez login
+   nesta sessão.
+6. **Fixture de bearer token (dev) não ganhou nenhum poder novo**: `require_session_record`
+   devolve `None`/recusa (401) quando a autenticação foi via bearer fixture — nenhum
+   `SessionRecord` sintético é fabricado para esse caminho. Confirmado por teste
+   (`test_switch_via_dev_bearer_fixture_is_rejected`,
+   `test_memberships_requires_a_real_session_never_the_dev_bearer_fixture`).
+
+### Achado corrigido nesta sessão
+
+**Severidade: baixa/média (rastreabilidade, não uma falha de controle de acesso).**
+A troca de vínculo ativo mudava o contexto de autorização de uma sessão sem deixar
+nenhum rastro no audit log (`state.audit`), diferente de outras operações sensíveis do
+mesmo produto (OAuth start, mudança de autonomia, etc., todas auditadas). Corrigido:
+`switch_membership` agora grava `SESSION_SWITCH` (sucesso, com `from_tenant_id`/
+`to_tenant_id` em `details`) e `SESSION_SWITCH_REJECTED` (tentativa rejeitada, com o
+`user_id` alvo) — confirmado por 2 testes reais lendo `GET /audit-events` depois da
+chamada.
+
+### Achado residual, não corrigido (proporcional ao risco atual)
+
+**Severidade: baixa, teórica com os dados de hoje.** A invalidação de `step_up_at`
+depende de `tenant_id` mudar entre vínculos. Se um dia existir um vínculo com o MESMO
+`tenant_id` E o MESMO `user_id`, mas `business_unit_id` diferente (não existe hoje em
+`seed_dev_identity_directory()`, e nada no domínio sugere essa forma), a troca entre esses
+dois vínculos NÃO forçaria nova reautenticação para operações `REQUIRES_STEP_UP` — a
+chave de `step_up_at` é só `(tenant_id, user_id)`, sem `business_unit_id`. Não é
+explorável com o modelo de dados atual (cada vínculo sempre tem `user_id` próprio,
+diferente por vínculo); registrado para não ser esquecido caso o modelo de multi-unidade
+por vínculo mude no futuro.
+
+### Não verificado nesta revisão
+
+- Comportamento sob concorrência real (duas trocas simultâneas na mesma sessão) — o
+  `InMemorySessionStore` não usa lock explícito; dado que é um único dicionário Python e
+  cada operação é uma escrita atômica de referência (GIL), a pior consequência de uma
+  corrida é "a troca que terminar por último vence", nunca um estado corrompido — não
+  testado explicitamente, proporcional ao estágio (mesma disciplina já aceita para outros
+  stores em memória deste projeto).

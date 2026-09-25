@@ -1,11 +1,12 @@
 "use client";
 
 import { Card } from "../../../../components/Card";
-import { EmptyState } from "../../../../components/EmptyState";
 import { PageContainer } from "../../../../components/PageContainer";
 import { PageHeader } from "../../../../components/PageHeader";
 import { StatusPanel } from "../../../../components/StatusPanel";
+import { TenantSwitcher } from "../../../../components/TenantSwitcher";
 import { useAuth } from "../../../../providers/AuthProvider";
+import styles from "./page.module.css";
 
 export default function SettingsPage() {
   const { session } = useAuth();
@@ -26,17 +27,13 @@ export default function SettingsPage() {
         />
       </Card>
       <Card>
-        <EmptyState
-          title="Troca de tenant/unidade — pendência de contrato"
-          description={
-            "PENDÊNCIA registrada (Etapa 2, seção 20): multi-tenant/business-unit " +
-            "switching precisa de um contrato HTTP específico no backend antes de " +
-            "qualquer implementação funcional. O shell está estruturado para receber " +
-            "um seletor futuro, mas nenhum seletor falso é renderizado aqui — o " +
-            "tenant/unidade exibidos vêm sempre da sessão real, nunca de um valor " +
-            "escolhido pelo navegador."
-          }
-        />
+        <h2 className={styles.sectionTitle}>Trocar de tenant/unidade</h2>
+        <p className={styles.sectionDescription}>
+          Vínculos reais desta conta (GET /me/memberships). A troca é validada pelo
+          backend — só é possível trocar para um vínculo que já pertence a esta
+          identidade (POST /auth/session/switch).
+        </p>
+        <TenantSwitcher />
       </Card>
     </PageContainer>
   );

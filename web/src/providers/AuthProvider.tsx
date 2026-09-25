@@ -30,6 +30,13 @@ export interface AuthContextValue {
   error: string | null;
   login: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
+  /**
+   * Troca o vinculo (tenant/unidade) ativo da sessao para outro vinculo real da mesma
+   * identidade (WP-03, `POST /auth/session/switch`) -- nunca decide sozinho qual tenant
+   * e valido, so repassa o `user_id` escolhido pelo usuario entre os que
+   * `GET /me/memberships` ja devolveu; o backend e' quem valida e recusa fail-closed.
+   */
+  switchMembership: (targetUserId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -140,9 +147,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [clearAuth]);
 
+  const switchMembership = useCallback(async (targetUserId: string) => {
+    setError(null);
+    const sessionUser = await api.post<SessionUser>("/auth/session/switch", {
+      user_id: targetUserId,
+    });
+    setCsrfToken(sessionUser.csrf_token);
+    setSession(sessionUser);
+    const meResponse = await api.get<Me>("/me");
+    setMe(meResponse);
+  }, []);
+
   const value = useMemo<AuthContextValue>(
-    () => ({ status, session, me, error, login, logout }),
-    [status, session, me, error, login, logout],
+    () => ({ status, session, me, error, login, logout, switchMembership }),
+    [status, session, me, error, login, logout, switchMembership],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

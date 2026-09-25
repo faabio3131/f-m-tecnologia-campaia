@@ -17,6 +17,9 @@ E2E_TOKEN_TENANT_A_OWNER = "e2e-test-id-token-tenant-a-owner"
 E2E_TOKEN_TENANT_B_OWNER = "e2e-test-id-token-tenant-b-owner"
 E2E_TOKEN_UNVERIFIED_EMAIL = "e2e-test-id-token-unverified-email"
 E2E_TOKEN_UNKNOWN_EMAIL = "e2e-test-id-token-unknown-email"
+#: WP-03 (25/09/2026): identidade com DOIS vinculos reais (seed_dev_identity_directory),
+#: para o E2E real de listagem/troca de tenant/unidade ativo na sessao.
+E2E_TOKEN_MULTI_TENANT_OWNER = "e2e-test-id-token-multi-tenant-owner"
 
 _IDENTITIES: dict[str, VerifiedIdentity] = {
     E2E_TOKEN_TENANT_A_OWNER: VerifiedIdentity(
@@ -37,6 +40,11 @@ _IDENTITIES: dict[str, VerifiedIdentity] = {
     E2E_TOKEN_UNKNOWN_EMAIL: VerifiedIdentity(
         subject="e2e-google-uid-unknown",
         email="nao-cadastrado@example.com",
+        email_verified=True,
+    ),
+    E2E_TOKEN_MULTI_TENANT_OWNER: VerifiedIdentity(
+        subject="e2e-google-uid-multi-tenant-owner",
+        email="owner@multi-tenant.campaia.test",
         email_verified=True,
     ),
 }
@@ -60,4 +68,5 @@ __all__ = [
     "E2E_TOKEN_TENANT_B_OWNER",
     "E2E_TOKEN_UNVERIFIED_EMAIL",
     "E2E_TOKEN_UNKNOWN_EMAIL",
+    "E2E_TOKEN_MULTI_TENANT_OWNER",
 ]

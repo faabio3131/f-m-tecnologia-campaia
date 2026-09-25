@@ -50,6 +50,32 @@ class SessionLoginResponse(BaseModel):
     csrf_token: str
 
 
+# --------------------------------------------------------------------------- vinculos multi-tenant (WP-03)
+
+
+class MembershipItem(BaseModel):
+    #: Identificador estavel do VINCULO (nunca do e-mail/identidade) -- e' o valor que o
+    #: cliente devolve em SwitchMembershipRequest.user_id para selecionar este vinculo.
+    user_id: str
+    tenant_id: str
+    business_unit_id: str | None
+    roles: list[str]
+    #: True para exatamente um item da lista: o vinculo ativo na sessao agora.
+    active: bool
+
+
+class MembershipsResponse(BaseModel):
+    memberships: list[MembershipItem]
+
+
+class SwitchMembershipRequest(ApiModel):
+    #: user_id do vinculo-alvo (um dos devolvidos por GET /me/memberships) -- nunca um
+    #: tenant_id livre: a troca so aceita um vinculo que ja pertença a esta identidade,
+    #: nunca um tenant arbitrario informado pelo cliente (mesma disciplina de
+    #: `reject_client_tenant_id`, api/deps.py).
+    user_id: str
+
+
 # --------------------------------------------------------------------------- brand profiles
 
 

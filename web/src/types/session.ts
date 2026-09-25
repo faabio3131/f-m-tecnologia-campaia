@@ -16,3 +16,20 @@ export interface SessionUser {
   /** So existe em memoria no cliente -- nunca localStorage/sessionStorage. */
   csrf_token: string;
 }
+
+/**
+ * Espelha `MembershipItem`/`MembershipsResponse` (backend/api/models.py, WP-03) --
+ * mesma PENDENCIA de contrato registrada acima: `/me/memberships` tambem nao esta em
+ * `contracts/bff-openapi.yaml`.
+ */
+export interface Membership {
+  user_id: string;
+  tenant_id: string;
+  business_unit_id: string | null;
+  roles: string[];
+  active: boolean;
+}
+
+export interface MembershipsResponse {
+  memberships: Membership[];
+}

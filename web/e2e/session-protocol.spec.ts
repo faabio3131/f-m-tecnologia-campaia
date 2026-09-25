@@ -11,6 +11,7 @@ const TENANT_A_TESTID = "test-identity-e2e-test-id-token-tenant-a-owner";
 const TENANT_B_TESTID = "test-identity-e2e-test-id-token-tenant-b-owner";
 const UNVERIFIED_TESTID = "test-identity-e2e-test-id-token-unverified-email";
 const UNKNOWN_TESTID = "test-identity-e2e-test-id-token-unknown-email";
+const MULTI_TENANT_TESTID = "test-identity-e2e-test-id-token-multi-tenant-owner";
 
 /**
  * Clica no login de teste e devolve o corpo real de POST /auth/session.
@@ -238,5 +239,35 @@ test.describe("Protocolo de sessao real", () => {
 
     await contextA.close();
     await contextB.close();
+  });
+
+  test("K. troca real de tenant/unidade via UI (WP-03) -- backend valida, sessao real muda", async ({
+    page,
+  }) => {
+    await page.goto("/login");
+    await loginViaTestHarness(page, MULTI_TENANT_TESTID);
+    await expect(page).toHaveURL(/\/dashboard/);
+    await expect(page.getByText("demo-tenant").first()).toBeVisible();
+
+    await page.goto("/settings");
+    await expect(page.getByText("Ativo")).toBeVisible();
+    await expect(page.getByText("other-tenant")).toBeVisible();
+
+    const switchResponsePromise = page.waitForResponse((r) =>
+      r.url().endsWith("/auth/session/switch"),
+    );
+    await page.getByTestId("switch-membership-user-multi-1b").click();
+    const switchResponse = await switchResponsePromise;
+    expect(switchResponse.status()).toBe(200);
+    expect((await switchResponse.json()).tenant_id).toBe("other-tenant");
+
+    // A UI real reflete o novo tenant ativo sem precisar de novo login.
+    await expect(page.getByText("other-tenant").first()).toBeVisible();
+
+    // Backend real: /me da MESMA sessao agora resolve para o novo vinculo.
+    const meResponse = await page.request.get("/api/campaia/me", {
+      headers: await sessionCookieHeader(page),
+    });
+    expect((await meResponse.json()).tenant_id).toBe("other-tenant");
   });
 });

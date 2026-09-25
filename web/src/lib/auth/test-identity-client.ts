@@ -22,6 +22,10 @@ export const TEST_IDENTITY_OPTIONS: readonly TestIdentityOption[] = [
   { id: "e2e-test-id-token-tenant-b-owner", label: "Owner — tenant B (other-tenant)" },
   { id: "e2e-test-id-token-unverified-email", label: "E-mail não verificado (deve falhar)" },
   { id: "e2e-test-id-token-unknown-email", label: "E-mail sem vínculo interno (deve falhar)" },
+  {
+    id: "e2e-test-id-token-multi-tenant-owner",
+    label: "Owner — dois vínculos (demo-tenant + other-tenant)",
+  },
 ];
 
 export function isTestIdentityModeEnabled(): boolean {
