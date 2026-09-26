@@ -200,3 +200,110 @@ problemas do próprio teste):**
 **Estado final do WP-06:** `IMPLEMENTADO E TESTADO (unit + component + backend regression +
 E2E cross-stack)` nesta sessão. FM QA Engineer formal continua pendente (ressalva histórica
 do projeto).
+
+---
+
+## WP-07 — Nível de autonomia
+
+**Estado:** `IMPLEMENTADO E TESTADO NESTA SESSÃO` (unit + component + backend regression +
+E2E cross-stack, seguindo o checklist de 7 pontos do checkpoint do Diretor). FM QA Engineer
+formal ainda pendente (mesma ressalva histórica).
+
+### CURRENT antes deste bloco
+
+- Backend: `GET /autonomy` e `PUT /autonomy` (`routes_autonomy.py`) **já existiam** em
+  PR#5/main, com guarda anti-autopromoção real (`AutonomySettings.__post_init__` recusa
+  `level > max_level_allowed`), gate de aprovação (`approval_id` precisa estar
+  `APPROVED`), step-up e auditoria `AUTONOMY_CHANGE`. Nenhum desses arquivos de
+  `campaia_core`/`api/routes_autonomy.py` foi alterado neste bloco.
+- Web: **nenhuma UI de autonomia existia** em `web/src` do CURRENT (confirmado por busca
+  antes de escrever qualquer código).
+- Autonomia é configuração de **tenant**, não de campanha -- por isso o painel foi
+  colocado em `/settings` (página já existente, reaproveitada), não em
+  `campaigns/[campaignId]`.
+
+### Achado real de contrato, confirmado por execução nesta sessão
+
+`AutonomyResponse.model_dump_json()` sempre inclui `max_level_allowed`
+(`backend/api/models.py`), mas `contracts/bff-openapi.yaml`'s `AutonomySettings` nunca
+declarava esse campo -- mesma classe de achado do WP-06 (campo real do backend ausente do
+contrato). Corrigido de forma aditiva (`max_level_allowed: { type: integer, minimum: 0,
+maximum: 3 }`), tipos regenerados e verificados sem drift.
+
+### O que foi construído (comportamento portado, frontend reconstruído)
+
+- `web/src/components/AutonomyPanel.tsx` (novo) -- resumo do nível vigente (rótulo, teto
+  do tenant, variação máxima de orçamento por nível, gatilhos que sempre exigem humano),
+  fluxo propor (`POST /approvals`, `kind: AUTONOMY_CHANGE`, com uma campanha-âncora real
+  do tenant, restrição já existente no backend -- ver achado de limitação abaixo) → decidir
+  na fila de Aprovações (WP-05, inalterado) → aplicar (`PUT /autonomy`, com
+  `X-Step-Up-Token`, mesmo padrão de `BudgetPanel`/`connections`/`approvals`).
+- `web/src/components/AutonomyPanel.module.css` (novo), mesmos tokens de design já usados
+  por `BudgetPanel.module.css`.
+- Integrado em `settings/page.tsx` (busca a primeira campanha do tenant via `GET
+  /campaigns` para servir de âncora; se não houver nenhuma, o formulário de proposta fica
+  honestamente desabilitado, com uma mensagem explicando o motivo real, em vez de
+  fabricar uma campanha).
+- Nenhum arquivo de `backend/campaia_core/`, `backend/api/routes_*.py` (exceto o
+  contrato, documentado acima) ou `permissions.py` foi alterado -- confirmado por `git
+  status` antes do commit.
+
+### Limitação real do CURRENT, documentada e não corrigida nesta sessão (fora de escopo de Web)
+
+`POST /approvals` para `kind: AUTONOMY_CHANGE` não carrega o nível pretendido -- o
+`amount` é aceito e devolvido, mas `PUT /autonomy::routes_autonomy.py` nunca o lê; quem
+aplica escolhe o nível na hora, não necessariamente o mesmo que o aprovador revisou. Isso
+é comportamento real do CURRENT (não introduzido nesta sessão) -- registrado como achado,
+não corrigido, porque corrigi-lo exigiria mudança de contrato/domínio, não só da Web.
+
+**Achado real mais significativo, descoberto construindo o E2E cross-stack:** nenhum
+`ApprovalRequest` é marcado como consumido depois de um `PUT /autonomy` (nem depois de um
+`PATCH /campaigns/{id}/budget`, mesmo padrão) bem-sucedido -- o registro permanece com
+`status: APPROVED` indefinidamente. Reproduzido de forma real nesta sessão: rodar os dois
+cenários de autonomia no MESMO tenant, em sequência, faz o segundo cenário encontrar a
+aprovação já usada do primeiro (ainda "pronta para aplicar") em vez de propor uma nova --
+comportamento honesto do domínio real, não um bug do teste (confirmado inspecionando o
+snapshot de página do Playwright na falha). Corrigir isso corretamente exigiria um novo
+estado no enum de `ApprovalRequest.status` (hoje `PENDING | APPROVED | REJECTED |
+CHANGES_REQUESTED | EXPIRED`, sem um "aplicado/consumido") e tocaria os três `kind`s de
+aprovação (`PUBLISH`, `BUDGET_CHANGE`, `AUTONOMY_CHANGE`), não só autonomia -- mudança de
+contrato/domínio cross-cutting, fora do escopo de portar a Web de um único WP. Classificado
+`INTERNAL_TECHNICAL` (resolvível internamente, sem dependência externa) e reservado para
+avaliação na Fase 3 (mineração de correções técnicas ainda válidas da PR#6) ou um bloco
+dedicado -- não mascarado com um reset de estado artificial nesta sessão. Mitigação usada
+apenas para destravar o E2E: os dois cenários deste WP rodam em tenants reais diferentes
+(tenant A no caminho feliz, tenant B no caminho negativo), nunca dois cenários de
+autonomia no mesmo tenant.
+
+### Testes
+
+- Novo: `web/tests/autonomy-panel.test.tsx` -- 4 casos (resumo do nível incluindo o campo
+  aditivo `max_level_allowed`, proposta de mudança, proposta desabilitada sem campanha
+  âncora, aplicação de mudança aprovada com verificação do header de step-up). Todos
+  verdes.
+- Comando: `npm run test -- --run` → **16 arquivos, 54 testes, 0 failures** (antes desta
+  sessão: 15/50; +1 arquivo, +4 testes).
+- `npm run typecheck`, `npm run lint`, `npm run contracts:check` → OK; `npm run
+  boundary:check` → **57 arquivos** (antes 55) → OK.
+- Backend regressão completa: `PYTHONPATH=. python3 -m pytest -q` → **526 passed, 58
+  subtests passed** (idêntico ao baseline -- só o contrato foi tocado, nenhum
+  comportamento de backend mudou).
+- E2E cross-stack novo: `web/e2e/autonomy-level.spec.ts`, dois cenários (propor→aprovar→
+  aplicar com dois usuários reais do tenant A, nível exibido mudando de APROVADO para
+  ASSISTENTE; autoaprovação recusada + aplicação sem step-up recusada com 403
+  `STEP_UP_REQUIRED`, no tenant B). `npx playwright test --config=playwright.session.config.ts`
+  (com `autonomy-level.spec.ts` incluído em `testMatch`) → **18 passed** (16 pré-existentes
+  de `session-protocol.spec.ts`/`budget-change.spec.ts` + 2 novos), 0 failures.
+
+### Pendências reais deste bloco (não escondidas)
+
+- FM QA Engineer formal: pendente (ressalva histórica).
+- Limitação de design do CURRENT (nível não vinculado à aprovação) e ausência de estado
+  "consumido" em `ApprovalRequest`: documentadas acima, não corrigidas nesta sessão --
+  candidatas a um bloco técnico dedicado (Fase 3) que toque os três `kind`s de aprovação
+  de uma vez, não só autonomia.
+- Guarda anti-autopromoção (subir acima do teto do tenant): coberta pelo backend real
+  (`test_autonomy_get_and_put`), exercitada manualmente durante a investigação desta
+  sessão, mas não duplicada no E2E cross-stack (decisão de escopo -- o caminho crítico já
+  está coberto; duplicar essa regra no E2E colidiria com o achado de aprovações não
+  consumidas acima, sem agregar cobertura real nova).
