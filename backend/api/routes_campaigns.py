@@ -310,6 +310,22 @@ async def publish_campaign(request: Request) -> JSONResponse:
     )
     body = await parse_body(request, PublishRequest)
 
+    # Idempotency check happens BEFORE any state-machine mutation and BEFORE any
+    # approval-status validation: on replay, the campaign has already moved past
+    # APPROVED (e.g. to ACTIVE) from the first call, so the "must be APPROVED" campaign
+    # state gate further below must never run again for a replayed key -- only for a
+    # genuinely new attempt. This is what makes repeating the same Idempotency-Key return
+    # the original result instead of re-executing (invariant #3 in the task spec). ACHADO
+    # 19 (Fase 3, reproduzido por execucao real nesta sessao) extends this same reasoning
+    # to approval.status: since a used approval is now marked "APPLIED" below, this check
+    # must also come before the approval-status validation, or a legitimate replay of the
+    # SAME Idempotency-Key would be wrongly rejected as "approval already used". A
+    # genuinely NEW attempt (different Idempotency-Key) reusing the same approval_id still
+    # falls through to the checks below and is correctly rejected.
+    existing = state.idempotency.get(fixture.tenant_id, f"http:publish:{idem_key}")
+    if existing is not None:
+        return json_response(serialize_campaign(record), status_code=202)
+
     decision = record.last_policy_decision
     if decision is None or decision.policy_decision_id != body.policy_decision_id:
         raise ApiError(
@@ -328,15 +344,6 @@ async def publish_campaign(request: Request) -> JSONResponse:
 
         if not dual_approval_complete(frozenset(approval.decided_by)):
             raise ApiError("APPROVAL_REQUIRED", "Dual approval is required and not yet complete.")
-
-    # Idempotency check happens BEFORE any state-machine mutation: on replay, the
-    # campaign has already moved past APPROVED (e.g. to ACTIVE) from the first call, so
-    # the "must be APPROVED" gate below must never run again for a replayed key -- only
-    # for a genuinely new attempt. This is what makes repeating the same Idempotency-Key
-    # return the original result instead of re-executing (invariant #3 in the task spec).
-    existing = state.idempotency.get(fixture.tenant_id, f"http:publish:{idem_key}")
-    if existing is not None:
-        return json_response(serialize_campaign(record), status_code=202)
 
     # Walk the state machine forward to APPROVED using the already-recorded, already-
     # decided approval -- mirroring what a full approvals UI would have already driven.
@@ -404,6 +411,14 @@ async def publish_campaign(request: Request) -> JSONResponse:
         raise
     except (CampaiaError, ConnectorError) as exc:
         raise from_domain_error(exc)
+
+    # ACHADO 19: consome a aprovacao usada para publicar -- defesa em profundidade
+    # (publicar ja e protegido naturalmente pela maquina de estados da campanha, que nao
+    # volta a APPROVED sozinha, mas marcar a aprovacao como usada mantem a mesma semantica
+    # de PUBLISH/BUDGET_CHANGE/AUTONOMY_CHANGE e evita depender so de um efeito colateral).
+    # So roda para uma Idempotency-Key genuinamente nova -- ver o curto-circuito de replay
+    # no topo desta funcao.
+    approval.status = "APPLIED"
 
     now = datetime.now(timezone.utc)
     for step in outcome.steps:
@@ -494,17 +509,22 @@ async def patch_budget(request: Request) -> JSONResponse:
     )
     body = await parse_body(request, BudgetPatchRequest)
 
+    # Idempotency check happens BEFORE the mutation for the same reason as publish_campaign
+    # -- on replay, validate_change/limits-replace must not run a second time. ACHADO 19
+    # (Fase 3, reproduzido por execucao real nesta sessao): este gate precisa vir ANTES da
+    # checagem de approval.status agora que uma aprovacao usada e marcada como "APPLIED"
+    # abaixo -- senao um replay legitimo da MESMA Idempotency-Key seria incorretamente
+    # rejeitado como "aprovacao ja usada". Uma tentativa NOVA (Idempotency-Key diferente)
+    # reaproveitando o mesmo approval_id continua caindo nas checagens abaixo normalmente.
+    existing = state.idempotency.get(fixture.tenant_id, f"http:patch_budget:{idem_key}")
+    if existing is not None:
+        return json_response(serialize_campaign(record), status_code=202)
+
     approval = state.approvals.get(fixture.tenant_id, body.approval_id)
     if approval is None or approval.campaign_id != record.campaign_id or approval.kind != "BUDGET_CHANGE":
         raise ApiError("APPROVAL_REQUIRED", "approval_id not found for this budget change.")
     if approval.status != "APPROVED":
         raise ApiError("APPROVAL_REQUIRED", "Approval has not been granted.")
-
-    # Idempotency check happens BEFORE the mutation for the same reason as publish_campaign:
-    # on replay, validate_change/limits-replace must not run a second time.
-    existing = state.idempotency.get(fixture.tenant_id, f"http:patch_budget:{idem_key}")
-    if existing is not None:
-        return json_response(serialize_campaign(record), status_code=202)
 
     ok, change_pct, reason = record.budget.validate_change(body.new_daily_cap)
     if not ok:
@@ -529,6 +549,10 @@ async def patch_budget(request: Request) -> JSONResponse:
         return True
 
     state.idempotency.execute(fixture.tenant_id, f"http:patch_budget:{idem_key}", _do_patch)
+    # ACHADO 19: consome a aprovacao -- ela autorizou exatamente esta mudanca, nunca uma
+    # segunda mudanca independente. So roda para uma Idempotency-Key genuinamente nova (o
+    # curto-circuito de replay acima ja retornou antes de chegar aqui para uma repeticao).
+    approval.status = "APPLIED"
     # Contract: 202 Accepted (achado 4).
     return json_response(serialize_campaign(record), status_code=202)
 

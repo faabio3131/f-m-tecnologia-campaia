@@ -74,6 +74,23 @@ async def put_autonomy(request: Request) -> JSONResponse:
     idem_key = require_idempotency_key(request)
     body = await parse_body(request, AutonomyUpdateRequest)
 
+    # Idempotency check happens BEFORE any validation whose outcome can change after the
+    # first successful call, same pattern as publish_campaign/patch_budget. ACHADO 19
+    # (Fase 3, reproduzido por execucao real nesta sessao): approval.status agora passa
+    # de APPROVED para APPLIED apos o uso (abaixo), entao este gate precisa vir antes da
+    # checagem de status -- senao um replay legitimo da MESMA Idempotency-Key seria
+    # incorretamente rejeitado como "aprovacao ja usada". Uma tentativa NOVA
+    # (Idempotency-Key diferente) reaproveitando o mesmo approval_id continua caindo nas
+    # checagens abaixo normalmente.
+    existing = state.idempotency.get(fixture.tenant_id, f"http:put_autonomy:{idem_key}")
+    if existing is not None:
+        return json_response(
+            _serialize(
+                state.tenant_autonomy.get(fixture.tenant_id, AutonomySettings()),
+                updated_at=state.tenant_autonomy_updated_at.get(fixture.tenant_id, datetime.now(timezone.utc)),
+            )
+        )
+
     # Contract requires approval_id for /autonomy PUT (achado 12): exactly like publish
     # and patch_budget, the level change must reference an already-APPROVED
     # ApprovalRequest belonging to this tenant before it is applied.
@@ -100,16 +117,6 @@ async def put_autonomy(request: Request) -> JSONResponse:
         # domain's own anti-self-promotion guard (I-11), not re-implemented here.
         raise ApiError("VALIDATION_FAILED", str(exc))
 
-    # Idempotency check happens BEFORE the mutation, same pattern as publish_campaign.
-    existing = state.idempotency.get(fixture.tenant_id, f"http:put_autonomy:{idem_key}")
-    if existing is not None:
-        return json_response(
-            _serialize(
-                state.tenant_autonomy.get(fixture.tenant_id, AutonomySettings()),
-                updated_at=state.tenant_autonomy_updated_at.get(fixture.tenant_id, datetime.now(timezone.utc)),
-            )
-        )
-
     def _do_update():
         now = datetime.now(timezone.utc)
         state.tenant_autonomy[fixture.tenant_id] = updated
@@ -124,6 +131,11 @@ async def put_autonomy(request: Request) -> JSONResponse:
         return True
 
     state.idempotency.execute(fixture.tenant_id, f"http:put_autonomy:{idem_key}", _do_update)
+    # ACHADO 19: consome a aprovacao -- ela autorizou exatamente esta mudanca de nivel,
+    # nunca uma segunda mudanca independente. So roda para uma Idempotency-Key
+    # genuinamente nova (o curto-circuito de replay acima ja retornou antes de chegar
+    # aqui para uma repeticao).
+    approval.status = "APPLIED"
     return json_response(
         _serialize(
             state.tenant_autonomy[fixture.tenant_id],
