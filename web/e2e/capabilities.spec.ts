@@ -2,29 +2,34 @@ import { test, expect, type Page } from "@playwright/test";
 
 /**
  * E2E cross-stack REAL do WP-09 (capacidades de conexão) -- reconciliação PR#6,
- * 26/09/2026. Roda contra o mesmo harness real já usado pelos outros specs desta
- * reconciliação (backend Starlette real + Next.js real em build de produção, ver
- * playwright.session.config.ts), nunca um mock de rede.
+ * 26/09/2026, ATUALIZADO na Fase 3 (achado 20, 26/09/2026).
  *
- * ACHADO REAL confirmado por execução direta nesta sessão (não por leitura de código
- * apenas): `campaia_core/infra.py::CapabilityRegistry` é indexado por
- * `(provider, capability_key, country, api_version)`; `api/state.py::_seed_capabilities()`
- * só registra capacidades sob `provider="SIMULATOR"`, mas nenhuma `Connection` real criada
- * pelo fluxo de OAuth (`routes_connections.py::oauth_callback`) jamais tem esse provider
- * -- o `Provider` do contrato é `GOOGLE_ADS | META | WHATSAPP`. Isso significa que
- * `GET /connections/{id}/capabilities` hoje SEMPRE devolve `supported: false` para
- * qualquer conexão real, para as duas chaves testadas (`PUBLISH:GOOGLE_ADS`,
- * `PUBLISH:META_ADS`).
+ * HISTÓRICO (WP-09, achado original): `CapabilityRegistry` (`campaia_core/infra.py`) é
+ * indexado por `(provider, capability_key, country, api_version)`;
+ * `api/state.py::_seed_capabilities()` só registra capacidades sob `provider="SIMULATOR"`.
+ * `GET /connections/{id}/capabilities` consultava esse registro com `conn.provider` --
+ * o RÓTULO da conta OAuth (`GOOGLE_ADS`/`META`/`WHATSAPP`, contrato `Provider`), que
+ * nunca bate com `"SIMULATOR"` -- e por isso sempre devolvia `supported: false` para
+ * qualquer conta real, com um `verified_at` fabricado (`datetime.now()`) para disfarçar.
+ * Esse comportamento foi documentado no WP-09 como "honesto por acidente" e deixado como
+ * estava.
  *
- * Decisão registrada nesta reconciliação: NÃO alterado. `"SIMULATOR"` também é usado
- * deliberadamente em `routes_campaigns.py::validate_campaign` como o publicador
- * simulado da PLATAFORMA (independente da conta OAuth escolhida) -- mudar o seed para
- * "provar" capacidades de contas reais fabricaria um `supported: true` que nunca foi de
- * fato verificado para nenhuma conta real, contrariando a mesma disciplina de honestidade
- * já aplicada a `insights` (nunca fabricar métricas) e ao Gemini/IA (nunca inventar
- * verificação). Por isso este E2E verifica exatamente o comportamento real e honesto --
- * nenhuma capacidade aparece como suportada até existir verificação real de conta --, não
- * um resultado "feliz" fabricado. Ver evidência completa no doc desta reconciliação.
+ * ACHADO 20 (Fase 3, reinvestigação com execução real): isso não era honestidade
+ * deliberada -- era um descasamento de indexação genuíno. `routes_campaigns.py::
+ * validate_campaign` já consulta o MESMO registro com o literal `"SIMULATOR"`
+ * (independente da conta OAuth) para decidir se uma campanha pode publicar de verdade --
+ * e publica com sucesso via `POST /campaigns/{id}/publish` nos specs
+ * `session-protocol.spec.ts` (teste M) e nos testes de invariantes do backend. As duas
+ * rotas respondiam perguntas inconsistentes sobre o MESMO fato real. Corrigido mapeando
+ * `conn.mode` (`ConnectionMode`, o eixo real de execução -- toda conexão hoje é
+ * `SIMULATOR`, não existe adaptador real para nenhum provider ainda) para a chave real do
+ * registro, em vez do rótulo da conta OAuth. `supported: true` aqui NUNCA afirma
+ * homologação externa real (Google Ads/Meta/WhatsApp continuam "NÃO VERIFICADO" no
+ * Capability Matrix histórico, docs/08_CAPABILITY_MATRIX.md da PR#6) -- só que a
+ * plataforma sabe executar a ação hoje via simulador, disclosurado explicitamente pelo
+ * próprio `notes` do registro ("Simulated capability, verified in-process at startup.").
+ * Um modo de conexão sem adaptador real seedado (TEST/PRODUCTION, nenhum hoje) continua
+ * honestamente `supported: false`/`verified_at: null` -- nunca fabricado.
  *
  * Usa o tenant B (não o A): `session-protocol.spec.ts`'s teste L já conecta GOOGLE_ADS
  * para o tenant A nesta mesma suíte (harness real, backend persistente durante toda a
@@ -47,7 +52,7 @@ async function loginViaTestHarness(page: Page, testId: string) {
 }
 
 test.describe("WP-09: capacidades de conexão cross-stack", () => {
-  test("mostra as capacidades reais de uma conexão recém-criada, honestamente não suportadas", async ({
+  test("mostra as capacidades reais de uma conexão recém-criada, consistentes com o que a plataforma de fato executa", async ({
     page,
   }) => {
     await page.goto("/login");
@@ -95,16 +100,25 @@ test.describe("WP-09: capacidades de conexão cross-stack", () => {
       capability_key: string;
       supported: boolean;
       evidence_url: string | null;
+      verified_at: string | null;
+      notes: string | null;
     }[];
 
     expect(capabilities.length).toBeGreaterThan(0);
-    // Comportamento real e honesto (ver nota do arquivo): nenhuma capacidade de uma
-    // conta recem-conectada e reportada como suportada sem verificacao real.
-    expect(capabilities.every((c) => c.supported === false)).toBe(true);
+    // ACHADO 20: uma conexão recém-criada é SIMULATOR por padrão (nenhum adaptador real
+    // de execução existe ainda para nenhum provider) -- a plataforma sabe executar
+    // PUBLISH via simulador hoje, e isso é o que `supported: true` significa aqui, nunca
+    // homologação externa real.
+    expect(capabilities.every((c) => c.supported === true)).toBe(true);
     expect(capabilities.every((c) => c.evidence_url === null)).toBe(true);
+    expect(capabilities.every((c) => c.verified_at !== null)).toBe(true);
+    // O disclosure honesto de que isto é simulado, não uma integração real verificada,
+    // vem do próprio registro -- nunca escondido nem apresentado como homologação real.
+    expect(capabilities.every((c) => (c.notes ?? "").includes("Simulated"))).toBe(true);
 
     await expect(page.getByText("PUBLISH:GOOGLE_ADS")).toBeVisible();
-    await expect(page.getByText("Não suportada").first()).toBeVisible();
+    await expect(page.getByText("Suportada").first()).toBeVisible();
     await expect(page.getByText(/sem evidência registrada/i).first()).toBeVisible();
+    await expect(page.getByText(/Simulated capability/i).first()).toBeVisible();
   });
 });
