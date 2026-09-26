@@ -1075,3 +1075,108 @@ daquela forma na branch histórica).
   violação (rota é backend-only, nenhum código Web novo).
 
 **Commit:** `0e808a2`.
+
+### Item 6 — Testes da PR#6 (achado 24)
+
+**Status:** FIXED (1 bug real encontrado e corrigido) + SUPERADA para o restante do
+inventário comparado.
+
+**Metodologia:** inventário completo de `backend/tests_api/*.py` e `web/e2e/*.spec.ts` na
+PR#6 (`origin/feat/campaia-v1-complete-saas`, `3cc9e07b17815a9269d369c2ae25380a5d63790b`),
+comparado nome a nome contra o CURRENT, distinguindo três categorias: (1) arquivos
+idênticos já portados anteriormente (`test_errors_p19.py`, `test_smoke_endpoints.py`); (2)
+arquivos com sobreposição parcial, onde só os casos realmente ausentes no CURRENT foram
+avaliados para porte; (3) arquivos exclusivos da arquitetura OIDC superada (`test_oidc_unit.py`,
+`test_auth_fail_closed.py`, `test_cross_origin.py`) — não portados, pois testam uma
+arquitetura de autenticação que a Fase 1 já classificou "A — Manter CURRENT" (Google
+Identity Platform + firebase-admin), e o CURRENT já tem cobertura equivalente ou superior
+para os mesmos invariantes (`test_auth_session.py`, 44 casos: CORS/origin/referer, CSRF,
+sessão expirada/revogada, sem fixture fora de test/dev, cross-tenant via sessão real,
+nenhum secret vazado em resposta).
+
+**Achados por arquivo:**
+
+- `test_errors_p19.py`, `test_smoke_endpoints.py`: **idênticos** ao CURRENT (diff vazio) —
+  já portados integralmente em trabalho anterior a esta Fase. Nenhuma ação.
+- `test_persistence.py`: CURRENT tem **um teste a mais** que a PR#6
+  (`test_duplicate_event_after_restart_is_still_rejected`), nada faltando. SUPERADA.
+- `test_invariants.py`: CURRENT já tinha todos os casos da PR#6, **exceto um**
+  (`test_other_tenant_cannot_delete_or_read_capabilities_of_first_tenants_real_connection`
+  — resistência a enumeração para DELETE/GET capabilities de conexão de outro tenant).
+  REPRODUZIDO antes de portar: CURRENT já se comporta corretamente (404, nunca 403); só
+  faltava a regressão. **Portado** (adaptado aos nomes do CURRENT). Além disso, o CURRENT
+  já tem mais casos que a PR#6 não tinha (isolamento por unidade de negócio). **Commit:**
+  `5081839`.
+- `test_connections_oauth.py` (CURRENT) × `test_oauth_complete.py` (PR#6): mesma cobertura
+  em 6 dos 7 casos; faltava
+  `test_replay_with_same_idempotency_key_does_not_create_a_second_connection`. Ao escrever
+  esse teste antes de portar — REPRODUZIR primeiro, nunca presumir — a execução real
+  revelou um **bug genuíno no CURRENT**, não apenas uma lacuna de cobertura: mesma classe
+  de erro de ordenação já corrigida no achado 19 (idempotency-replay vs. mutação/consumo
+  de recurso de uso único), desta vez em `oauth_callback` × `redeem_oauth_state`. Ver
+  achado 24 detalhado abaixo. **Commit:** `1fd9616`.
+- `web/e2e/{account,approvals,campaigns,dashboard,foundation,onboarding}.spec.ts` (PR#6):
+  inspecionados — são todos specs de um estágio muito anterior do projeto ("shows the
+  configuration notice when no BFF origin is configured, with no BFF network calls"),
+  testes de placeholder sem nenhum cenário negativo/de segurança real. Nada para portar; a
+  cobertura E2E de segurança do CURRENT (`session-protocol.spec.ts` casos A–M,
+  `audit-trail.spec.ts`, `kill-switch.spec.ts`, `capabilities.spec.ts`,
+  `approval-consumption.spec.ts`, `audit-pagination.spec.ts`) já excede em profundidade e
+  realismo o que existia na PR#6 nesse nível.
+
+**ACHADO 24 (bug real, REPRODUZIDO por execução real antes de qualquer código escrito):**
+`POST /connections/oauth/callback` verificava `redeem_oauth_state` (que consome o `state`
+de uso único) **antes** do curto-circuito de replay por Idempotency-Key. Reprodução real
+confirmada nesta sessão: primeira chamada → `201` (Connection criada); segunda chamada com
+a MESMA Idempotency-Key e o MESMO `state` (replay legítimo, ex.: cliente retransmitindo
+após timeout) → `403 PERMISSION_DENIED` em vez do `201` original, porque o `state` já
+havia sido consumido pela primeira chamada antes do gate de idempotência sequer rodar.
+Mesma classe exata do achado 19.
+
+**Ação:** `api/routes_connections.py::oauth_callback` — `state.idempotency.get(...)` agora
+roda antes de `redeem_oauth_state`; em replay, devolve `existing.result` (o corpo real já
+armazenado pela primeira execução) com `201`, nunca reexecuta a criação. Uma tentativa
+NOVA com uma Idempotency-Key diferente reaproveitando o mesmo `state` continua caindo
+corretamente no fail-closed de uso único (`test_state_is_single_use` permanece verde sem
+alteração, pois usa chaves distintas).
+
+**Teste:** novo
+`test_replaying_the_same_idempotency_key_returns_the_original_connection` em
+`test_connections_oauth.py` — confirma `201` idêntico nas duas chamadas e exatamente uma
+Connection criada.
+
+**Regressão completa:**
+
+- `PYTHONPATH=. python3 -m pytest -q` → **545 passed, 58 subtests passed** (543
+  pré-existentes + 2 novos — o teste de enumeração de Item 6 e o de replay do achado 24 —,
+  0 failures).
+- `npx playwright test --config=playwright.session.config.ts` → **26 passed**, 0 failures
+  (nenhuma regressão no fluxo real de OAuth/onboarding nem em nenhum outro spec).
+- Web: `npm run typecheck`, `npm run lint`, `npm run contracts:check`, `npm run
+  boundary:check` (65 arquivos) → todos OK.
+
+**Commits do Item 6:** `5081839` (test, porte do caso de enumeração cross-tenant),
+`1fd9616` (fix + teste, achado 24 — reordenação do gate de replay no oauth_callback).
+
+## FASE 3 — Encerramento (itens 1–6)
+
+| ITEM | STATUS | EVIDÊNCIA NO CURRENT | AÇÃO | TESTE | COMMIT(S) |
+|---|---|---|---|---|---|
+| 1. Consumo de Approvals | FIXED | Aprovação podia ser reutilizada indefinidamente em budget/autonomy/publish (reprodução real) | Status `APPLIED` aditivo; idempotency-check movido antes do gate de approval em 3 handlers | 6 testes unit/integração + 1 E2E cross-stack | `892fb22`, `4be6399`, `3ba4f37`, `67b7aa6` |
+| 2. Capability Registry | FIXED | `connection_capabilities` indexava por `conn.provider` (rótulo OAuth), nunca batendo com a chave real `"SIMULATOR"` já usada por `validate_campaign` | Mapeamento explícito `ConnectionMode -> capability provider`; nunca fabrica `supported=true` sem base real | 3 testes unit + E2E atualizado | `8ed6403`, `e78ab14`, `24ff50d`, `0f61460` |
+| 3. Audit Pagination | FIXED | `/audit-events` sempre devolvia `next_cursor: null`, ignorando `cursor` | Paginação real por cursor (`_PAGE_SIZE=50`, cursor=id do último evento, cursor inválido → 422); Web ganhou "Carregar mais" para não ocultar eventos | 4 testes backend + 1 web + 1 E2E (55 eventos reais, sem lacunas/duplicatas) | `e67cc34`, `d396e32`, `688bc9f`, `ab63079` |
+| 4. Dependências/Segurança | FIXED | 5 CVEs reais em `starlette==1.0.0` (via `pip-audit`); OAuth `state` vazando na auditoria (achado já conhecido da PR#6, sem regressão lá) | Bump para `starlette==1.3.1`; `state` removido do `details` do evento `OAUTH_START` | Regressão completa + 1 teste novo (vazamento de state) | `1f4c0e5`, `9907800` |
+| 5. Health/Observability | FIXED | Nenhum endpoint de liveness existia (`NÃO ENCONTRADO`) | `GET /health` real, checa `Database.ping()` quando persistência configurada, nunca fabrica "saudável" | 3 testes novos | `0e808a2` |
+| 6. Testes da PR#6 | FIXED | 1 lacuna de cobertura portada (enumeração cross-tenant); 1 bug real encontrado ao escrever teste antes de portar (achado 24, replay de OAuth) | Teste de enumeração portado; gate de replay reordenado no `oauth_callback` | 2 testes novos + regressão completa (545 testes) + E2E completo (26 specs) | `5081839`, `1fd9616` |
+
+**Regressão final da Fase 3 (após os 6 itens):** `PYTHONPATH=. python3 -m pytest -q` →
+**545 passed, 58 subtests passed**, 0 failures. `npx playwright test
+--config=playwright.session.config.ts` → **26 passed**, 0 failures. Web: `typecheck`,
+`lint`, `contracts:check`, `boundary:check` (65 arquivos) → todos OK. Árvore de trabalho
+limpa (`git status --short` vazio) após cada commit.
+
+Nenhum item exigiu classificação `HUMAN_DECISION` ou `EXTERNAL_BLOCKED` — todos os 6 itens
+do checklist da Fase 3 foram tecnicamente resolvíveis dentro da autoridade já concedida,
+sem mudança de contrato ambígua, sem infraestrutura externa e sem decisão de produto
+pendente. Prosseguindo diretamente para a **Fase 4**, conforme a autorização explícita do
+Diretor.
