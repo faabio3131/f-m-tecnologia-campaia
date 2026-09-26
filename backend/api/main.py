@@ -44,6 +44,7 @@ from .routes_connections import (
     oauth_start,
     revoke_connection,
 )
+from .routes_health import health
 from .routes_me import get_me
 from .state import AppState
 
@@ -61,6 +62,11 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> JSONRespo
 
 
 routes = [
+    # Fase 3, item 5 (achado 23, 26/09/2026): probe de liveness sem autenticacao --
+    # deliberadamente fora de contracts/bff-openapi.yaml, mesmo precedente de /test-idp/*
+    # (real, porem fora do contrato BFF client-facing).
+    Route("/health", health, methods=["GET"]),
+
     # Item 1.3/WP-02 (24/09/2026): sessao real. Sem require_auth -- e o proprio endpoint
     # que estabelece/encerra a sessao que require_auth depois consome. GET devolve o
     # csrf_token da sessao atual (recuperacao apos reload, achado de fm-security-review).

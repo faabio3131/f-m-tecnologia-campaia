@@ -422,6 +422,21 @@ class Database:
     def table(self, name: str) -> RecordTable:
         return RecordTable(self._conn, self._lock, name)
 
+    def ping(self) -> bool:
+        """ACHADO 23 (Fase 3, item 5 -- Health/Observability, 26/09/2026): checagem real de
+        vivacidade para `GET /health` -- executa uma query trivial de verdade em vez de
+        apenas checar se o objeto de conexao existe, conforme
+        docs/nova-fm/02-PADROES-DE-CONSTRUCAO-NOVA-FM.md linha 960 ("Evitar health check que
+        retorna sucesso mesmo quando dependencia critica esta indisponivel"). Nunca levanta
+        excecao -- devolve False em qualquer falha, para que o chamador reporte um 503
+        honesto em vez de derrubar o proprio endpoint de health."""
+        try:
+            with self._lock:
+                self._conn.execute("SELECT 1").fetchone()
+            return True
+        except Exception:
+            return False
+
     def close(self) -> None:
         try:
             self._conn.close()
