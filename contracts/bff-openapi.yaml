@@ -902,7 +902,11 @@ components:
         supported: { type: boolean }
         requires_approval: { type: boolean }
         evidence_url: { type: [string, 'null'], format: uri }
-        verified_at: { type: string, format: date-time }
+        # ACHADO 20 (Fase 3 desta reconciliacao, 26/09/2026): nullable -- o backend real
+        # nunca fabrica um "verificado agora" quando nenhuma verificacao de fato ocorreu
+        # para o modo de conexao consultado; None e o valor honesto nesse caso. Aditivo
+        # (so amplia o tipo existente).
+        verified_at: { type: [string, 'null'], format: date-time }
         notes: { type: [string, 'null'] }
 
     Campaign:

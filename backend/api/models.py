@@ -144,7 +144,11 @@ class CapabilityResponse(BaseModel):
     country: str
     api_version: str
     supported: bool
-    verified_at: datetime
+    # ACHADO 20 (Fase 3, 26/09/2026): nullable -- quando nenhum registro real de
+    # capacidade existe para o modo de conexao consultado (routes_connections.py::
+    # connection_capabilities), o backend nunca fabrica um "verificado agora"; None
+    # significa honestamente "nunca verificado".
+    verified_at: datetime | None
     requires_approval: bool
     # Contract's Capability schema adds `evidence_url` (nullable). There is no real
     # evidence-URL source yet (no capability-evidence tracking in campaia_core), so this

@@ -609,7 +609,7 @@ export interface components {
             /** Format: uri */
             evidence_url?: string | null;
             /** Format: date-time */
-            verified_at?: string;
+            verified_at?: string | null;
             notes?: string | null;
         };
         Campaign: {
