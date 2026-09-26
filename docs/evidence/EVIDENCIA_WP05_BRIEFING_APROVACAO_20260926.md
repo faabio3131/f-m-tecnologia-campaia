@@ -100,3 +100,23 @@ Recomendação para o Bloco 2/3: integrações reais (Google Ads → Meta → Wh
 Fases 5–7) bloqueadas por credenciais reais de terceiro (confirmar disponibilidade
 antes de iniciar); mobile (Fase 8) bloqueado por decisão de destino ainda não tomada;
 analytics (Fase 9) pode avançar sem bloqueio externo.
+
+---
+
+## DECISÃO (autoridade humana, 26/09/2026) — Fase 4 (evals de IA)
+
+Diretor: *"Eu defino o critério de qualidade depois -- pular por agora"*. Fase 4 fica
+como **PENDÊNCIA explícita, não uma decisão definitiva de exclusão de escopo** — a
+suíte de evals será construída quando o critério de qualidade for definido pelo
+Diretor. Nenhuma suposição de critério foi feita nesta sessão.
+
+## FECHAMENTO DO BLOCO 1/3 — CI real confirmado
+
+CI real do HEAD `ebf74f9` (WP-05, PR #5) confirmado 100% verde nesta sessão:
+- `Run unit + API test suites` — sucesso.
+- `Lint, typecheck, contract/security boundaries, unit+component tests, build, E2E smoke` — sucesso.
+- `Real session protocol E2E (backend real + frontend real, cross-tenant obrigatorio)` — sucesso.
+
+**Status do Bloco 1/3: CONCLUÍDO** (Fases 1–3 implementadas, testadas e com CI real
+verde; Fase 4 pendente de decisão do Diretor sobre critério de avaliação, registrada
+explicitamente, não construída). PR #5 permanece DRAFT, nenhum merge/deploy.
