@@ -600,6 +600,9 @@ export interface components {
             last_synced_at?: string | null;
         };
         Capability: {
+            provider?: string;
+            country?: string;
+            api_version?: string;
             capability_key?: string;
             supported?: boolean;
             requires_approval?: boolean;

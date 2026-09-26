@@ -13,6 +13,7 @@ export type BrandProfile = components["schemas"]["BrandProfile"];
 export type BrandProfileInput = components["schemas"]["BrandProfileInput"];
 export type Connection = components["schemas"]["Connection"];
 export type Provider = components["schemas"]["Provider"];
+export type Capability = components["schemas"]["Capability"];
 export type Campaign = components["schemas"]["Campaign"];
 export type PolicyDecision = components["schemas"]["PolicyDecision"];
 export type ApprovalRequest = components["schemas"]["ApprovalRequest"];

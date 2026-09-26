@@ -890,6 +890,14 @@ components:
     Capability:
       type: object
       properties:
+        # Achado da reconciliacao WP-09 (26/09/2026): `GET
+        # /connections/{connectionId}/capabilities` sempre devolve estes 3 campos
+        # (backend/api/models.py::CapabilityResponse, confirmado por execucao real de
+        # model_dump_json()), mas o contrato nunca os declarava -- aditivo, sem mudanca
+        # de comportamento do backend, mesma classe dos achados de WP-06/07/08.
+        provider: { type: string }
+        country: { type: string }
+        api_version: { type: string }
         capability_key: { type: string }
         supported: { type: boolean }
         requires_approval: { type: boolean }
