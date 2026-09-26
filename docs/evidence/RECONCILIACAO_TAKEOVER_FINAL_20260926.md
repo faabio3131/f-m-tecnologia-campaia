@@ -1264,3 +1264,130 @@ do fecho `_do_pause`/`_do_resume`, executado exatamente uma vez por operação r
   boundary:check` (65 arquivos) → todos OK.
 
 **Commits:** `126fd60` (feat contrato), `5d9c48f` (feat backend + achado 26 + testes).
+
+### Item B — Unidade de negócio (business unit)
+
+**Status:** HUMAN_DECISION.
+
+**FATO CONFIRMADO** por leitura real do código (`backend/api/state.py`,
+`api/identity_directory.py`, `api/routes_campaigns.py`, `contracts/bff-openapi.yaml`,
+`web/src/**`): `business_unit_id` existe **apenas como uma string livre carregada em
+`TokenPrincipal`/`Membership`**, atribuída estaticamente pelo diretório de identidade de
+desenvolvimento (`seed_dev_identity_directory()`, valores fixos `"bu-1"`/`"bu-2"`). Não
+existe:
+
+- nenhuma entidade `BusinessUnit` persistida (nenhum `BusinessUnitRepository`, nenhuma
+  tabela, nenhum registro além da string solta);
+- nenhum endpoint de API para criar, listar, renomear ou arquivar uma unidade de negócio
+  (`grep` em `contracts/bff-openapi.yaml` só encontra `business_unit_id` como campo de
+  *outros* recursos — `Me`, `Membership` — nunca como recurso próprio);
+- nenhuma permissão dedicada no `Permission` enum (`campaia_core/permissions.py`) para
+  gerenciar unidades de negócio (existe `MEMBER_MANAGE`, `BRAND_MANAGE`, etc., mas nada
+  equivalente a `BUSINESS_UNIT_MANAGE`);
+- nenhuma tela de administração no Web (`business_unit_id` só aparece em **modo leitura**,
+  exibindo a unidade da sessão atual em `TenantSwitcher.tsx` e na página de
+  configurações — nunca um formulário de criação/seleção).
+
+Um `OWNER` hoje pode passar **qualquer string** como `business_unit_id` ao criar uma
+campanha (`principal.business_unit_ids is None` para `OWNER`, ou seja, sem nenhuma
+restrição de pertencimento) — não porque exista uma lista real de unidades válidas contra
+a qual validar, mas porque não há validação nenhuma para esse papel. Implementar um CRUD
+real exigiria decidir, sem ambiguidade suficiente no CURRENT hoje:
+
+1. Quais campos uma unidade de negócio tem além do id (nome de exibição? descrição?
+   endereço/CNPJ próprio, se distinto do tenant?).
+2. Quem tem autoridade para criar/renomear/arquivar uma unidade — só `OWNER`, ou também
+   `ADMIN` (papel que existe no `Role` enum mas não tem uso real hoje)?
+3. Um usuário pode pertencer a mais de uma unidade de negócio dentro do MESMO tenant
+   simultaneamente, ou a associação continua 1:1 por vínculo (como hoje)?
+4. As unidades "bu-1"/"bu-2" seedadas precisam de uma migração para virarem registros
+   reais, e as memberships existentes precisam ganhar uma referência real (FK) a elas?
+5. Existe alguma hierarquia entre unidades de negócio (ex.: sub-unidades), ou é sempre uma
+   lista plana por tenant?
+
+Nenhuma dessas perguntas tem resposta inequívoca no código, nos contratos ou na
+documentação normativa (`docs/nova-fm/*.md`) existente. Implementar sem essas respostas
+arriscaria exatamente o que a missão proíbe: criar uma segunda hierarquia de negócio
+paralela ou uma autoridade de criação inventada. **Nenhum código foi alterado para este
+item.**
+
+### Item C — Cadastro de empresa/unidade (tenant onboarding)
+
+**Status:** HUMAN_DECISION.
+
+**FATO CONFIRMADO**: não existe nenhum fluxo de criação de tenant/empresa em lugar
+nenhum do CURRENT — todo tenant hoje só existe como fixture estática em
+`api/identity_directory.py`/`api/state.py::_seed_tokens()`. Mais importante: **o próprio
+código já registra esta ausência como uma decisão de produto deliberadamente adiada**,
+não uma lacuna esquecida — o docstring de `api/identity_directory.py` (escrito na sessão
+do item 1.3/WP-02, 24/09/2026) diz textualmente: *"Autoprovisionamento/convite de usuario
+e Work Package futuro, fora do escopo do WP-02 (decisao de produto separada, nao
+tecnica)."*
+
+Implementar um cadastro real de empresa exigiria decidir, sem base suficiente hoje:
+
+1. É autoatendimento (qualquer e-mail verificado pelo Google Identity Platform pode criar
+   um tenant novo sozinho) ou provisionamento manual/curado (alguém da Nova FM cria o
+   tenant e convida o primeiro `OWNER`)? O comentário acima sugere a segunda opção, mas
+   isso nunca foi formalizado como decisão de produto.
+2. Quais dados de empresa são obrigatórios no cadastro (razão social? CNPJ? endereço?) —
+   nenhum desses campos existe em nenhum schema hoje.
+3. Como isso se relaciona com a assinatura/cobrança já real via Asaas
+   (`api/routes_billing.py`) — o cadastro de empresa precisa ocorrer ANTES, DEPOIS, ou
+   junto com a criação da assinatura?
+4. O cadastro cria automaticamente a primeira unidade de negócio (ver Item B), ou isso é
+   um passo separado?
+
+**Nenhum código foi alterado para este item** — implementar sem essas respostas seria
+inventar uma decisão de produto que a documentação normativa já classifica explicitamente
+como fora do escopo técnico.
+
+### Item D — Brand Kit / armazenamento de logo
+
+**Status:** EXTERNAL_INFRASTRUCTURE.
+
+**FATO CONFIRMADO** por leitura real de `backend/api/routes_brand.py` e
+`backend/api/models.py::BrandProfileCreate`: o Brand Kit hoje só tem campos textuais
+(`name`, `tone`, `colors`, `differentiators`, `restrictions`) — **nenhum campo de logo ou
+imagem existe**, e nenhuma integração de armazenamento de arquivos (Cloud Storage, GCP, S3
+ou equivalente) existe em lugar nenhum do repositório (`grep` real por
+"Storage"/"GCP"/"upload"/"multipart" não encontrou nada).
+
+Um upload real de logo depende de infraestrutura de armazenamento de arquivos que **não
+existe** neste projeto hoje — por instrução explícita da missão, **nunca armazenar
+base64 no banco como atalho** (isso mascararia a ausência de infraestrutura real por trás
+de uma implementação aparentemente funcional, exatamente o tipo de "sucesso fabricado" que
+o protocolo antialucinação deste repositório proíbe). **Nenhum código foi alterado para
+este item.**
+
+### Item E — Analytics real (Google Ads / Meta)
+
+**Status:** EXTERNAL_CREDENTIAL — já em conformidade, nenhuma ação necessária.
+
+**FATO CONFIRMADO**: `GET /campaigns/{id}/insights` (`api/routes_campaigns.py::get_insights`)
+já é um placeholder honesto — devolve `points: []` e uma nota explícita ("No analytics
+layer implemented yet in campaia_core; this is an honest placeholder, not fabricated
+data"), sem nenhum dado inventado. Confirmado por grep real: não existe nenhum adaptador
+real do Google Ads/Meta Ads, nenhuma credencial de API de analytics configurada, nenhuma
+integração além do `ProviderSimulator` (achado 20, Fase 3). WP-11 (Fase 2, achado 15,
+já registrado antes desta Fase 4) tornou esse comportamento visível também no Web
+(`InsightsPanel`), com o mesmo cuidado de nunca fabricar dados.
+
+Implementar analytics real exigiria credenciais de API do Google Ads/Meta e aprovação de
+acesso a essas contas — nenhuma das duas existe neste ambiente. **Nenhum código foi
+alterado para este item** — o CURRENT já está corretamente honesto, exatamente como a
+missão exige ("manter insights honestamente vazios; nunca fabricar analytics").
+
+## FASE 4 — Encerramento
+
+| ITEM | STATUS | AÇÃO |
+|---|---|---|
+| A. Retomar campanha pausada | FIXED | `POST /campaigns/{id}/resume` exposto (achado 25); achado 26 (duplicação de auditoria em replay) corrigido em `pause_campaign` e `resume_campaign` |
+| B. Unidade de negócio | HUMAN_DECISION | 5 perguntas de domínio listadas acima; nenhum código alterado |
+| C. Cadastro de empresa/tenant | HUMAN_DECISION | 4 perguntas de domínio listadas acima; já era decisão adiada explicitamente no próprio código (WP-02) |
+| D. Brand Kit / logo | EXTERNAL_INFRASTRUCTURE | depende de Cloud Storage/GCP inexistente; nenhum atalho de base64 criado |
+| E. Analytics real | EXTERNAL_CREDENTIAL | já honesto (placeholder), nenhuma ação necessária |
+
+Prosseguindo diretamente para a **Fase 5** (certificação final, consolidação de
+documentação, preparação do PR de takeover — sem merge), conforme a autorização explícita
+do Diretor.
