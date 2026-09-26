@@ -397,7 +397,15 @@ export interface paths {
         /** Aprovacoes pendentes do usuario */
         get: operations["listApprovals"];
         put?: never;
-        post?: never;
+        /**
+         * Cria um pedido de aprovacao pendente para uma campanha (WP-05, 26/09/2026)
+         * @description Nao documentado anteriormente (achado, ver api/routes_approvals.py::create_approval):
+         *     os fluxos gated por aprovacao (publicar, mudar verba, mudar autonomia) exigem uma
+         *     ApprovalRequest ja registrada, mas nenhum endpoint a criava no contrato -- sem isto,
+         *     POST /approvals/{id}/decision nao tinha nada para decidir. Este e' um criador
+         *     minimo: nao produz nenhum efeito de dominio por si so.
+         */
+        post: operations["createApproval"];
         delete?: never;
         options?: never;
         head?: never;
@@ -630,12 +638,12 @@ export interface components {
             /** Format: uuid */
             policy_decision_id?: string | null;
             /** @enum {string} */
-            outcome?: "APPROVABLE" | "BLOCKED" | "NEEDS_CHANGES";
+            outcome: "APPROVABLE" | "BLOCKED" | "NEEDS_CHANGES";
             /** Format: date-time */
             expires_at?: string | null;
-            requires_human_approval?: boolean;
-            requires_dual_approval?: boolean;
-            findings?: {
+            requires_human_approval: boolean;
+            requires_dual_approval: boolean;
+            findings: {
                 code?: string;
                 /** @enum {string} */
                 severity?: "INFO" | "WARNING" | "BLOCKING";
@@ -644,16 +652,21 @@ export interface components {
         };
         ApprovalRequest: {
             /** Format: uuid */
-            id?: string;
+            id: string;
             /** Format: uuid */
-            campaign_id?: string;
+            campaign_id: string;
             /** @description Gatilho que exigiu aprovacao humana. */
             reason?: string;
+            /** @enum {string} */
+            kind: "PUBLISH" | "BUDGET_CHANGE" | "AUTONOMY_CHANGE";
+            /** @description user_id de quem propos -- nunca pode decidir a propria proposta (segregacao de funcoes). */
+            requested_by: string;
+            amount?: string | null;
             plan_version?: number;
             /** @enum {string} */
-            status?: "PENDING" | "APPROVED" | "REJECTED" | "CHANGES_REQUESTED" | "EXPIRED";
-            requires_dual_approval?: boolean;
-            decided_by?: string[];
+            status: "PENDING" | "APPROVED" | "REJECTED" | "CHANGES_REQUESTED" | "EXPIRED";
+            requires_dual_approval: boolean;
+            decided_by: string[];
             /** Format: date-time */
             created_at?: string;
             /** Format: date-time */
@@ -1399,6 +1412,38 @@ export interface operations {
                     "application/json": components["schemas"]["ApprovalRequest"][];
                 };
             };
+        };
+    };
+    createApproval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    campaign_id: string;
+                    /** @enum {string} */
+                    kind: "PUBLISH" | "BUDGET_CHANGE" | "AUTONOMY_CHANGE";
+                    amount?: string | null;
+                    /** @default false */
+                    requires_dual_approval?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Pedido de aprovacao criado (PENDING) */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalRequest"];
+                };
+            };
+            404: components["responses"]["NotFound"];
         };
     };
     decideApproval: {

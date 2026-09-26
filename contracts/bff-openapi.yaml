@@ -506,6 +506,35 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/ApprovalRequest' }
+    post:
+      tags: [Governanca]
+      summary: Cria um pedido de aprovacao pendente para uma campanha (WP-05, 26/09/2026)
+      description: |
+        Nao documentado anteriormente (achado, ver api/routes_approvals.py::create_approval):
+        os fluxos gated por aprovacao (publicar, mudar verba, mudar autonomia) exigem uma
+        ApprovalRequest ja registrada, mas nenhum endpoint a criava no contrato -- sem isto,
+        POST /approvals/{id}/decision nao tinha nada para decidir. Este e' um criador
+        minimo: nao produz nenhum efeito de dominio por si so.
+      operationId: createApproval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [campaign_id, kind]
+              properties:
+                campaign_id: { type: string }
+                kind: { type: string, enum: [PUBLISH, BUDGET_CHANGE, AUTONOMY_CHANGE] }
+                amount: { type: [string, 'null'] }
+                requires_dual_approval: { type: boolean, default: false }
+      responses:
+        '201':
+          description: Pedido de aprovacao criado (PENDING)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /approvals/{approvalId}/decision:
     post:
@@ -883,6 +912,7 @@ components:
 
     PolicyDecision:
       type: object
+      required: [outcome, requires_human_approval, requires_dual_approval, findings]
       properties:
         policy_decision_id: { type: [string, 'null'], format: uuid }
         outcome: { type: string, enum: [APPROVABLE, BLOCKED, NEEDS_CHANGES] }
@@ -900,10 +930,16 @@ components:
 
     ApprovalRequest:
       type: object
+      required: [id, campaign_id, kind, requested_by, status, requires_dual_approval, decided_by]
       properties:
         id: { type: string, format: uuid }
         campaign_id: { type: string, format: uuid }
         reason: { type: string, description: Gatilho que exigiu aprovacao humana. }
+        # Campos reais sempre serializados pelo backend (api/models.py::ApprovalResponse)
+        # que nunca tinham sido documentados aqui (achado, WP-05, 26/09/2026).
+        kind: { type: string, enum: [PUBLISH, BUDGET_CHANGE, AUTONOMY_CHANGE] }
+        requested_by: { type: string, description: user_id de quem propos -- nunca pode decidir a propria proposta (segregacao de funcoes). }
+        amount: { type: [string, 'null'] }
         plan_version: { type: integer }
         status: { type: string, enum: [PENDING, APPROVED, REJECTED, CHANGES_REQUESTED, EXPIRED] }
         requires_dual_approval: { type: boolean }
