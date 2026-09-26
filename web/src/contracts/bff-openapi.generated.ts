@@ -1571,7 +1571,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        scope?: "CAMPAIGN" | "ACCOUNT" | "TENANT" | "PLATFORM" | "GLOBAL";
+                        affected_campaign_ids?: string[];
+                    };
+                };
             };
         };
     };

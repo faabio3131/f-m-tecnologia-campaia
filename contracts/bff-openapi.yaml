@@ -631,7 +631,23 @@ paths:
                 target_id: { type: [string, 'null'], format: uuid }
                 reason: { type: string, maxLength: 500 }
       responses:
-        '202': { description: Acionado; pausa propagando }
+        '202':
+          description: Acionado; pausa propagando
+          content:
+            application/json:
+              # Achado da reconciliacao WP-08 (26/09/2026): o corpo real de
+              # `POST /kill-switch` (backend/api/routes_campaigns.py::kill_switch) sempre
+              # devolve este formato -- confirmado por execucao real
+              # (`tests_api/test_smoke_endpoints.py::test_kill_switch_tenant_scope`
+              # ja asserta `affected_campaign_ids`), mas o contrato nunca declarava um
+              # schema de resposta -- aditivo, sem mudanca de comportamento do backend.
+              schema:
+                type: object
+                properties:
+                  scope: { type: string, enum: [CAMPAIGN, ACCOUNT, TENANT, PLATFORM, GLOBAL] }
+                  affected_campaign_ids:
+                    type: array
+                    items: { type: string, format: uuid }
 
   /campaigns/{campaignId}/insights:
     get:
