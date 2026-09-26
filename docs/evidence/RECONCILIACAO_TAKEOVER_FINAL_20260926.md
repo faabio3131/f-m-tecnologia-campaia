@@ -1,0 +1,135 @@
+# CampaIA — Reconciliação final e takeover técnico (PR#5 × PR#6)
+
+**Data:** 26/09/2026 · **Missão:** PROMPT MESTRE — CampaIA, Reconciliação Final,
+Consolidação de Branches e Takeover Técnico · **Branch de trabalho:**
+`reconciliation/campaia-final-takeover` (local, nascida de `feat/campaia-wp01-web-foundation`
+@ `41c031d94f989de5dddcd68e771daf241c156ba5`, HEAD confirmado de PR #5 no momento do início
+desta missão) · **Autor:** Claude, por instrução explícita do Diretor.
+
+Este documento é atualizado a cada bloco (WP) concluído, não escrito de uma vez ao final.
+
+---
+
+## FASE 0 — CURRENT reconstruído (execução real, 26/09/2026)
+
+| SOURCE | BRANCH | HEAD | RELATION TO MAIN | RELATION TO PR #5 |
+|---|---|---|---|---|
+| main | `main` | `851db13723c3575d516bed64d71535cd7fed8bca` | — | PR#5 = main + 13 commits, 0 atrás |
+| PR #5 | `feat/campaia-wp01-web-foundation` | `41c031d94f989de5dddcd68e771daf241c156ba5` | 13 à frente, 0 atrás | base |
+| PR #6 | `feat/campaia-v1-complete-saas` | `3cc9e07b17815a9269d369c2ae25380a5d63790b` | 69 à frente, 33 atrás | 63 à frente, 40 atrás de PR#5; 243 arquivos divergentes |
+
+**BASE DE AUTORIDADE:** PR #5 (confirmado pelo Diretor). Backend do CURRENT (HEAD acima)
+rodado nesta sessão: `PYTHONPATH=. python3 -m pytest -q` → **526 passed, 58 subtests
+passed, 0 failures**. Frontend: `npm run test -- --run` → **14 arquivos, 47 testes, 0
+failures**; `npm run typecheck`, `npm run lint`, `npm run contracts:check`, `npm run
+boundary:check` → todos OK antes de qualquer alteração desta missão.
+
+Achado relevante fora do escopo direto de PR#5×PR#6, registrado por transparência: o
+repositório tem hoje 30 PRs no total (não 6); 12+ já mescladas em `main` desde a auditoria
+de 24/09 (billing/Asaas/segurança) e outra leva mesclada via squash entre 24/09 e 26/09,
+incluindo autenticação real (WP-02, PR #30) e verificação real do provider Gemini. Isso não
+altera a relação main↔PR#5↔PR#6 acima.
+
+## FASE 1 — Inventário PR#5 × PR#6, com correções do Diretor
+
+| Domínio | Classificação inicial | Classificação final (decisão do Diretor, 26/09) |
+|---|---|---|
+| BILLING/Asaas | A — Manter CURRENT | confirmada |
+| AUTH/SESSION | E — Conflito | **A — Manter CURRENT.** OIDC provider-neutral da PR#6 (`oidc.py`, `test_idp.py`, 20/09) foi superado pela decisão arquitetural posterior de 24/09 (Google Identity Platform + firebase-admin, identidade externa só prova QUEM, tenant/roles/business_unit_id só do diretório interno, fail-closed). Mineração seletiva de testes/invariantes de segurança ainda ausentes, permitida; arquitetura OIDC antiga NÃO portada. |
+| TENANCY | B — Portar (candidato) | **A — Manter CURRENT.** PR#5 já tem `GET /me/memberships`, `POST /auth/session/switch`, troca real de vínculo, CSRF, cross-tenant isolation, auditoria `SESSION_SWITCH`/`SESSION_SWITCH_REJECTED`, step-up, UI real, E2E `session-protocol.spec.ts`. `routes_session.py` da PR#6 NÃO portado como implementação concorrente. |
+| WEB (frontend) | E — Conflito grave | **Arquitetura estrutural de PR#5 é autoridade.** `providers/`, `types/`, App Router, AuthProvider, API client, shell e componentes atuais preservados. Para WP-06→11: portar comportamento sobre a arquitetura de PR#5, nunca copiar diretório `web/` da PR#6. |
+| CONTRACTS | dependia de AUTH/WEB | `contracts/bff-openapi.yaml` do CURRENT é a base; mudanças de PR#6 só seletivas/aditivas, comprovadas pelo backend real. |
+| WP-06→WP-11 | B — Portar (prioridade alta) | confirmada; um por vez, comportamento sobre a arquitetura de PR#5. |
+
+## BLOQUEIO DE ESCRITA (registrado, não resolvido)
+
+Esta sessão consegue ler/fetch o repositório via git puro, mas **não tem permissão do git
+proxy para dar push** de nenhuma branch nova (`not in this session's authorized repository
+set`), mesmo com o GitHub App corretamente instalado e autorizado pelo Diretor no
+repositório correto — a autorização de repositório por sessão do Claude Code parece só ser
+aplicada na criação da sessão, não pode ser injetada depois. Trabalho procede 100% local
+por instrução do Diretor; nenhum bundle/patch será gerado até a fase de publicação final.
+
+---
+
+## WP-06 — Alteração de orçamento
+
+**Estado:** `IMPLEMENTADO E TESTADO NESTA SESSÃO`. FM QA Engineer formal ainda pendente
+(mesma ressalva de todos os blocos anteriores do projeto).
+
+### CURRENT antes deste bloco
+
+- Backend: `PATCH /campaigns/{id}/budget` (`routes_campaigns.py::patch_budget`) e
+  `POST /approvals` (`routes_approvals.py::create_approval`) **já existiam** em PR#5/main,
+  com validação de variação percentual, approval gate, step-up, idempotência e auditoria
+  `BUDGET_CHANGE`. Nenhum desses arquivos foi alterado neste bloco.
+- Contrato: `ApprovalRequest.kind`/`amount` e `POST /approvals` **já estavam documentados**
+  em `contracts/bff-openapi.yaml` do CURRENT (achado: PR#6 registrava esses mesmos campos
+  como "corrigidos" em 21/09, mas o CURRENT de 24-26/09 já os tinha independentemente).
+- Web: **nenhuma UI de orçamento existia** em `web/src` do CURRENT (confirmado por busca
+  antes de escrever qualquer código).
+
+### Achado real de contrato, confirmado por execução nesta sessão
+
+`Campaign.budget.total_amount`/`daily_cap`/`spent_to_date` são `Decimal` em
+`backend/api/models.py`. Execução real:
+
+```python
+class Budget(BaseModel):
+    total_amount: Decimal
+    daily_cap: Decimal
+    spent_to_date: Decimal
+
+Budget(total_amount=Decimal('1000'), daily_cap=Decimal('500.50'), spent_to_date=Decimal('10')).model_dump_json()
+# => {"total_amount":"1000","daily_cap":"500.50","spent_to_date":"10"}
+```
+
+Confirma: pydantic v2 sempre serializa `Decimal` como **string** em `model_dump_json()` —
+nunca `number`. O contrato declarava `type: number` para os 3 campos desde a construção
+original; nunca foi verdade em runtime (mesma classe de achado que a PR#6 registrou em
+21/09 para este mesmo bloco, de forma independente).
+
+**Corrigido nesta sessão:** os 3 campos passam a `type: string` em
+`contracts/bff-openapi.yaml`, mesmo padrão já usado em `ApprovalRequest.amount`. Aditivo
+para o formato real, sem mudança de comportamento do backend. Tipos regenerados
+(`npm run contracts:generate`) e verificados sem drift (`npm run contracts:check`).
+
+### O que foi construído (comportamento portado, frontend reconstruído)
+
+- `web/src/components/BudgetPanel.tsx` (novo) — resumo do orçamento (diário/total/gasto,
+  normalizando `Number(...)` para tolerar string ou number vindo da API), fluxo propor
+  (`POST /approvals`, `kind: BUDGET_CHANGE`) → decidir na fila de Aprovações (WP-05,
+  inalterado) → aplicar (`PATCH /campaigns/{id}/budget`, com `X-Step-Up-Token`, mesmo
+  padrão já usado em `connections/page.tsx` e `approvals/page.tsx`).
+- `web/src/components/BudgetPanel.module.css` (novo), usando os tokens de design já
+  existentes (`--campaia-color-*`, `--campaia-space-*`).
+- Integrado em `campaigns/[campaignId]/page.tsx` (import + `<BudgetPanel />`), sem alterar
+  nenhum comportamento pré-existente da página.
+- Nenhum arquivo de `backend/campaia_core/`, `backend/api/routes_*.py` (exceto o contrato,
+  documentado acima), `permissions.py` ou `mobile/` foi alterado — confirmado por
+  `git status` antes do commit.
+
+### Testes
+
+- Novo: `web/tests/budget-panel.test.tsx` — 3 casos (resumo normalizado, propor mudança,
+  aplicar mudança aprovada com verificação do header de step-up). Todos verdes.
+- Atualizado: `web/tests/campaign-detail-page.test.tsx` — mock de `GET /approvals` (novo
+  fetch do `BudgetPanel` ao montar a página); teste pré-existente continua verde sem
+  alteração de asserts.
+- Comando: `npm run test -- --run` → **15 arquivos, 50 testes, 0 failures** (baseline era
+  14/47; +1 arquivo, +3 testes).
+- `npm run typecheck`, `npm run lint`, `npm run contracts:check`, `npm run boundary:check`
+  (55 arquivos, antes 53) → todos OK.
+- Backend regressão completa: `PYTHONPATH=. python3 -m pytest -q` → **526 passed, 58
+  subtests passed** (idêntico ao baseline — nenhuma mudança de comportamento backend).
+
+### Pendências reais deste bloco (não escondidas)
+
+- FM QA Engineer formal: pendente (mesma ressalva histórica do projeto desde WP-02).
+- E2E cross-stack (dois usuários reais, propor→aprovar→aplicar): **não construído nesta
+  sessão** — a PR#6 tinha um (`web/e2e-crossstack/budget-change.spec.ts`); avaliar se deve
+  ser portado num bloco de consolidação de E2E, depois que WP-06→11 estiverem todos
+  implementados (decisão de sequenciamento, não de escopo).
+- Drift de tipo residual: o contrato agora reflete a string real para os 3 campos de
+  budget, mas **nenhum outro campo `Decimal` do contrato foi auditado** nesta sessão —
+  pode haver o mesmo achado em outros endpoints, fora do escopo deste bloco.
