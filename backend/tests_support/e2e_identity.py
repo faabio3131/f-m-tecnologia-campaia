@@ -20,6 +20,12 @@ E2E_TOKEN_UNKNOWN_EMAIL = "e2e-test-id-token-unknown-email"
 #: WP-03 (25/09/2026): identidade com DOIS vinculos reais (seed_dev_identity_directory),
 #: para o E2E real de listagem/troca de tenant/unidade ativo na sessao.
 E2E_TOKEN_MULTI_TENANT_OWNER = "e2e-test-id-token-multi-tenant-owner"
+#: WP-06 (26/09/2026, reconciliacao PR#6): segundo usuario real do MESMO tenant
+#: (demo-tenant), papel APPROVER -- necessario para o E2E cross-stack do fluxo de
+#: orcamento (segregacao de funcoes: quem propoe != quem aprova). Corresponde a
+#: "approver@demo-tenant.campaia.test" ja seedado em
+#: api.identity_directory.seed_dev_identity_directory().
+E2E_TOKEN_TENANT_A_APPROVER = "e2e-test-id-token-tenant-a-approver"
 
 _IDENTITIES: dict[str, VerifiedIdentity] = {
     E2E_TOKEN_TENANT_A_OWNER: VerifiedIdentity(
@@ -47,6 +53,11 @@ _IDENTITIES: dict[str, VerifiedIdentity] = {
         email="owner@multi-tenant.campaia.test",
         email_verified=True,
     ),
+    E2E_TOKEN_TENANT_A_APPROVER: VerifiedIdentity(
+        subject="e2e-google-uid-tenant-a-approver",
+        email="approver@demo-tenant.campaia.test",
+        email_verified=True,
+    ),
 }
 
 
@@ -69,4 +80,5 @@ __all__ = [
     "E2E_TOKEN_UNVERIFIED_EMAIL",
     "E2E_TOKEN_UNKNOWN_EMAIL",
     "E2E_TOKEN_MULTI_TENANT_OWNER",
+    "E2E_TOKEN_TENANT_A_APPROVER",
 ]

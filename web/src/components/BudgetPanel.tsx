@@ -44,9 +44,21 @@ function formatCurrency(value: number, currency: string): string {
 export interface BudgetPanelProps {
   campaignId: string;
   budget: Campaign["budget"];
+  /**
+   * Achado do E2E cross-stack desta reconciliação (26/09/2026): `budget` é uma prop
+   * (snapshot buscado pela página pai em `GET /campaigns/{id}`), nunca refeita por este
+   * componente sozinho -- sem isto, depois de um `PATCH /campaigns/{id}/budget` bem
+   * sucedido o valor exibido continuava mostrando o orçamento antigo até um reload
+   * completo da página, mesmo com o backend real já tendo aplicado a mudança
+   * (confirmado com o teste "propor -> aprovar -> aplicar" falhando antes desta
+   * correção). A página pai já tem `loadCampaignAndPlan()`; este callback só a aciona
+   * de novo depois de aplicar, mesmo padrão já usado por `handleValidate`/
+   * `handleGeneratePlan` na própria página.
+   */
+  onApplied?: () => void | Promise<void>;
 }
 
-export function BudgetPanel({ campaignId, budget }: BudgetPanelProps) {
+export function BudgetPanel({ campaignId, budget, onApplied }: BudgetPanelProps) {
   const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(null);
   const [proposedValue, setProposedValue] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -135,6 +147,7 @@ export function BudgetPanel({ campaignId, budget }: BudgetPanelProps) {
         },
       );
       await reloadRelevantApproval();
+      await onApplied?.();
     } catch (err) {
       setActionError(
         err instanceof ApiClientError ? err.message : "Falha ao aplicar a mudança de orçamento.",
@@ -158,7 +171,9 @@ export function BudgetPanel({ campaignId, budget }: BudgetPanelProps) {
       <dl className={styles.summary}>
         <div>
           <dt>Diário atual</dt>
-          <dd>{dailyCap === null ? "—" : formatCurrency(dailyCap, currency)}</dd>
+          <dd data-testid="budget-daily-cap">
+            {dailyCap === null ? "—" : formatCurrency(dailyCap, currency)}
+          </dd>
         </div>
         <div>
           <dt>Total da campanha</dt>

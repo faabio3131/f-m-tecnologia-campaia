@@ -162,7 +162,11 @@ export default function CampaignDetailPage() {
 
       {actionError ? <ErrorState title="Não foi possível continuar" description={actionError} /> : null}
 
-      <BudgetPanel campaignId={campaignId} budget={campaign.budget} />
+      <BudgetPanel
+        campaignId={campaignId}
+        budget={campaign.budget}
+        onApplied={loadCampaignAndPlan}
+      />
 
       <Card>
         <h2 className={styles.sectionTitle}>Estratégia (IA)</h2>

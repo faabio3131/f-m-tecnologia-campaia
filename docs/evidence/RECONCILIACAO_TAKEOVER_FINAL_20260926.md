@@ -126,10 +126,77 @@ para o formato real, sem mudança de comportamento do backend. Tipos regenerados
 ### Pendências reais deste bloco (não escondidas)
 
 - FM QA Engineer formal: pendente (mesma ressalva histórica do projeto desde WP-02).
-- E2E cross-stack (dois usuários reais, propor→aprovar→aplicar): **não construído nesta
-  sessão** — a PR#6 tinha um (`web/e2e-crossstack/budget-change.spec.ts`); avaliar se deve
-  ser portado num bloco de consolidação de E2E, depois que WP-06→11 estiverem todos
-  implementados (decisão de sequenciamento, não de escopo).
 - Drift de tipo residual: o contrato agora reflete a string real para os 3 campos de
   budget, mas **nenhum outro campo `Decimal` do contrato foi auditado** nesta sessão —
   pode haver o mesmo achado em outros endpoints, fora do escopo deste bloco.
+
+### Addendum — E2E cross-stack (checkpoint do Diretor, 26/09/2026)
+
+O Diretor corrigiu o sequenciamento acima ("CHECKPOINT WP-06 APROVADO — PEQUENO AJUSTE
+ANTES DO WP-07"): o E2E cross-stack não pode ficar pendente para um bloco futuro de
+consolidação — precisa fechar o WP-06 agora, antes do WP-07. Cenário reconstruído (não
+copiado) sobre o harness real já usado por `session-protocol.spec.ts`
+(`web/playwright.session.config.ts`: backend Starlette real via
+`tests_support/e2e_server.py` + Next.js real em build de produção).
+
+**Identidade de teste nova, necessária para o cenário:** o harness de E2E só tinha
+identidades OWNER por tenant; o fluxo exige um segundo usuário real do MESMO tenant para
+decidir a aprovação sem violar segregação de funções. Adicionado
+`E2E_TOKEN_TENANT_A_APPROVER` (`backend/tests_support/e2e_identity.py`, mapeado para
+`approver@demo-tenant.campaia.test`, já seedado em `identity_directory.py`) e a opção
+correspondente em `web/src/lib/auth/test-identity-client.ts`. Confirmado por grep que
+nenhum teste existente depende de uma contagem/lista exata de identidades de teste.
+
+**Novo arquivo:** `web/e2e/budget-change.spec.ts`, dois cenários:
+
+1. `propor -> aprovar -> aplicar, com o orçamento real exibido mudando` — três contextos
+   de navegador reais (OWNER, APPROVER do mesmo tenant, OWNER de outro tenant): cria
+   campanha real via UI → propõe mudança de orçamento (`POST /approvals`) → segundo
+   usuário real decide na fila de Aprovações real (`POST /approvals/{id}/decision`) →
+   primeiro usuário aplica (`PATCH /campaigns/{id}/budget`, com `X-Step-Up-Token`) →
+   orçamento diário exibido muda de R$ 500,00 para R$ 600,00 → isolamento de tenant
+   confirmado (terceiro usuário, outro tenant, recebe 403/404 ao tentar `GET` direto na
+   campanha).
+2. `autoaprovação recusada e aplicação sem step-up recusada` — o próprio proponente tenta
+   decidir a própria proposta na fila real (UI nunca esconde o botão — recusa real do
+   backend exibida); confirma que o orçamento não mudou; PATCH direto sem header de
+   step-up recebe `403 STEP_UP_REQUIRED` real do backend.
+
+**Achados reais corrigidos durante a construção do E2E (o teste pegou bugs genuínos, não
+problemas do próprio teste):**
+
+- `POST /approvals/{id}/decision` devolve `200`, não `202` (só `PATCH /campaigns/{id}/budget`
+  e `POST /briefs` são `202 Accepted`, por serem efeitos assíncronos — achado no código de
+  `routes_approvals.py::decide_approval`, `json_response(...)` sem `status_code` explícito).
+  Assert do teste corrigido para refletir o comportamento real, não alterado no backend.
+- **Bug real de UI encontrado e corrigido nesta sessão:** depois de um `PATCH
+  /campaigns/{id}/budget` bem-sucedido, `BudgetPanel.tsx` só recarregava a própria lista de
+  aprovações (`reloadRelevantApproval()`) — o valor de orçamento exibido continuava vindo
+  da prop `budget`, buscada uma única vez pela página pai
+  (`campaigns/[campaignId]/page.tsx`) no carregamento inicial, e nunca era atualizado após
+  aplicar a mudança. O primeiro run do E2E pegou isso de forma real: `R$ 500,00`
+  continuava na tela mesmo com o backend já tendo aplicado `R$ 600,00`. Corrigido com um
+  novo prop `onApplied?: () => void | Promise<void>` em `BudgetPanel`, chamado depois do
+  PATCH bem-sucedido; a página pai passa sua função já existente `loadCampaignAndPlan`
+  (mesmo padrão já usado por `handleValidate`/`handleGeneratePlan`) — nenhuma segunda fonte
+  de verdade criada, o componente continua sem buscar a campanha por conta própria.
+- Também adicionado `data-testid="budget-daily-cap"` no valor de orçamento diário exibido
+  (convenção já usada em botões de ação no projeto, ex. `approve-${id}`), porque uma busca
+  de texto livre por `"R$ 500,00"` colidia com o número 500 aparecendo cru dentro do JSON
+  do painel "Estratégia (IA)" (mesma página) — achado de teste frágil, não de produto.
+
+**Execução real:**
+
+- `npx playwright test --config=playwright.session.config.ts` (com `budget-change.spec.ts`
+  incluído em `testMatch`) → **16 passed** (14 pré-existentes de `session-protocol.spec.ts`
+  + 2 novos), 0 failures, 0 skips.
+- `npm run typecheck`, `npm run lint`, `npm run test -- --run` (**15 arquivos, 50 testes**,
+  inalterado), `npm run contracts:check`, `npm run boundary:check` (**55 arquivos**,
+  inalterado) → todos OK, sem regressão da adição de identidade de teste.
+- Backend: `PYTHONPATH=. python3 -m pytest -q` → **526 passed, 58 subtests passed**
+  (idêntico ao baseline — nenhum arquivo de `backend/campaia_core/`, `backend/api/routes_*.py`
+  ou `permissions.py` alterado neste addendum).
+
+**Estado final do WP-06:** `IMPLEMENTADO E TESTADO (unit + component + backend regression +
+E2E cross-stack)` nesta sessão. FM QA Engineer formal continua pendente (ressalva histórica
+do projeto).

@@ -26,6 +26,10 @@ export const TEST_IDENTITY_OPTIONS: readonly TestIdentityOption[] = [
     id: "e2e-test-id-token-multi-tenant-owner",
     label: "Owner — dois vínculos (demo-tenant + other-tenant)",
   },
+  {
+    id: "e2e-test-id-token-tenant-a-approver",
+    label: "Approver — tenant A (demo-tenant)",
+  },
 ];
 
 export function isTestIdentityModeEnabled(): boolean {
