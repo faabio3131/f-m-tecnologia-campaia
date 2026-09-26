@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import unittest
 
-from tests_api.test_helpers import OTHER_OWNER, OWNER, make_client, unique_idem, with_step_up
+from tests_api.test_helpers import OTHER_OWNER, OWNER, idem, make_client, unique_idem, with_step_up
 
 
 def _start_oauth(client, headers, provider="GOOGLE_ADS"):
@@ -136,6 +136,30 @@ class OAuthCallbackTests(unittest.TestCase):
             json={"state": state_token, "external_account_id": "acct-1", "display_name": "X"},
         )
         self.assertEqual(r.status_code, 422, r.text)
+
+    def test_replaying_the_same_idempotency_key_returns_the_original_connection(self):
+        """ACHADO 24 (Fase 3, item 6 -- mineracao de testes da PR#6, 26/09/2026): mesma
+        classe de bug ja corrigida no achado 19 (patch_budget/publish_campaign/
+        put_autonomy), aqui para o `state` de OAuth de uso unico. REPRODUZIDO por execucao
+        real antes da correcao: um replay legitimo da MESMA Idempotency-Key (ex.: cliente
+        retransmitindo apos timeout de rede) chegava a `redeem_oauth_state` de novo,
+        encontrava o state ja consumido pela primeira chamada, e falhava com 403
+        PERMISSION_DENIED em vez de devolver o 201 original -- nunca deveria falhar, e
+        nunca deveria criar uma segunda Connection."""
+        client = make_client()
+        state_token = _start_oauth(client, OWNER)
+        headers = {**with_step_up(OWNER), **idem("oauth-callback-replay")}
+        body = {"state": state_token, "external_account_id": "acct-1", "display_name": "X"}
+
+        first = client.post("/connections/oauth/callback", headers=headers, json=body)
+        self.assertEqual(first.status_code, 201, first.text)
+
+        second = client.post("/connections/oauth/callback", headers=headers, json=body)
+        self.assertEqual(second.status_code, 201, second.text)
+        self.assertEqual(second.json(), first.json())
+
+        listed = client.get("/connections", headers=OWNER)
+        self.assertEqual(len(listed.json()), 1)
 
 
 if __name__ == "__main__":

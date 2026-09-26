@@ -98,6 +98,21 @@ async def oauth_callback(request: Request) -> JSONResponse:
     idem_key = require_idempotency_key(request)
     body = await parse_body(request, OAuthCallbackRequest)
 
+    # ACHADO 24 (Fase 3, item 6 -- mineracao de testes da PR#6, 26/09/2026, REPRODUZIDO por
+    # execucao real nesta sessao): mesma classe de bug de ordenacao ja corrigida no achado
+    # 19 (patch_budget/publish_campaign/put_autonomy) -- aqui o recurso de uso-unico e o
+    # OAuth `state` (consumido por `redeem_oauth_state`) em vez do status de uma
+    # ApprovalRequest, mas o efeito e identico: antes desta correcao, um replay legitimo da
+    # MESMA Idempotency-Key (ex.: cliente retransmitindo apos timeout de rede) chegava a
+    # `redeem_oauth_state` de novo, encontrava o state ja consumido pela primeira chamada, e
+    # falhava com 403 PERMISSION_DENIED em vez de devolver o 201 original -- confirmado por
+    # execucao real: FIRST 201, SECOND (mesma Idempotency-Key, mesmo state) 403 antes desta
+    # correcao. O gate de replay precisa vir ANTES do resgate do state, que so pode
+    # acontecer uma vez.
+    existing = state.idempotency.get(fixture.tenant_id, f"http:oauth_callback:{idem_key}")
+    if existing is not None:
+        return JSONResponse(existing.result, status_code=201)
+
     pending = state.redeem_oauth_state(
         body.state, tenant_id=fixture.tenant_id, now=datetime.now(timezone.utc)
     )
