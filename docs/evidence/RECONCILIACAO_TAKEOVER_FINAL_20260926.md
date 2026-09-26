@@ -1391,3 +1391,46 @@ missão exige ("manter insights honestamente vazios; nunca fabricar analytics").
 Prosseguindo diretamente para a **Fase 5** (certificação final, consolidação de
 documentação, preparação do PR de takeover — sem merge), conforme a autorização explícita
 do Diretor.
+
+## FASE 5 — Consolidação final
+
+**Matriz de certificação final (execução real nesta sessão, HEAD no momento da execução):**
+
+| Gate | Comando | Resultado |
+|---|---|---|
+| Testes backend | `PYTHONPATH=. python3 -m pytest -q` | **553 passed, 58 subtests passed, 0 failures** |
+| Testes Web (unit/component) | `npm run test -- --run` | **67 passed, 20 arquivos, 0 failures** |
+| E2E cross-stack | `npx playwright test --config=playwright.session.config.ts` | **26 passed, 0 failures** |
+| Auditoria de dependências | `pip-audit -r requirements.txt` | **0 vulnerabilidades conhecidas** |
+| Contrato × geração TS | `npm run contracts:check` | **OK, sem drift** |
+| Fronteiras de segurança Web | `npm run boundary:check` | **OK, 65 arquivos, sem violação** |
+| Typecheck / lint Web | `npm run typecheck` / `npm run lint` | **OK** |
+| Árvore de trabalho | `git status --short` | **limpa** |
+
+**Documentação reconciliada:** novo painel vigente publicado em
+`docs/evidence/PAINEL_VIGENTE_20260926.md`, substituindo como retrato do estado real a
+seção desatualizada de `docs/19_CRONOGRAMA_MESTRE_FINALIZACAO.md` (24/09/2026) e qualquer
+painel herdado do histórico da PR#6 — nenhum dos dois documentos anteriores foi apagado
+(ambos continuam no repositório como registro histórico), apenas superados como fonte da
+verdade corrente.
+
+**Confirmação de avaliação completa de PR#5 e PR#6:** ver seção dedicada em
+`docs/evidence/PAINEL_VIGENTE_20260926.md` ("PR#5 e PR#6: confirmação de avaliação
+completa"). Resumo: Fase 1 decidiu área por área (nunca uma branch vencendo tudo); Fase 2
+reconstruiu 6 telas sobre a arquitetura correta; Fase 3 minerou tecnicamente toda a PR#6
+(6 itens + comparação arquivo-a-arquivo de testes) sem deixar nenhum achado real sem
+classificação. Nenhum código tecnicamente válido de nenhuma das duas branches foi
+abandonado sem avaliação.
+
+**Tabela consolidada de todas as fases desta missão (Fases 3, 4 e 5 — autorizadas
+explicitamente nesta sessão; Fases 0–2 já haviam sido concluídas e aprovadas antes):**
+
+| Fase | Escopo | Status |
+|---|---|---|
+| 3 | 6 itens de mineração técnica da PR#6 (achados 19–24) | Todos FIXED, ver tabela na seção "FASE 3 — Encerramento" |
+| 4 | 5 itens de lacunas internas (achados 25–26 + 3 classificações) | A: FIXED · B, C: HUMAN_DECISION · D: EXTERNAL_INFRASTRUCTURE · E: EXTERNAL_CREDENTIAL (já conforme) |
+| 5 | Certificação final, documentação, painel vigente, preparação do PR | Concluída — ver matriz acima |
+
+**Nenhum merge, deploy, release ou alteração de produção ocorreu nesta sessão, em nenhum
+momento.** O PR de takeover está sendo preparado a seguir, contra `main`, sem merge
+automático.
