@@ -1180,3 +1180,87 @@ do checklist da Fase 3 foram tecnicamente resolvíveis dentro da autoridade já 
 sem mudança de contrato ambígua, sem infraestrutura externa e sem decisão de produto
 pendente. Prosseguindo diretamente para a **Fase 4**, conforme a autorização explícita do
 Diretor.
+
+## FASE 4 — Lacunas internas
+
+Autorização explícita do Diretor (26/09/2026) para prosseguir diretamente da Fase 3 para
+a Fase 4 sem nova autorização entre correções puramente técnicas.
+
+### Item A — Retomar campanha pausada (achados 25 e 26)
+
+**Status:** FIXED.
+
+**FATO CONFIRMADO** por leitura real do domínio antes de qualquer código ser escrito:
+`campaia_core/states.py` já modelava e testava a transição `PAUSED -> ACTIVE`
+(`TRANSITIONS[CampaignState.PAUSED]` já incluía `ACTIVE`; guarda dedicada
+`_guard_resume`, que bloqueia apenas se `kill_switch_active`). Confirmado por grep real
+em `backend/api/main.py`, `contracts/bff-openapi.yaml` e `web/src`: **nenhuma rota,
+nenhum campo de contrato e nenhuma tela** expunham essa transição — `NÃO ENCONTRADO`,
+não presumido. Este é exatamente o caso que a autorização do Diretor previu: "implemente
+se o domínio já suporta e só falta exposição".
+
+**Ação:**
+
+- `contracts/bff-openapi.yaml`: novo `POST /campaigns/{campaignId}/resume` —
+  `Idempotency-Key` + `X-Step-Up-Token` obrigatórios, `202` com `Campaign`, `409
+  INVALID_STATE` se a campanha não estiver `PAUSED`.
+- `backend/api/routes_campaigns.py::resume_campaign` — `Permission.CAMPAIGN_PUBLISH` +
+  step-up (mesmo nível de cautela de `publish_campaign`, não o de
+  `pause_campaign`/`CAMPAIGN_EDIT`, porque retomar volta a gerar gasto externo real).
+  **Não exige um novo `approval_id`**: a guarda de domínio para esta transição específica
+  (`_guard_resume`) só verifica `kill_switch_active`, nunca aprovação humana — diferente
+  de `APPROVED -> PUBLISHING`. Inventar uma exigência de aprovação que o domínio não
+  modela seria o erro oposto (mais rigoroso que o domínio autoriza); a rota segue
+  exatamente o que a guarda real exige, nada mais.
+- **Deliberadamente não foi adicionada nenhuma chamada de conector** para "reativar" o
+  recurso externo: `AdsConnector` (`campaia_core/connectors.py`) só declara
+  `publish`/`pause` — não existe `resume`/`unpause` no protocolo. Confirmado por grep
+  real: a própria chamada `connector.pause(...)` que `pause_campaign` já faz é simbólica
+  (`ProviderSimulator()` novo e descartado a cada chamada; `.paused` nunca é lido em
+  nenhum outro lugar do código) — não há nenhum efeito real a espelhar. Definir o que uma
+  "retomada" deveria significar para um adaptador real (nova chamada de API do provider?
+  republicar? outra coisa?) é uma decisão de protocolo de conector/produto ainda
+  pendente, deliberadamente **fora do escopo** desta exposição — não inventada aqui.
+  Classificação: parte não implementada = `HUMAN_DECISION` implícita, documentada, não
+  bloqueante (a exposição do domínio funciona integralmente sem ela, pois o CURRENT só
+  tem o simulador).
+- **UI**: nenhum botão de "retomar" foi adicionado. Achado, por inspeção real do
+  frontend: `pause_campaign` em si **também não tem nenhuma UI própria hoje** (o único
+  controle de pausa exposto na tela de campanha é o `KillSwitchPanel`, que usa o endpoint
+  `/kill-switch`, não `/campaigns/{id}/pause`). Como não existe um lugar natural já
+  existente para "religar" a esse novo endpoint, adicionar uma tela nova seria construir
+  superfície de UI nova, não apenas conectar exposição já existente — fora do escopo
+  mínimo deste item. Documentado como decisão consciente, não como lacuna esquecida.
+
+**ACHADO 26 (bug real, REPRODUZIDO por execução real ao escrever o teste de replay do
+novo endpoint):** ao espelhar a forma de `pause_campaign` para `resume_campaign`, a
+execução real do teste de replay revelou que `pause_campaign` **já tinha o mesmo bug**:
+`state.audit.append(...)` rodava **fora** do fecho protegido por
+`idempotency.execute()`, portanto um replay legítimo da mesma Idempotency-Key contra uma
+pausa que já tivera sucesso duplicava o evento `CAMPAIGN_PAUSE` na auditoria (confirmado
+por execução real: duas chamadas com a mesma chave → dois eventos, antes da correção),
+sem nenhuma mutação real correspondente na segunda chamada. Corrigido em ambos os
+handlers (`pause_campaign` e o novo `resume_campaign`): `audit.append` movido para dentro
+do fecho `_do_pause`/`_do_resume`, executado exatamente uma vez por operação real.
+
+**Teste:**
+
+- `backend/tests_api/test_campaign_resume.py` (novo, 7 casos): transição real
+  PAUSED→ACTIVE; evento `CAMPAIGN_RESUME` registrado; step-up obrigatório (`403
+  STEP_UP_REQUIRED`); Idempotency-Key obrigatória (`422`); rejeição quando a campanha não
+  está `PAUSED` (`409 INVALID_STATE`); replay da mesma Idempotency-Key não duplica nem
+  falha; isolamento cross-tenant com `404` (resistência a enumeração, nunca `403`).
+- `backend/tests_api/test_invariants.py` — novo
+  `test_repeating_a_successful_pause_key_does_not_duplicate_the_audit_event` (achado 26
+  em `pause_campaign`): confirma que o teste pré-existente
+  `test_repeating_pause_key_is_idempotent` nunca havia pego esse bug porque só exercitava
+  `DRAFT` (falha nas duas chamadas, nunca chega a pausar de verdade).
+- Regressão completa: `PYTHONPATH=. python3 -m pytest -q` → **553 passed, 58 subtests
+  passed** (545 pré-existentes + 8 novos, 0 failures).
+- E2E completo: `npx playwright test --config=playwright.session.config.ts` → **26
+  passed**, 0 failures (nenhuma regressão em nenhum spec pré-existente pela mudança em
+  `pause_campaign`).
+- Web: `npm run typecheck`, `npm run lint`, `npm run contracts:check`, `npm run
+  boundary:check` (65 arquivos) → todos OK.
+
+**Commits:** `126fd60` (feat contrato), `5d9c48f` (feat backend + achado 26 + testes).
