@@ -15,6 +15,7 @@ export type Connection = components["schemas"]["Connection"];
 export type Provider = components["schemas"]["Provider"];
 export type Capability = components["schemas"]["Capability"];
 export type AuditEvent = components["schemas"]["AuditEvent"];
+export type InsightSeries = components["schemas"]["InsightSeries"];
 export type Campaign = components["schemas"]["Campaign"];
 export type PolicyDecision = components["schemas"]["PolicyDecision"];
 export type ApprovalRequest = components["schemas"]["ApprovalRequest"];

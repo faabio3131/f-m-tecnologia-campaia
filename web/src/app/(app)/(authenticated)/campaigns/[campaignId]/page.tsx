@@ -6,6 +6,7 @@ import { BudgetPanel } from "../../../../../components/BudgetPanel";
 import { Button } from "../../../../../components/Button";
 import { Card } from "../../../../../components/Card";
 import { ErrorState } from "../../../../../components/ErrorState";
+import { InsightsPanel } from "../../../../../components/InsightsPanel";
 import { KillSwitchPanel } from "../../../../../components/KillSwitchPanel";
 import { PageContainer } from "../../../../../components/PageContainer";
 import { PageHeader } from "../../../../../components/PageHeader";
@@ -34,6 +35,10 @@ interface PlanResponse {
  *
  * WP-08 (26/09/2026, reconciliação PR#6): parada de emergência desta campanha
  * (`KillSwitchPanel`, escopo CAMPAIGN) -- mesma reconciliação, mesma disciplina.
+ *
+ * WP-11 (26/09/2026, reconciliação PR#6): métricas desta campanha (`InsightsPanel`,
+ * `GET /campaigns/{id}/insights`) -- mesma reconciliação, mesma disciplina de nunca
+ * fabricar dados quando a camada de analytics real ainda não existe.
  */
 export default function CampaignDetailPage() {
   const params = useParams<{ campaignId: string }>();
@@ -215,6 +220,8 @@ export default function CampaignDetailPage() {
         confirmLabel="Parar esta campanha agora"
         onTriggered={loadCampaignAndPlan}
       />
+
+      <InsightsPanel campaignId={campaignId} />
 
       {decision?.outcome === "APPROVABLE" ? (
         <Card>
