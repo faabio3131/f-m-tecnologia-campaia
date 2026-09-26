@@ -493,3 +493,64 @@ item de verificação real de conta, não um seed estático).
   conexão real) não foi corrigido -- decisão deliberada de não fabricar um
   `supported: true` sem verificação real, registrada acima para decisão de produto
   futura.
+
+---
+
+## WP-10 — Trilha de auditoria
+
+**Estado:** `IMPLEMENTADO E TESTADO NESTA SESSÃO` (unit + component + backend regression +
+E2E cross-stack). FM QA Engineer formal ainda pendente (ressalva histórica).
+
+### CURRENT antes deste bloco
+
+- Backend: `GET /audit-events` (`routes_audit.py::list_audit_events`) **já existia** em
+  PR#5/main e já era usado internamente por vários WPs anteriores (WP-05 a WP-09) para
+  registrar suas próprias ações -- mas nenhum deles jamais o EXPÔS na Web. Nenhum arquivo
+  de `campaia_core`/`api/routes_audit.py` foi alterado neste bloco.
+- Filtro: só `campaign_id` (o único que o contrato real oferece); paginação: `cursor` é
+  aceito mas `next_cursor` sempre `null` -- o próprio backend documenta isso como "sem
+  fabricar paginação que não existe" (achado 3/15). Nenhum controle de paginação foi
+  construído na Web, pela mesma razão.
+- Nenhum drift de contrato encontrado neste bloco (campos do `AuditEventResponse` real já
+  batiam exatamente com o schema `AuditEvent` do contrato).
+- Web: **nenhuma UI de auditoria existia** em `web/src` do CURRENT -- primeira leitura da
+  trilha pela Web.
+
+### O que foi construído (comportamento portado, frontend novo)
+
+- Nova página `/audit` (`web/src/app/(app)/(authenticated)/audit/page.tsx`) -- lista real
+  de `GET /audit-events`, ordenada mais-recente-primeiro (transformação de exibição no
+  cliente só; o backend real devolve ordem cronológica ascendente), filtro por
+  `campaign_id` (único filtro real do contrato), exibindo ação, tipo de ator
+  (Usuário/Sistema/IA/Provedor externo), ator, alvo, decisão de política quando presente,
+  e a evidência real (JSON bruto) quando o backend a devolve -- nunca escondida.
+- Item de navegação "Auditoria" adicionado a `AppShell.tsx` (nenhum teste dependia da
+  contagem/ordem exata dos itens de navegação -- confirmado por busca antes da mudança).
+- Nenhum arquivo de `backend/` foi alterado neste bloco.
+
+### Testes
+
+- Novo: `web/tests/audit-page.test.tsx` -- 3 casos (estado vazio, lista eventos reais
+  mais-recente-primeiro mostrando evidência, filtro por `campaign_id` via UI). Todos
+  verdes.
+- Comando: `npm run test -- --run` → **19 arquivos, 63 testes, 0 failures** (antes desta
+  sessão: 18/60; +1 arquivo, +3 testes).
+- `npm run typecheck`, `npm run lint`, `npm run contracts:check` → OK; `npm run
+  boundary:check` → **63 arquivos** (antes 61) → OK.
+- Backend regressão completa: `PYTHONPATH=. python3 -m pytest -q` → **526 passed, 58
+  subtests passed** (idêntico ao baseline -- nenhum arquivo de backend alterado).
+- E2E cross-stack novo: `web/e2e/audit-trail.spec.ts`, dois cenários -- uma ação real de
+  outro WP já reconciliado (kill switch, WP-08, escolhido por não precisar de fila de
+  aprovação nem de um segundo usuário) gera um evento real, e a tela `/audit` real mostra
+  esse evento com sua evidência real (`{"scope": "TENANT", ...}`); filtro por campanha via
+  a UI real confirma que `GET /audit-events?campaign_id=...` só devolve eventos daquela
+  campanha. `npx playwright test --config=playwright.session.config.ts` (com
+  `audit-trail.spec.ts` incluído em `testMatch`) → **23 passed** (21 pré-existentes + 2
+  novos), 0 failures.
+
+### Pendências reais deste bloco (não escondidas)
+
+- FM QA Engineer formal: pendente (ressalva histórica).
+- Sem paginação real na Web -- reflete honestamente a mesma limitação já documentada no
+  backend (`next_cursor` sempre `null`); se o volume real de eventos crescer, isso precisa
+  de uma paginação real no backend primeiro, não fabricada na Web.
