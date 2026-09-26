@@ -148,6 +148,47 @@ async def revoke_connection(request: Request) -> Response:
     return Response(status_code=204)
 
 
+#: ACHADO 20 (Fase 3, reproduzido por execucao real nesta sessao): `CapabilityRegistry`
+#: e indexado por `(provider, capability_key, country, api_version)`, mas `provider` ali
+#: sempre significou "qual conector/execucao realmente atende esta capacidade" -- e
+#: `routes_campaigns.py::validate_campaign` ja consulta esse registro com o literal
+#: `"SIMULATOR"`, independente da conta OAuth escolhida, porque HOJE toda publicacao real
+#: passa pelo `ProviderSimulator` (nao existe nenhum adaptador REST real para
+#: GOOGLE_ADS/META/WHATSAPP ainda -- ver docs/nova-fm ou o Capability Matrix histórico da
+#: PR#6, docs/08_CAPABILITY_MATRIX.md, que classifica esses tres providers como "NAO
+#: VERIFICADO"). Este handler, porem, consultava o registro com `conn.provider` (o RÓTULO
+#: da conta OAuth conectada -- GOOGLE_ADS/META/WHATSAPP, contrato `Provider`), que NUNCA
+#: bate com a unica chave seedada ("SIMULATOR") -- um descasamento de indexacao genuino,
+#: nao uma decisao deliberada de honestidade: `GET /connections/{id}/capabilities`
+#: reportava `supported: false` para QUALQUER conta real, inclusive quando a MESMA
+#: campanha, no MESMO tenant, publica de fato com sucesso via `POST
+#: /campaigns/{id}/publish` (que usa exatamente essa mesma capacidade "SIMULATOR" para
+#: decidir se a policy libera a publicacao). As duas rotas respondiam perguntas
+#: inconsistentes sobre o mesmo fato real.
+#:
+#: `ConnectionMode` (`campaia_core/connectors.py`) e o eixo certo para essa pergunta --
+#: seu proprio docstring diz "Estado real da conta. A interface mostra isto ao usuario,
+#: sem maquiagem." Toda `Connection` hoje tem `mode == ConnectionMode.SIMULATOR` (nao
+#: existe fluxo real de OAuth nem adaptador de producao ainda), entao mapeamos o MODO da
+#: conexao (nao o rotulo do provider OAuth) para a chave real do registro de
+#: capacidades -- a mesma que `validate_campaign` ja usa e confia. Um modo sem
+#: adaptador real seedado (`TEST`/`PRODUCTION`, nenhum hoje) cai honestamente em
+#: `supported: false`/`verified_at: None`, nunca em `True` fabricado.
+#:
+#: IMPORTANTE (instrucao explicita da missao): isto NAO afirma que GOOGLE_ADS/META/
+#: WHATSAPP estao homologados externamente -- `supported: true` aqui significa apenas
+#: "a plataforma sabe executar esta acao para esta conexao hoje" (via simulador), o que
+#: e verdade e ja e a base real usada por `validate_campaign`. O campo `notes` do
+#: registro ja disclosa isso ("Simulated capability, verified in-process at startup.");
+#: `evidence_url` continua sempre `None` (achado 7, nenhuma evidencia real existe).
+_CONNECTION_MODE_TO_CAPABILITY_PROVIDER: dict[str, str] = {
+    "SIMULATOR": "SIMULATOR",
+    # TEST/PRODUCTION: nenhum adaptador real de execucao existe ainda para nenhum modo
+    # alem do simulador -- deliberadamente NAO mapeado, para que is_supported() caia no
+    # `False` honesto abaixo em vez de qualquer suposicao.
+}
+
+
 async def connection_capabilities(request: Request) -> JSONResponse:
     fixture, state = _authorize(request, Permission.CAMPAIGN_VIEW)
     connection_id = request.path_params["connectionId"]
@@ -157,21 +198,33 @@ async def connection_capabilities(request: Request) -> JSONResponse:
 
     now = datetime.now(timezone.utc)
     channels = ("GOOGLE_ADS", "META_ADS")
+    capability_provider = _CONNECTION_MODE_TO_CAPABILITY_PROVIDER.get(str(conn.mode))
     results = []
     for channel in channels:
         key = f"PUBLISH:{channel}"
-        supported = state.capabilities.is_supported(
-            conn.provider, key, country="BR", api_version=conn.api_version, now=now
-        )
-        cap = state.capabilities._items.get((conn.provider, key, "BR", conn.api_version))
+        if capability_provider is not None:
+            supported = state.capabilities.is_supported(
+                capability_provider, key, country="BR", api_version=conn.api_version, now=now
+            )
+            cap = state.capabilities._items.get((capability_provider, key, "BR", conn.api_version))
+        else:
+            # Modo de conexao sem nenhum conector de execucao real seedado (achado 20) --
+            # nunca fabricar supported=true nem um verified_at que nunca aconteceu.
+            supported = False
+            cap = None
         results.append(
             CapabilityResponse(
+                # `provider` no corpo da resposta continua sendo o rotulo da conta OAuth
+                # (GOOGLE_ADS/META/WHATSAPP) -- e a identidade da CONTA que o cliente quer
+                # ver, distinta da chave interna usada para decidir `supported` acima.
                 provider=conn.provider,
                 capability_key=key,
                 country="BR",
                 api_version=conn.api_version,
                 supported=supported,
-                verified_at=cap.verified_at if cap else now,
+                # ACHADO 20: nunca fabricar "verificado agora" quando nenhuma verificacao
+                # de fato ocorreu -- None quando nao ha registro real de capacidade.
+                verified_at=cap.verified_at if cap else None,
                 requires_approval=cap.requires_approval if cap else False,
                 # No evidence-URL source exists yet in campaia_core.infra.Capability
                 # (achado 7) -- always None until that tracking exists.
