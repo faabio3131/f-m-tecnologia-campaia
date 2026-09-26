@@ -676,6 +676,7 @@ export interface components {
             level?: number;
             /** @enum {string} */
             level_label?: "ASSISTENTE" | "APROVADO" | "LIMITADO" | "OPERACIONAL";
+            max_level_allowed?: number;
             /** @description Gatilhos que exigem humano em QUALQUER nivel. */
             always_require_human?: string[];
             max_budget_change_pct?: number;

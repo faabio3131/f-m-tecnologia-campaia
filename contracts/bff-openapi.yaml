@@ -958,6 +958,11 @@ components:
       properties:
         level: { type: integer, minimum: 0, maximum: 3 }
         level_label: { type: string, enum: [ASSISTENTE, APROVADO, LIMITADO, OPERACIONAL] }
+        # Achado da reconciliacao WP-07 (26/09/2026): GET /autonomy sempre devolve este
+        # campo de fato (backend/api/models.py::AutonomyResponse, confirmado por execucao
+        # real de model_dump_json()), mas o contrato nunca o declarava -- aditivo, sem
+        # mudanca de comportamento do backend, mesma classe de achado do budget (WP-06).
+        max_level_allowed: { type: integer, minimum: 0, maximum: 3 }
         always_require_human:
           type: array
           description: Gatilhos que exigem humano em QUALQUER nivel.

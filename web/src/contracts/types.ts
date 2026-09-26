@@ -16,3 +16,4 @@ export type Provider = components["schemas"]["Provider"];
 export type Campaign = components["schemas"]["Campaign"];
 export type PolicyDecision = components["schemas"]["PolicyDecision"];
 export type ApprovalRequest = components["schemas"]["ApprovalRequest"];
+export type AutonomySettings = components["schemas"]["AutonomySettings"];
