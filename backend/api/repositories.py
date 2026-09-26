@@ -276,7 +276,18 @@ class ApprovalRequest:
     # "the plan version this approval was actually about", not a live lookup that could
     # drift if the plan is regenerated after the approval is created.
     plan_version: int = 0
-    # Contract enum: PENDING | APPROVED | REJECTED | CHANGES_REQUESTED | EXPIRED (achado 9/10).
+    # Contract enum: PENDING | APPROVED | REJECTED | CHANGES_REQUESTED | EXPIRED |
+    # APPLIED (achado 9/10, APPLIED added achado 19, Fase 3 desta missao de
+    # reconciliacao). ACHADO 19, reproduzido por execucao real nesta sessao: uma
+    # ApprovalRequest com status APPROVED nunca era marcada como consumida apos ser
+    # usada para de fato aplicar a mudanca que autorizava (PATCH /campaigns/{id}/budget,
+    # PUT /autonomy) -- o mesmo approval_id, reutilizado com uma Idempotency-Key NOVA,
+    # autorizava indefinidamente novas mudancas independentes sem nova decisao humana.
+    # APPLIED fecha essa lacuna: uma vez usada para aplicar a mudanca real, a aprovacao
+    # nunca mais volta a satisfazer `status == "APPROVED"` para uma tentativa nova. Um
+    # replay legitimo da MESMA Idempotency-Key continua funcionando -- ver o gate de
+    # idempotencia HTTP movido para antes da checagem de status em
+    # routes_campaigns.py::patch_budget/publish_campaign e routes_autonomy.py::put_autonomy.
     status: str = "PENDING"
     decided_by: set[str] = field(default_factory=set)
     requires_dual_approval: bool = False

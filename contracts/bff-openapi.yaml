@@ -971,7 +971,13 @@ components:
         requested_by: { type: string, description: user_id de quem propos -- nunca pode decidir a propria proposta (segregacao de funcoes). }
         amount: { type: [string, 'null'] }
         plan_version: { type: integer }
-        status: { type: string, enum: [PENDING, APPROVED, REJECTED, CHANGES_REQUESTED, EXPIRED] }
+        # APPLIED adicionado na Fase 3 desta reconciliacao (achado 19): confirmado por
+        # execucao real que uma ApprovalRequest APPROVED nunca era marcada como consumida
+        # apos autorizar de fato uma mudanca (budget/autonomy) -- o mesmo approval_id
+        # podia ser reutilizado indefinidamente com uma Idempotency-Key nova. APPLIED e
+        # o novo estado terminal para "ja usada para aplicar a mudanca que autorizava".
+        # Aditivo -- nenhum valor existente do enum foi removido ou renomeado.
+        status: { type: string, enum: [PENDING, APPROVED, REJECTED, CHANGES_REQUESTED, EXPIRED, APPLIED] }
         requires_dual_approval: { type: boolean }
         decided_by: { type: array, items: { type: string, format: uuid } }
         created_at: { type: string, format: date-time }

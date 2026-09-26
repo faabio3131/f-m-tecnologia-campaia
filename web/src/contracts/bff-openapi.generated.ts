@@ -667,7 +667,7 @@ export interface components {
             amount?: string | null;
             plan_version?: number;
             /** @enum {string} */
-            status: "PENDING" | "APPROVED" | "REJECTED" | "CHANGES_REQUESTED" | "EXPIRED";
+            status: "PENDING" | "APPROVED" | "REJECTED" | "CHANGES_REQUESTED" | "EXPIRED" | "APPLIED";
             requires_dual_approval: boolean;
             decided_by: string[];
             /** Format: date-time */
