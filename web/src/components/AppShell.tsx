@@ -26,6 +26,7 @@ const NAV_ITEMS = [
   { href: "/approvals", label: "Aprovações" },
   { href: "/brand-kit", label: "Brand Kit" },
   { href: "/connections", label: "Conexões" },
+  { href: "/audit", label: "Auditoria" },
   { href: "/settings", label: "Configurações" },
 ] as const;
 
