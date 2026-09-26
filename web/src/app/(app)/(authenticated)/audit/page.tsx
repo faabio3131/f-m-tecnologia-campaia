@@ -23,11 +23,14 @@ import styles from "./page.module.css";
  *
  * Filtro por `campaign_id`: o único filtro que o contrato real oferece
  * (`routes_audit.py::list_audit_events`) -- nenhum outro filtro é inventado aqui.
- * `next_cursor` é sempre `null` no backend real (achado 3/15, documentado no próprio
- * backend: "sem fabricar paginação que não existe") -- por isso esta tela não mostra
- * nenhum controle de paginação (não fabrica o que o backend honestamente não tem).
  * A ordem de exibição (mais recente primeiro) é só uma transformação de exibição no
  * cliente -- o backend real devolve em ordem cronológica ascendente.
+ *
+ * ATUALIZADO na Fase 3 (achado 21, 26/09/2026): o backend real implementou paginação
+ * real por cursor opaco (antes, `next_cursor` era sempre `null` -- achado 3/15
+ * original, um stub honesto porém incompleto). Esta tela agora segue o `next_cursor`
+ * real com um botão "Carregar mais" -- nunca fabrica um controle de página quando o
+ * backend não tinha nada para paginar, e agora que ele tem, expõe exatamente isso.
  */
 
 const ACTOR_KIND_LABEL: Record<string, string> = {
@@ -37,24 +40,53 @@ const ACTOR_KIND_LABEL: Record<string, string> = {
   EXTERNAL_PROVIDER: "Provedor externo",
 };
 
+function buildQuery(campaignId: string | null, cursor: string | null): string {
+  const params = new URLSearchParams();
+  if (campaignId) params.set("campaign_id", campaignId);
+  if (cursor) params.set("cursor", cursor);
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
 export default function AuditPage() {
   const [events, setEvents] = useState<AuditEvent[] | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [campaignIdFilter, setCampaignIdFilter] = useState("");
   const [appliedFilter, setAppliedFilter] = useState<string | null>(null);
 
   async function load(campaignId: string | null) {
     setLoadError(null);
     try {
-      const query = campaignId ? `?campaign_id=${encodeURIComponent(campaignId)}` : "";
       const result = await api.get<{ items: AuditEvent[]; next_cursor: string | null }>(
-        `/audit-events${query}`,
+        `/audit-events${buildQuery(campaignId, null)}`,
       );
       setEvents(result.items);
+      setNextCursor(result.next_cursor);
     } catch (err) {
       setLoadError(
         err instanceof ApiClientError ? err.message : "Falha ao carregar a trilha de auditoria.",
       );
+    }
+  }
+
+  async function handleLoadMore() {
+    if (!nextCursor) return;
+    setLoadingMore(true);
+    setLoadError(null);
+    try {
+      const result = await api.get<{ items: AuditEvent[]; next_cursor: string | null }>(
+        `/audit-events${buildQuery(appliedFilter, nextCursor)}`,
+      );
+      setEvents((prev) => [...(prev ?? []), ...result.items]);
+      setNextCursor(result.next_cursor);
+    } catch (err) {
+      setLoadError(
+        err instanceof ApiClientError ? err.message : "Falha ao carregar mais eventos.",
+      );
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -65,7 +97,10 @@ export default function AuditPage() {
         const result = await api.get<{ items: AuditEvent[]; next_cursor: string | null }>(
           "/audit-events",
         );
-        if (active) setEvents(result.items);
+        if (active) {
+          setEvents(result.items);
+          setNextCursor(result.next_cursor);
+        }
       } catch (err) {
         if (active) {
           setLoadError(
@@ -86,6 +121,7 @@ export default function AuditPage() {
     const trimmed = campaignIdFilter.trim() || null;
     setAppliedFilter(trimmed);
     setEvents(null);
+    setNextCursor(null);
     await load(trimmed);
   }
 
@@ -93,6 +129,7 @@ export default function AuditPage() {
     setCampaignIdFilter("");
     setAppliedFilter(null);
     setEvents(null);
+    setNextCursor(null);
     await load(null);
   }
 
@@ -104,7 +141,7 @@ export default function AuditPage() {
     <PageContainer>
       <PageHeader
         title="Auditoria"
-        description="Trilha real de eventos deste tenant (GET /audit-events). Sem paginação real ainda -- o backend sempre devolve a lista completa de uma vez, não fabricamos controles de próxima página aqui."
+        description="Trilha real de eventos deste tenant (GET /audit-events), paginada por cursor real (páginas de 50)."
       />
 
       <Card>
@@ -163,6 +200,17 @@ export default function AuditPage() {
               ))}
             </ul>
           )
+        ) : null}
+
+        {nextCursor ? (
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={loadingMore}
+            onClick={handleLoadMore}
+          >
+            {loadingMore ? "Carregando…" : "Carregar mais"}
+          </Button>
         ) : null}
       </Card>
     </PageContainer>

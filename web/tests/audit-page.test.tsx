@@ -81,6 +81,45 @@ describe("AuditPage", () => {
     expect(screen.getByText(/"scope": "TENANT"/)).toBeInTheDocument();
   });
 
+  it("carrega mais eventos via next_cursor real quando existe mais de uma página (achado 21)", async () => {
+    const secondPageEvent = {
+      id: "evt-3",
+      occurred_at: "2026-09-26T08:00:00Z",
+      actor_kind: "USER",
+      actor_id: "user-2",
+      action: "PLAN_REGENERATE",
+      target: "camp-2",
+      policy_decision_id: null,
+      evidence: null,
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.includes("cursor=evt-1")) {
+        return jsonResponse(200, { items: [secondPageEvent], next_cursor: null });
+      }
+      if (url.endsWith("/audit-events")) {
+        return jsonResponse(200, { items: EVENTS, next_cursor: "evt-1" });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const user = userEvent.setup();
+    render(<AuditPage />);
+
+    await waitFor(() => expect(screen.getByText("KILL_SWITCH")).toBeInTheDocument());
+    const loadMoreButton = screen.getByRole("button", { name: /carregar mais/i });
+    expect(loadMoreButton).toBeInTheDocument();
+
+    await user.click(loadMoreButton);
+
+    await waitFor(() => expect(screen.getByText("PLAN_REGENERATE")).toBeInTheDocument());
+    // Ambas as páginas continuam visíveis -- carregar mais acrescenta, não substitui.
+    expect(screen.getByText("KILL_SWITCH")).toBeInTheDocument();
+    expect(screen.getByText("CAMPAIGN_CREATE")).toBeInTheDocument();
+    // Sem next_cursor na segunda página, o botão desaparece.
+    expect(screen.queryByRole("button", { name: /carregar mais/i })).not.toBeInTheDocument();
+  });
+
   it("filtra por campaign_id via GET /audit-events?campaign_id=...", async () => {
     let lastUrl = "";
     vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
