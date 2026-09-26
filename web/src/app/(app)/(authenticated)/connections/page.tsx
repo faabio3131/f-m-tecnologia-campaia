@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "../../../../components/Button";
+import { CapabilitiesPanel } from "../../../../components/CapabilitiesPanel";
 import { Card } from "../../../../components/Card";
 import { ErrorState } from "../../../../components/ErrorState";
 import { Input } from "../../../../components/Input";
@@ -25,6 +26,9 @@ import styles from "./page.module.css";
  * item 1.6, Google Identity Platform real) -- por isso a confirmação abaixo é
  * honesta sobre o que é: uma confirmação explícita do usuário, não um desafio de
  * segurança real. Nunca envia o header silenciosamente sem essa confirmação.
+ *
+ * WP-09 (26/09/2026, reconciliação PR#6): capacidades por conexão (`CapabilitiesPanel`,
+ * `GET /connections/{id}/capabilities`) -- mesma reconciliação, mesma disciplina.
  */
 const PROVIDERS: { id: Provider; label: string }[] = [
   { id: "GOOGLE_ADS", label: "Google Ads" },
@@ -157,9 +161,12 @@ export default function ConnectionsPage() {
               <Card key={id} className={styles.card}>
                 <p className={styles.providerName}>{label}</p>
                 {connection ? (
-                  <p className={styles.status}>
-                    Conectado — {connection.display_name}
-                  </p>
+                  <>
+                    <p className={styles.status}>
+                      Conectado — {connection.display_name}
+                    </p>
+                    {connection.id ? <CapabilitiesPanel connectionId={connection.id} /> : null}
+                  </>
                 ) : (
                   <p className={styles.statusMuted}>Não conectado</p>
                 )}
