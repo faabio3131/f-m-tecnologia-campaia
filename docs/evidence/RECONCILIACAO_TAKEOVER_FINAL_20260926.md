@@ -941,3 +941,137 @@ usados neste módulo.
 
 **Commits:** `e67cc34` (feat backend, paginação real + regressão), `d396e32` (feat web,
 Carregar mais), `688bc9f` (test e2e, sem lacunas/duplicatas).
+
+### Item 4 — Dependency / Security Fixes (achado 22)
+
+**Status:** FIXED (dois achados reais e verificados) + subitens classificados abaixo.
+
+**Instrução da missão:** "NÃO assuma que os CVEs históricos existem. Execute auditoria
+real contra as versões atuais." — cumprida por execução real de `pip-audit` contra o
+PyPI Advisory Database, nunca por presunção a partir do histórico da PR#6.
+
+**4.a — CVEs de dependências (FIXED):**
+
+- `pip install pip-audit --break-system-packages -q` seguido de
+  `pip-audit -r requirements.txt --desc` (execução real, nesta sessão) confirmou **5
+  CVEs reais e verificáveis** em `starlette==1.0.0`: PYSEC-2026-161 (Host header →
+  desalinhamento de `request.url.path`, corrigido em 1.0.1), PYSEC-2026-2280
+  (`HTTPEndpoint` despacha métodos não-padrão via `getattr` irrestrito, corrigido em
+  1.1.0), PYSEC-2026-2281 (`StaticFiles` vaza NTLMv2 via caminho UNC do Windows em
+  `os.path.realpath`, corrigido em 1.1.0), PYSEC-2026-248 (caminho sem `/` inicial desloca
+  a autoridade da URL, falsificando `request.url.hostname`, corrigido em 1.3.0),
+  PYSEC-2026-249 (`request.form()` ignora `max_fields`/`max_part_size` para
+  `application/x-www-form-urlencoded`, DoS por corpo grande/fragmentado, corrigido em
+  1.3.1).
+- Inspeção real do código do CURRENT confirmou que nenhum dos 5 é hoje explorável aqui:
+  não existe uso de `HTTPEndpoint`, não existe chamada a `request.form()`, e a checagem
+  de CSRF/origin usa `Origin`/`Referer` diretamente (`api/session.py::extract_request_origin`),
+  nunca `request.url`. Corrigido por precaução — não por exploração confirmada — e porque a
+  PR#6 já fixava exatamente essa mesma versão corrigida (`starlette==1.3.1`).
+- **Ação:** `backend/requirements.txt`: `starlette==1.0.0` → `starlette==1.3.1`.
+- **Teste:** regressão completa `PYTHONPATH=. python3 -m pytest -q` → **539 passed, 58
+  subtests passed**, 0 failures (nenhuma quebra pela troca de versão); `pip-audit -r
+  requirements.txt` re-executado após o bump → limpo, 0 vulnerabilidades conhecidas em
+  qualquer dependência declarada. Um novo aviso não relacionado a segurança apareceu
+  (`StarletteDeprecationWarning: Using httpx with starlette.testclient is deprecated`) —
+  registrado como item futuro de limpeza de tooling de teste, fora de escopo desta
+  correção de CVE.
+- **Commit:** `1f4c0e5`.
+
+**4.b — OAuth audit state leak (achado 22, FIXED):** ver detalhamento completo já
+registrado antes deste bloco ser fechado — `api/routes_connections.py::oauth_start`
+armazenava o valor anti-replay `state` no `details` do evento `OAUTH_START` de auditoria;
+a PR#6 já havia corrigido exatamente este ponto (commit `9a0e6b3`) mas sem teste de
+regressão associado ("No test asserted this field"). Corrigido aqui da mesma forma, desta
+vez com regressão real: novo `backend/tests_api/test_oauth_audit_no_state_leak.py` (1
+teste, verifica tanto a ausência da chave `"state"` quanto a ausência do valor literal
+devolvido em qualquer valor serializado da evidência). Regressão completa após esta
+correção: **540 passed, 58 subtests passed** (539 + 1 novo). **Commit:** `9907800`.
+
+**Demais subitens do checklist da missão para o Item 4 — classificados por evidência real,
+não por suposição:**
+
+- **Host header:** SUPERADA — coberta pelo upgrade do Starlette (PYSEC-2026-248/161, que
+  tratavam exatamente de desalinhamento de host/autoridade via `request.url`) combinada
+  com o fato, já confirmado por leitura de código, de que o CURRENT nunca usa
+  `request.url.hostname`/`request.url.path` para decisão de segurança — a checagem de
+  origem usa `Origin`/`Referer` explicitamente.
+- **CSRF:** SUPERADA — já robusta no CURRENT (token de CSRF por sessão, obrigatório em
+  toda mutação, cheque de `Origin`/`Referer`), parte da arquitetura AUTH/SESSION
+  classificada "A — Manter CURRENT" desde a Fase 1; nenhuma lacuna nova encontrada nesta
+  auditoria.
+- **Dependências:** FIXED — ver 4.a acima; `pip-audit` limpo após o bump.
+- **Secrets:** NOT_REPRODUCED — varredura real (grep completo por padrões de chave/senha/
+  token em `backend/` e `web/src/`) não encontrou nenhum secret hardcoded; toda credencial
+  já vem de variável de ambiente (`ASAAS_API_KEY`, `GEMINI_API_KEY`); campos de secret já
+  usam `repr=False` (`AsaasConfig.api_key`, provider Gemini); `_SECRET_PATTERNS` em
+  `campaia_core/ai_gateway.py` já redige valores sensíveis em log. Nada para corrigir.
+- **Health endpoint:** tratado separadamente — ver **Item 5** abaixo (a checagem original
+  de "ausência de health endpoint" listada sob dependências/segurança na missão é a mesma
+  ausência que o Item 5, Health/Observability, endereça; evitando duplicar a correção
+  aqui, o achado e a correção completa (achado 23) estão documentados no Item 5).
+- **Negative auth tests / cross-tenant tests / contract boundary checks:** SUPERADA
+  provisoriamente — a suíte atual (543 testes de backend após o Item 5, 26 specs E2E
+  incluindo `session-protocol.spec.ts` casos A–M) já cobre extensivamente acesso anônimo,
+  sessão malformada/expirada/revogada, CSRF, `Origin`/`Referer`, cross-tenant,
+  cross-membership, negação de permissão, e `npm run boundary:check` passa limpo em 65
+  arquivos. Esta classificação é preliminar e será **verificada rigorosamente item a
+  item contra o inventário real de testes negativos da PR#6** no Item 6 (Testes da
+  PR#6) desta mesma Fase, em vez de ser dada como definitiva aqui.
+
+**Commits do Item 4:** `1f4c0e5` (fix deps, CVEs do Starlette), `9907800` (fix backend,
+vazamento de state em auditoria OAuth + regressão).
+
+### Item 5 — Health / Observability (achado 23)
+
+**Status:** FIXED.
+
+**FATO CONFIRMADO** por auditoria real (grep completo em `backend/api/main.py` — lista de
+rotas — e em `campaia_core/`, antes de qualquer código ser escrito): nenhum endpoint de
+health/liveness/readiness existia no CURRENT. `NÃO ENCONTRADO`, não presumido.
+
+Uma implementação histórica equivalente foi localizada em
+`refs/remotes/origin/feat/campaia-v1-complete-saas` (commit `84f9645`, "feat(api): add
+GET /health liveness endpoint (P-A17)") e **avaliada antes de ser adaptada** — não
+copiada às cegas: a mesma lógica (checar `Database.ping()` de verdade quando persistência
+estiver configurada; sempre saudável em modo puro em memória, que não tem dependência
+externa real) foi reescrita contra os nomes e imports reais do CURRENT
+(`.deps.get_state`, `AppState.db`, `api/db.py::Database` — nenhum desses símbolos existia
+daquela forma na branch histórica).
+
+**Ação:**
+
+- `api/db.py::Database.ping()` (novo) — executa `SELECT 1` real sob o lock já existente
+  da conexão SQLite; nunca levanta exceção, devolve `False` em qualquer falha, conforme
+  `docs/nova-fm/02-PADROES-DE-CONSTRUCAO-NOVA-FM.md` (linha 960): "Evitar health check que
+  retorna sucesso mesmo quando dependência crítica está indisponível."
+- `api/routes_health.py` (novo) — `GET /health`, deliberadamente **sem autenticação** e
+  **fora de `contracts/bff-openapi.yaml`** (mesmo precedente já existente no projeto para
+  endpoints de infraestrutura sem contrato client-facing: `/test-idp/*` é real porém não
+  documentado no contrato BFF). `200 {"status": "ok"}` quando `AppState.db is None` (modo
+  puro em memória, o padrão — nenhuma dependência externa a checar) ou quando o banco
+  configurado responde de verdade; `503 {"status": "unavailable", "database":
+  "unreachable"}` quando `Database.ping()` falha de verdade — nunca um 200 fabricado
+  enquanto a única dependência real está fora do ar.
+- `api/main.py` — rota registrada, com comentário explicando por que fica fora do
+  contrato.
+- Deliberadamente **não** foram adicionados logging estruturado, tracing ou métricas:
+  nenhum consumidor real (dashboard, alerta, APM) foi identificado para esses dados nesta
+  missão, e a instrução explícita da autorização é "não construir observabilidade
+  fictícia" — um endpoint de liveness real e honesto é o mínimo operacional correto para
+  o estágio atual; instrumentação adicional fica como `PENDÊNCIA` para quando um
+  consumidor real existir.
+
+**Teste:**
+
+- `backend/tests_api/test_health.py` (novo, 3 casos): `200` em modo puro em memória; `200`
+  com banco SQLite configurado e genuinamente alcançável; `503` com `Database.ping`
+  patchado para `False` (prova que o endpoint não pode reportar sucesso com a dependência
+  crítica indisponível).
+- Regressão completa: `PYTHONPATH=. python3 -m pytest -q` → **543 passed, 58 subtests
+  passed** (540 pré-existentes + 3 novos, 0 failures).
+- `npm run contracts:check` → OK, sem drift (`/health` é infra-only, fora do contrato por
+  desenho, não precisa estar declarado). `npm run boundary:check` → OK, 65 arquivos, sem
+  violação (rota é backend-only, nenhum código Web novo).
+
+**Commit:** `0e808a2`.
