@@ -29,7 +29,7 @@ const BACKEND_ORIGIN = `http://127.0.0.1:${BACKEND_PORT}`;
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: /(session-protocol|budget-change)\.spec\.ts/,
+  testMatch: /(session-protocol|budget-change|autonomy-level)\.spec\.ts/,
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
