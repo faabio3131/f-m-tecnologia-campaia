@@ -68,6 +68,11 @@ describe("CampaignDetailPage", () => {
       if (url.endsWith("/campaigns/camp-1")) {
         return jsonResponse(200, BASE_CAMPAIGN);
       }
+      if (url.endsWith("/approvals") && init?.method === "GET") {
+        // BudgetPanel (WP-06) faz GET /approvals ao montar -- nenhum pedido de
+        // mudança de orçamento pendente neste cenário.
+        return jsonResponse(200, []);
+      }
       if (url.endsWith("/approvals") && init?.method === "POST") {
         approvalCreated = true;
         return jsonResponse(201, {

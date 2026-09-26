@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { BudgetPanel } from "../../../../../components/BudgetPanel";
 import { Button } from "../../../../../components/Button";
 import { Card } from "../../../../../components/Card";
 import { ErrorState } from "../../../../../components/ErrorState";
@@ -25,6 +26,10 @@ interface PlanResponse {
  * (aprovar/rejeitar) acontece na fila (`/approvals`) -- aqui só se registra o pedido,
  * refletindo a segregação de funções real do backend (quem propõe não decide aqui).
  * Publicação real fica fora de escopo (depende de integração com provider, Fases 5–7).
+ *
+ * WP-06 (26/09/2026, reconciliação PR#6): painel de orçamento (`BudgetPanel`) --
+ * comportamento portado da PR #6 e reconstruído sobre esta arquitetura Web, não
+ * copiado. Ver `docs/evidence/RECONCILIACAO_TAKEOVER_FINAL_20260926.md`.
  */
 export default function CampaignDetailPage() {
   const params = useParams<{ campaignId: string }>();
@@ -156,6 +161,8 @@ export default function CampaignDetailPage() {
       />
 
       {actionError ? <ErrorState title="Não foi possível continuar" description={actionError} /> : null}
+
+      <BudgetPanel campaignId={campaignId} budget={campaign.budget} />
 
       <Card>
         <h2 className={styles.sectionTitle}>Estratégia (IA)</h2>
