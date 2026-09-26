@@ -754,3 +754,104 @@ escopo desta correção pontual).
 
 **Commits:** `892fb22` (fix domínio + contrato, APPLIED aditivo), `4be6399` (fix backend,
 consumo real nos 3 handlers + regressão), `3ba4f37` (test e2e cross-stack).
+
+### Item 2 — Capability Registry / Provider Mismatch (achado 20)
+
+**Status:** `FIXED`.
+
+**CURRENT evidence (reproduzido por execução real, ANTES da correção):**
+
+```
+connection provider: GOOGLE_ADS  api_version: sim-1
+GET /connections/{id}/capabilities →
+  PUBLISH:GOOGLE_ADS  supported=false  verified_at=<agora, fabricado>
+  PUBLISH:META_ADS    supported=false  verified_at=<agora, fabricado>
+```
+
+Script real (`TestClient`, sem mock) contra uma `Connection` real criada com
+`provider="GOOGLE_ADS"`: `GET /connections/{id}/capabilities` sempre devolvia
+`supported: false` para as duas capacidades testadas, e um `verified_at` igual ao
+instante da própria chamada -- mesmo nunca tendo verificado nada de fato. **Ao mesmo
+tempo**, no MESMO backend, `POST /campaigns/{id}/publish` publica com sucesso para essa
+mesma conexão via `ProviderSimulator` (confirmado pelos testes já verdes
+`TestHappyPathFullPublish`/`session-protocol.spec.ts` teste M) -- as duas rotas
+respondiam perguntas inconsistentes sobre o mesmo fato real.
+
+**Causa raiz:** `CapabilityRegistry` (`campaia_core/infra.py`) é indexado por
+`(provider, capability_key, country, api_version)`, onde `provider` sempre significou
+"qual conector de execução realmente atende esta capacidade" --
+`routes_campaigns.py::validate_campaign` já consulta esse mesmo registro com o literal
+hardcoded `"SIMULATOR"`, independente da conta OAuth escolhida, porque hoje toda
+publicação real passa pelo `ProviderSimulator` (nenhum adaptador REST real existe para
+GOOGLE_ADS/META/WHATSAPP -- confirmado pelo Capability Matrix histórico da PR#6,
+`docs/08_CAPABILITY_MATRIX.md`, que classifica os três como "NÃO VERIFICADO").
+`api/routes_connections.py::connection_capabilities`, porém, consultava o registro com
+`conn.provider` -- o RÓTULO da conta OAuth conectada (contrato `Provider`:
+`GOOGLE_ADS|META|WHATSAPP`) -- que nunca bate com a única chave seedada
+(`"SIMULATOR"`). Um descasamento de indexação genuíno entre duas rotas que deveriam
+concordar sobre o mesmo fato, não uma decisão deliberada de honestidade (como o WP-09
+havia registrado inicialmente).
+
+**Ação (correção na indexação, sem afirmar homologação externa):**
+
+- `ConnectionMode` (`campaia_core/connectors.py`) é o eixo certo para esta pergunta --
+  seu próprio docstring diz: "Estado real da conta. A interface mostra isto ao usuário,
+  sem maquiagem." Toda `Connection` hoje tem `mode == ConnectionMode.SIMULATOR` (não
+  existe fluxo real de OAuth nem adaptador de produção ainda). `connection_capabilities`
+  passa a mapear o MODO da conexão (não o rótulo do provider OAuth) para a chave real do
+  registro de capacidades -- a mesma que `validate_campaign` já usa e confia.
+- **Sem fabricar homologação:** `supported: true` aqui nunca afirma que GOOGLE_ADS/
+  META/WHATSAPP estão homologados externamente -- significa apenas "a plataforma sabe
+  executar esta ação para esta conexão hoje" (via simulador), o que é verdade e já é a
+  base real usada por `validate_campaign` para o mesmo gate de policy. O disclosure de
+  que isto é simulado, não uma integração real verificada, já vem do próprio `notes` do
+  registro ("Simulated capability, verified in-process at startup.") -- nunca escondido.
+- Um modo de conexão sem nenhum adaptador real seedado (`TEST`/`PRODUCTION`, nenhum
+  hoje) continua honestamente `supported: false`, sem nenhuma suposição.
+- `verified_at` (`api/models.py::CapabilityResponse`, contrato `Capability.verified_at`)
+  passa a ser nullable -- quando nenhum registro real de capacidade existe para o modo
+  consultado, o backend nunca mais fabrica um "verificado agora"; `None` é o valor
+  honesto. Aditivo (só amplia o tipo existente `string` para `[string, 'null']`).
+  `npm run contracts:generate` + `npm run contracts:check` → `OK: ... em sincronia`.
+- `evidence_url` continua sempre `None` (achado 7, inalterado -- nenhuma fonte real de
+  evidência existe ainda).
+- Nenhuma "decisão real de produto" foi necessária: a semântica já estava
+  inequivocamente determinada pelo comportamento existente (`validate_campaign` já
+  confiava nesta mesma capacidade "SIMULATOR" para o gate real de publicação) e pelas
+  normas do próprio domínio (`ConnectionMode` já existia com exatamente este propósito
+  documentado). Não foi preciso introduzir um novo estado tipo
+  `SUPPORTED_BY_IMPLEMENTATION`/`UNVERIFIED_EXTERNALLY` -- o par `supported` + `notes`
+  já existente no domínio cobre a mesma distinção honestamente.
+
+**Teste (verificação real, execução direta e regressão automatizada):**
+
+- Reprodução manual confirmada por execução real (scripts Python ad-hoc contra
+  `TestClient`, antes e depois da correção): conexão real `SIMULATOR` → `supported:
+  true` + `verified_at` real + `notes` disclosando simulação; conexão real `PRODUCTION`
+  (sem adaptador seedado) → `supported: false` + `verified_at: null`, nunca fabricado.
+- Novo `backend/tests_api/test_capability_registry_provider_mapping.py` -- 3 testes:
+  conexão `SIMULATOR` mostra a mesma capacidade que `validate_campaign` usa
+  internamente (incluindo o disclosure "Simulated" e `evidence_url: None`); conexão
+  `PRODUCTION` sem capacidade seedada nunca fabrica `supported`/`verified_at`; as duas
+  rotas (`GET /connections/{id}/capabilities` e o gate interno de
+  `validate_campaign`) concordam sobre o mesmo fato real. Todos verdes.
+- Regressão completa: `PYTHONPATH=. python3 -m pytest -q` → **535 passed, 58 subtests
+  passed** (532 pré-existentes + 3 novos, 0 failures, 0 skips). Nenhum teste
+  pré-existente assumia o comportamento antigo (nenhuma regressão).
+- E2E cross-stack `web/e2e/capabilities.spec.ts` **atualizado** (não um novo arquivo):
+  o comentário e as asserções do WP-09 documentavam o comportamento antigo como
+  "honesto por acidente" -- reescrito para refletir e verificar o comportamento
+  corrigido (uma conexão real recém-criada mostra `supported: true`, `verified_at`
+  real, `evidence_url: null` e o disclosure "Simulated capability" visível na UI).
+  `npx playwright test --config=playwright.session.config.ts` → **25 passed** (0 novos
+  specs, 1 atualizado), 0 failures.
+- `web/tests/capabilities-panel.test.tsx` (WP-09, mock de rede) não precisou de
+  mudança -- já testava os casos `supported: true` e `supported: false` a partir de
+  dados mockados, independentes do comportamento real do backend.
+- `npm run typecheck`, `npm run lint`, `npm run contracts:check`, `npm run
+  boundary:check` (65 arquivos) → todos OK. `CapabilitiesPanel.tsx` já renderizava
+  `verified_at` nulo honestamente (`cap.verified_at ? ... : "—"`) -- nenhuma mudança de
+  código Web foi necessária além do teste E2E.
+
+**Commits:** `8ed6403` (fix contrato, verified_at nullable), `e78ab14` (fix backend,
+indexação por ConnectionMode + regressão), `24ff50d` (test e2e atualizado).
