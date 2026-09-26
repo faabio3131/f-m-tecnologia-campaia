@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { AutonomyPanel } from "../../../../components/AutonomyPanel";
 import { Card } from "../../../../components/Card";
+import { KillSwitchPanel } from "../../../../components/KillSwitchPanel";
 import { PageContainer } from "../../../../components/PageContainer";
 import { PageHeader } from "../../../../components/PageHeader";
 import { StatusPanel } from "../../../../components/StatusPanel";
@@ -16,6 +17,10 @@ import styles from "./page.module.css";
  * WP-07 (26/09/2026, reconciliação PR#6): nível de autonomia. Ver
  * AutonomyPanel.tsx -- vive aqui, não em campaigns/[campaignId], porque autonomia é
  * configuração de TENANT, não de campanha.
+ *
+ * WP-08 (26/09/2026, reconciliação PR#6): parada de emergência de TODAS as campanhas
+ * deste tenant (`KillSwitchPanel`, escopo TENANT). Escopos ACCOUNT/PLATFORM/GLOBAL não
+ * portados nesta reconciliação -- ver comentário em KillSwitchPanel.tsx.
  */
 export default function SettingsPage() {
   const { session } = useAuth();
@@ -65,6 +70,13 @@ export default function SettingsPage() {
       </Card>
 
       <AutonomyPanel anchorCampaignId={anchorCampaignId} />
+
+      <KillSwitchPanel
+        scope="TENANT"
+        title="Parada de emergência (todas as campanhas deste tenant)"
+        description="Pausa toda campanha deste tenant que estiver num estado pausável, imediatamente -- sem fila de aprovação e sem step-up. Campanhas ainda em rascunho são simplesmente ignoradas (nada a pausar), não é um erro."
+        confirmLabel="Parar todas as campanhas deste tenant agora"
+      />
     </PageContainer>
   );
 }

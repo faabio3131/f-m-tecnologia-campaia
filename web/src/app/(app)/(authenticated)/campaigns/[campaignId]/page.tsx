@@ -6,6 +6,7 @@ import { BudgetPanel } from "../../../../../components/BudgetPanel";
 import { Button } from "../../../../../components/Button";
 import { Card } from "../../../../../components/Card";
 import { ErrorState } from "../../../../../components/ErrorState";
+import { KillSwitchPanel } from "../../../../../components/KillSwitchPanel";
 import { PageContainer } from "../../../../../components/PageContainer";
 import { PageHeader } from "../../../../../components/PageHeader";
 import { Spinner } from "../../../../../components/Spinner";
@@ -30,6 +31,9 @@ interface PlanResponse {
  * WP-06 (26/09/2026, reconciliação PR#6): painel de orçamento (`BudgetPanel`) --
  * comportamento portado da PR #6 e reconstruído sobre esta arquitetura Web, não
  * copiado. Ver `docs/evidence/RECONCILIACAO_TAKEOVER_FINAL_20260926.md`.
+ *
+ * WP-08 (26/09/2026, reconciliação PR#6): parada de emergência desta campanha
+ * (`KillSwitchPanel`, escopo CAMPAIGN) -- mesma reconciliação, mesma disciplina.
  */
 export default function CampaignDetailPage() {
   const params = useParams<{ campaignId: string }>();
@@ -202,6 +206,15 @@ export default function CampaignDetailPage() {
           Validar campanha
         </Button>
       </Card>
+
+      <KillSwitchPanel
+        scope="CAMPAIGN"
+        targetId={campaignId}
+        title="Parada de emergência (esta campanha)"
+        description="Pausa apenas esta campanha, imediatamente -- sem fila de aprovação e sem step-up (só reduz efeito, nunca amplia). Só funciona se a campanha já estiver num estado ativo/publicado; uma campanha ainda em rascunho não tem o que pausar."
+        confirmLabel="Parar esta campanha agora"
+        onTriggered={loadCampaignAndPlan}
+      />
 
       {decision?.outcome === "APPROVABLE" ? (
         <Card>

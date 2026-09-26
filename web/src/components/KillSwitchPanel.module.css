@@ -1,0 +1,24 @@
+.sectionTitle {
+  font-size: var(--campaia-font-size-lg);
+  margin: 0 0 var(--campaia-space-2);
+}
+
+.muted {
+  color: var(--campaia-color-text-muted);
+  margin: 0 0 var(--campaia-space-3);
+}
+
+.error {
+  color: var(--campaia-color-warning-text);
+}
+
+.result {
+  font-weight: 600;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--campaia-space-3);
+}
