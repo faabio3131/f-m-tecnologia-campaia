@@ -855,3 +855,89 @@ havia registrado inicialmente).
 
 **Commits:** `8ed6403` (fix contrato, verified_at nullable), `e78ab14` (fix backend,
 indexação por ConnectionMode + regressão), `24ff50d` (test e2e atualizado).
+
+### Item 3 — Audit Pagination (achado 21)
+
+**Status:** `FIXED`.
+
+**CURRENT evidence (reproduzido por execução real, ANTES da correção):**
+
+```
+GET /audit-events?cursor=bogus-cursor →
+  200 OK, devolve a lista INTEIRA de eventos (cursor desconhecido silenciosamente
+  ignorado, nunca sinaliza erro)
+```
+
+O contrato (`contracts/bff-openapi.yaml`) sempre prometeu paginação opaca por
+`cursor`/`next_cursor`, mas `api/routes_audit.py::list_audit_events` sempre devolvia
+`next_cursor: null` e a lista inteira do tenant de uma vez -- um stub honesto (nunca
+fabricava uma página que não existia, achado 3/15 original), porém incompleto: um
+`cursor` desconhecido era silenciosamente ignorado (devolvia a página inteira de novo)
+em vez de falhar de forma controlada, como este backend já faz para qualquer entrada do
+cliente que não pode ser verificada no servidor.
+
+**Avaliação da implementação histórica da PR#6:** `origin/feat/campaia-v1-complete-saas`
+implementou paginação real (Etapa A9, commit `6536b5e` lá): página fixa de 50, cursor
+opaco = id do último evento da página anterior, `audit_event_id` como desempate estável
+para `timestamp`, cursor desconhecido → `422 VALIDATION_FAILED`. Avaliada e considerada
+correta e bem alinhada às convenções do CURRENT (mesmo padrão fail-closed, mesmo
+contrato já declarado) -- adaptada aqui sem cópia cega: reconstruída sobre o CURRENT
+(`api/routes_audit.py`), reutilizando os nomes de campo e a convenção `ApiError` já
+usados neste módulo.
+
+**Ação:**
+
+- `api/routes_audit.py::list_audit_events` -- página fixa de 50 (`_PAGE_SIZE`, não um
+  query param: o contrato nunca declarou `limit`); `cursor` é o id do último evento já
+  devolvido; um cursor desconhecido/obsoleto falha com `422 VALIDATION_FAILED` em vez de
+  silenciosamente reiniciar a paginação; desempate estável por `(timestamp,
+  audit_event_id)` (o contador de ids é monotônico e compartilhado por todo tipo de
+  entidade neste processo -- `api/repositories.py::new_id`).
+- Nenhuma mudança de contrato foi necessária -- `cursor`/`next_cursor` já estavam
+  declarados; nenhum drift novo encontrado (`npm run contracts:check` → OK, sem
+  mudanças).
+- **Web (`/audit`, WP-10) atualizada para seguir a paginação real**: a página
+  documentava e assumia "next_cursor sempre null" -- agora que o backend pagina de
+  verdade, a tela ganhou um botão "Carregar mais" que acrescenta a próxima página real
+  à lista já exibida (nunca substitui, nunca fabrica um total). Sem essa mudança, um
+  tenant com mais de 50 eventos reais passaria a ter eventos silenciosamente ocultos na
+  Web -- a correção do backend por si só teria introduzido uma nova lacuna de
+  honestidade na Web.
+
+**Teste (verificação real, execução direta e regressão automatizada):**
+
+- Reprodução manual confirmada por execução real (script Python ad-hoc contra
+  `TestClient`): 120 eventos reais criados, percorridas todas as páginas via cursor real
+  → 120 eventos únicos coletados, 0 lacunas, 0 duplicatas; cursor desconhecido → `422
+  VALIDATION_FAILED` após a correção (antes: `200`, página 1 completa, sem sinalizar
+  nada).
+- Novo `backend/tests_api/test_audit_pagination.py` -- 4 testes: percorrer todas as
+  páginas via cursor real devolve cada evento exatamente uma vez (sem lacunas, sem
+  duplicatas); cursor desconhecido falha fechado; última página reporta `next_cursor:
+  null`; filtro por `campaign_id` continua funcionando corretamente através da
+  paginação. Todos verdes.
+- Regressão completa: `PYTHONPATH=. python3 -m pytest -q` → **539 passed, 58 subtests
+  passed** (535 pré-existentes + 4 novos, 0 failures). Nenhum teste pré-existente
+  assumia a lista completa sem paginação (nenhum tinha mais de 50 eventos reais para o
+  mesmo tenant).
+- `web/tests/audit-page.test.tsx` -- 1 novo teste (`carrega mais eventos via
+  next_cursor real...`), verificando que "Carregar mais" aparece quando `next_cursor`
+  não é nulo, acrescenta a próxima página sem substituir a anterior, e desaparece
+  quando a última página reporta `next_cursor: null`. `npm run test -- --run` → **20
+  arquivos, 67 testes, 0 failures** (antes desta correção: 20/66; +1 teste).
+- E2E cross-stack novo: `web/e2e/audit-pagination.spec.ts` -- cria 55 eventos reais
+  (tenant B, isolado dos specs que já checam `/audit-events` sem cursor para o tenant
+  A), confirma diretamente contra o backend real que a paginação por cursor não perde
+  nem duplica eventos ao longo de múltiplas páginas, confirma o cursor desconhecido
+  falhando fechado, e confirma que a tela `/audit` real segue "Carregar mais" até
+  esgotar as páginas, mostrando exatamente os eventos reais coletados (nunca menos,
+  nunca mais). `testMatch` de `playwright.session.config.ts` estendido.
+  `npx playwright test --config=playwright.session.config.ts` → **26 passed** (25
+  pré-existentes + 1 novo), 0 failures -- incluindo `audit-trail.spec.ts` e
+  `kill-switch.spec.ts`, que continuam corretos porque o tenant A nunca ultrapassa 50
+  eventos reais nesta suíte (isolamento deliberado do novo spec no tenant B).
+- `npm run typecheck`, `npm run lint`, `npm run contracts:check`, `npm run
+  boundary:check` (65 arquivos) → todos OK.
+
+**Commits:** `e67cc34` (feat backend, paginação real + regressão), `d396e32` (feat web,
+Carregar mais), `688bc9f` (test e2e, sem lacunas/duplicatas).
