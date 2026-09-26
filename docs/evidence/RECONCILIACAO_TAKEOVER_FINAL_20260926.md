@@ -307,3 +307,95 @@ autonomia no mesmo tenant.
   sessão, mas não duplicada no E2E cross-stack (decisão de escopo -- o caminho crítico já
   está coberto; duplicar essa regra no E2E colidiria com o achado de aprovações não
   consumidas acima, sem agregar cobertura real nova).
+
+---
+
+## WP-08 — Kill switch (parada de emergência)
+
+**Estado:** `IMPLEMENTADO E TESTADO NESTA SESSÃO` (unit + component + backend regression +
+E2E cross-stack). FM QA Engineer formal ainda pendente (ressalva histórica).
+
+### CURRENT antes deste bloco
+
+- Backend: `POST /kill-switch` (`routes_campaigns.py::kill_switch`) **já existia** em
+  PR#5/main, com 5 escopos (`CAMPAIGN`, `ACCOUNT`, `TENANT`, `PLATFORM`, `GLOBAL`),
+  auditoria multi-tenant real (acha­do 17: evento registrado em CADA tenant afetado, não só
+  no do chamador) e a guarda "só reduz efeito, nunca amplia". Nenhum arquivo de
+  `campaia_core`/`api/routes_campaigns.py` foi alterado neste bloco.
+- Deliberadamente **sem** fila de aprovação e **sem** step-up
+  (`campaia_core/permissions.py::REQUIRES_STEP_UP` exclui `KILL_SWITCH` de propósito --
+  "emergência não espera reautenticação"). Comportamento existente, não introduzido aqui.
+- Web: **nenhuma UI de kill switch existia** em `web/src` do CURRENT.
+
+### Achado real de contrato, confirmado por execução nesta sessão
+
+`POST /kill-switch` sempre devolve `{scope, affected_campaign_ids}` no `202`
+(`tests_api/test_smoke_endpoints.py::test_kill_switch_tenant_scope` já asserta
+`affected_campaign_ids`), mas o contrato não declarava NENHUM schema de resposta para o
+`202` (só uma descrição em texto). Corrigido de forma aditiva.
+
+### Decisão de escopo, deliberada e registrada (não um gap técnico)
+
+Só os escopos `CAMPAIGN` (esta campanha) e `TENANT` (todas as campanhas deste tenant)
+foram portados para a Web nesta reconciliação:
+
+- `ACCOUNT`/`PLATFORM` mapeiam para "connection_id"/"channel" sem um seletor natural em
+  nenhuma tela atual -- o próprio backend já documenta isso como simplificação (achado
+  13); construir um seletor novo para eles seria inventar uma interação de produto ainda
+  não desenhada, não portar um comportamento existente.
+- `GLOBAL` cruza **todos os tenants da plataforma**, e a autorização real de
+  `Permission.KILL_SWITCH` não distingue um "administrador de plataforma" de um
+  OWNER/ADMIN/FINANCE/APPROVER comum de qualquer tenant -- expor um botão "parar a
+  plataforma inteira" numa tela de configurações de um tenant comum seria uma decisão de
+  produto/segurança nova, com risco real de escalada de efeito entre tenants, não uma
+  simples tradução de comportamento existente para a Web.
+
+Registrado como `DECISÃO HUMANA NECESSÁRIA` (não implementado): se/quando `GLOBAL` e
+`ACCOUNT`/`PLATFORM` devem ganhar UI, e com qual controle de autorização adicional para
+`GLOBAL` especificamente.
+
+### O que foi construído (comportamento portado, frontend reconstruído)
+
+- `web/src/components/KillSwitchPanel.tsx` (novo, componente único reutilizado com um
+  prop `scope`) -- aciona `POST /kill-switch` direto (sem propor/decidir/aplicar, ao
+  contrário de WP-06/07, porque o próprio domínio não exige isso aqui), mostra o número
+  real de campanhas afetadas devolvido pelo backend, e trata `409 INVALID_STATE` (escopo
+  `CAMPAIGN` numa campanha ainda não pausável) com uma mensagem honesta, não um erro
+  genérico.
+- `web/src/components/KillSwitchPanel.module.css` (novo), mesmos tokens de design.
+- Integrado em `campaigns/[campaignId]/page.tsx` (escopo `CAMPAIGN`, `target_id` =
+  campanha atual) e em `settings/page.tsx` (escopo `TENANT`, sem `target_id`).
+
+### Testes
+
+- Novo: `web/tests/kill-switch-panel.test.tsx` -- 3 casos (escopo CAMPAIGN aciona e
+  mostra afetadas, 409 INVALID_STATE mostrado honestamente, escopo TENANT sem
+  `target_id`). Todos verdes.
+- Comando: `npm run test -- --run` → **17 arquivos, 57 testes, 0 failures** (antes desta
+  sessão: 16/54; +1 arquivo, +3 testes).
+- `npm run typecheck`, `npm run lint`, `npm run contracts:check` → OK; `npm run
+  boundary:check` → **59 arquivos** (antes 57) → OK.
+- Backend regressão completa: `PYTHONPATH=. python3 -m pytest -q` → **526 passed, 58
+  subtests passed** (idêntico ao baseline -- só o contrato foi tocado).
+- E2E cross-stack novo: `web/e2e/kill-switch.spec.ts`, dois cenários -- escopo `TENANT`
+  aciona de verdade (campanha real criada via UI fica em `DRAFT`, ignorada silenciosamente
+  pelo backend real, `affected_campaign_ids` real verificado, e a trilha de auditoria real
+  (`GET /audit-events`) confirmada contendo um evento `KILL_SWITCH`, cumprindo a exigência
+  do contrato "ainda assim gera evento e auditoria" mesmo quando nada foi pausado de
+  fato); escopo `CAMPAIGN` numa campanha `DRAFT` recebe `409 INVALID_STATE` real e a UI
+  mostra a mensagem honesta correspondente. `npx playwright test
+  --config=playwright.session.config.ts` (com `kill-switch.spec.ts` incluído em
+  `testMatch`) → **20 passed** (18 pré-existentes + 2 novos), 0 failures.
+
+### Pendências reais deste bloco (não escondidas)
+
+- FM QA Engineer formal: pendente (ressalva histórica).
+- Escopos `ACCOUNT`/`PLATFORM`/`GLOBAL` não portados para a Web -- decisão deliberada
+  registrada acima, não um esquecimento; aguardando decisão humana se algum deles precisa
+  de UI e, para `GLOBAL`, de um controle de autorização adicional que hoje não existe.
+- A Web atual ainda não tem um botão de "Publicar" campanha (fora do escopo desta
+  reconciliação) -- por isso o E2E deste bloco não conseguiu demonstrar visualmente uma
+  campanha saindo de `PAUSED` de verdade (nenhuma campanha criada pela Web hoje sai de
+  `DRAFT`); o caminho real de pausar uma campanha genuinamente ativa já está coberto no
+  backend (`test_kill_switch_platform_scope_pauses_matching_channel`,
+  `test_kill_switch_global_scope_crosses_tenants`), não duplicado aqui.
