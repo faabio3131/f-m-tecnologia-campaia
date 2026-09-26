@@ -72,7 +72,14 @@ async def oauth_start(request: Request) -> JSONResponse:
         actor=fixture.user_id,
         action="OAUTH_START",
         target=body.provider,
-        details={"note": "simulated, no real provider contacted", "state": oauth_state},
+        # ACHADO 22 (Fase 3, item 4 -- mineracao tecnica da PR#6, 26/09/2026): o valor
+        # anti-replay `state` nao tem lugar numa trilha de auditoria legivel por humanos,
+        # mesmo ja sendo devolvido ao chamador nesta mesma resposta -- uma trilha de
+        # auditoria e para revisar acoes, nao para guardar tokens de seguranca. Nao e uma
+        # exposicao real hoje (valor single-use, escopado por tenant, TTL curto, este
+        # fluxo nunca contata um provider real), mas e higiene de auditoria correta
+        # independente disso -- mesma correcao ja feita pela PR#6 (commit 9a0e6b3).
+        details={"note": "simulated, no real provider contacted"},
     )
     return json_response(OAuthStartResponse(authorization_url=fake_url, state=oauth_state))
 
