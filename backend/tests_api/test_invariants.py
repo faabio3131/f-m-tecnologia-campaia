@@ -202,6 +202,36 @@ class TestIdempotencyReplay(unittest.TestCase):
         r2 = client.post(f"/campaigns/{cid}/pause", headers={**OWNER, **headers})
         self.assertEqual(r1.status_code, r2.status_code)
 
+    def test_repeating_a_successful_pause_key_does_not_duplicate_the_audit_event(self):
+        """ACHADO 26 (Fase 4, item A, 26/09/2026, REPRODUZIDO por execucao real): antes
+        desta correcao, o audit.append de CAMPAIGN_PAUSE rodava fora do fecho protegido por
+        `idempotency.execute()`, entao um replay legitimo da MESMA Idempotency-Key contra
+        uma pausa que JA teve sucesso duplicava o evento de auditoria (2 chamadas -> 2
+        eventos CAMPAIGN_PAUSE), sem nenhuma mutacao real correspondente na segunda
+        chamada. `test_repeating_pause_key_is_idempotent` acima nunca pegou isso porque so
+        exercita DRAFT (que falha nas duas chamadas, nunca chega a pausar de verdade)."""
+        client = make_client()
+        camp, decision, approval = publish_ready_campaign(client)
+        cid = camp["id"]
+        r = client.post(
+            f"/campaigns/{cid}/publish",
+            headers={**with_step_up(OWNER), **idem(f"pub-{cid}")},
+            json={"policy_decision_id": decision["policy_decision_id"], "approval_id": approval["id"]},
+        )
+        self.assertEqual(r.json()["state"], "ACTIVE")
+
+        headers = {**OWNER, **idem(f"pause-real-{cid}")}
+        r1 = client.post(f"/campaigns/{cid}/pause", headers=headers)
+        r2 = client.post(f"/campaigns/{cid}/pause", headers=headers)
+        self.assertEqual(r1.status_code, 202, r1.text)
+        self.assertEqual(r2.status_code, 202, r2.text)
+
+        audit = client.get("/audit-events", headers=OWNER).json()
+        pause_events = [
+            e for e in audit["items"] if e["action"] == "CAMPAIGN_PAUSE" and e["target"] == cid
+        ]
+        self.assertEqual(len(pause_events), 1)
+
     def test_repeating_create_brief_key_does_not_duplicate(self):
         client = make_client()
         headers = {**OWNER, **idem("brief-replay-1")}

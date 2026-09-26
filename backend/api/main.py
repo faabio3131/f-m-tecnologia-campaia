@@ -35,6 +35,7 @@ from .routes_campaigns import (
     pause_campaign,
     publish_campaign,
     regenerate_plan,
+    resume_campaign,
     validate_campaign,
 )
 from .routes_connections import (
@@ -96,6 +97,9 @@ routes = [
     Route("/campaigns/{campaignId}/validate", validate_campaign, methods=["POST"]),
     Route("/campaigns/{campaignId}/publish", publish_campaign, methods=["POST"]),
     Route("/campaigns/{campaignId}/pause", pause_campaign, methods=["POST"]),
+    # Fase 4, item A (achado 25, 26/09/2026): dominio ja modelava PAUSED -> ACTIVE
+    # (campaia_core/states.py) -- so faltava exposicao via API.
+    Route("/campaigns/{campaignId}/resume", resume_campaign, methods=["POST"]),
     Route("/campaigns/{campaignId}/budget", patch_budget, methods=["PATCH"]),
     Route("/campaigns/{campaignId}/insights", get_insights, methods=["GET"]),
 

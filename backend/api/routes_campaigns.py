@@ -481,6 +481,16 @@ async def pause_campaign(request: Request) -> JSONResponse:
                     plan_version=record.plan_version,
                 )
             )
+        # ACHADO 26 (Fase 4, item A, 26/09/2026, REPRODUZIDO por execucao real ao escrever
+        # o teste de replay de resume_campaign abaixo): o audit.append precisa estar DENTRO
+        # do fecho protegido por `idempotency.execute()`, nao depois -- antes desta correcao,
+        # ele rodava incondicionalmente a cada chamada HTTP, inclusive em replays legitimos
+        # da MESMA Idempotency-Key, duplicando o evento CAMPAIGN_PAUSE na trilha de
+        # auditoria sem nenhuma mutacao real correspondente. Confirmado por execucao real:
+        # duas chamadas com a mesma chave -> dois eventos CAMPAIGN_PAUSE, antes da correcao.
+        state.audit.append(
+            tenant_id=fixture.tenant_id, actor=fixture.user_id, action="CAMPAIGN_PAUSE", target=record.campaign_id
+        )
         return serialize_campaign(record).model_dump(mode="json")
 
     try:
@@ -490,10 +500,77 @@ async def pause_campaign(request: Request) -> JSONResponse:
     except CampaiaError as exc:
         raise from_domain_error(exc)
 
-    state.audit.append(
-        tenant_id=fixture.tenant_id, actor=fixture.user_id, action="CAMPAIGN_PAUSE", target=record.campaign_id
-    )
     # Contract: 202 Accepted (achado 4).
+    return JSONResponse(result, status_code=202)
+
+
+# --------------------------------------------------------------------------- resume
+
+
+async def resume_campaign(request: Request) -> JSONResponse:
+    """Fase 4, item A da missao de reconciliacao/takeover (26/09/2026): a maquina de
+    estados (campaia_core/states.py) ja modelava e testava PAUSED -> ACTIVE, com sua
+    propria guarda (`_guard_resume`) -- FATO CONFIRMADO por leitura real do dominio antes
+    de qualquer codigo ser escrito. So faltava exposicao via API; nenhuma mudanca de
+    semantica de dominio foi necessaria.
+
+    Exige `Permission.CAMPAIGN_PUBLISH` + step-up (mesmo nivel de cautela de
+    `publish_campaign`, nao o de `pause_campaign`/`CAMPAIGN_EDIT`) porque retomar volta a
+    gerar gasto externo real -- o mesmo risco que publicar pela primeira vez. NAO exige um
+    novo `approval_id`: a guarda de dominio para esta transicao especifica
+    (`_guard_resume`) so verifica `kill_switch_active`, nao aprovacao humana -- diferente de
+    APPROVED -> PUBLISHING (`_guard_publishing`), que exige uma. Inventar aqui uma exigencia
+    de aprovacao que o dominio nao modela seria o erro oposto (mais rigoroso que o dominio
+    autoriza), entao a rota segue exatamente o que a guarda real exige, nada mais.
+
+    Deliberadamente NAO chama nenhum metodo de conector para "reativar" o recurso externo:
+    `AdsConnector` (campaia_core/connectors.py) so declara `publish`/`pause` -- nao existe
+    `resume`/`unpause` no protocolo. A propria chamada `connector.pause(...)` que
+    `pause_campaign` faz hoje e simbolica (um `ProviderSimulator()` novo e descartado a
+    cada chamada, sem nenhuma leitura posterior de `.paused` em lugar nenhum do codigo --
+    confirmado por grep real), entao nao ha nenhum efeito real a espelhar aqui. Definir o
+    que uma "retomada" deveria significar para um adaptador real (nova chamada de API do
+    provider? republicar? outra coisa?) e uma decisao de protocolo de conector/produto
+    ainda pendente, fora do escopo desta exposicao -- nao inventada aqui.
+    """
+    fixture, state, principal = _authorize(request, Permission.CAMPAIGN_PUBLISH)
+    require_step_up(request, fixture)
+    idem_key = require_idempotency_key(request)
+    record = _get_campaign_or_404(
+        state, fixture.tenant_id, request.path_params["campaignId"], principal=principal
+    )
+
+    def _do_resume():
+        try:
+            # TransitionContext() default (kill_switch_active=False) -- mesmo padrao ja
+            # usado por publish_campaign/validate_campaign para transition_to() nesta API:
+            # nenhum sinal persistente de "kill switch ligado" existe hoje para alimentar
+            # este campo (o kill switch real e uma ACAO pontual, `apply_kill_switch`, nao um
+            # estado consultavel depois -- ver `kill_switch()`/`_try_pause()` acima).
+            record.campaign.transition_to(
+                CampaignState.ACTIVE,
+                reason=f"resume:{idem_key}",
+            )
+        except InvalidStateTransition as exc:
+            raise from_domain_error(exc)
+        # ACHADO 26 (Fase 4, item A, 26/09/2026, REPRODUZIDO por execucao real ao escrever
+        # o teste de replay abaixo): o audit.append tem que estar DENTRO deste fecho, senao
+        # roda de novo a cada replay legitimo da mesma Idempotency-Key e duplica o evento
+        # CAMPAIGN_RESUME sem nenhuma mutacao real correspondente -- mesma classe de bug
+        # encontrada e corrigida em pause_campaign nesta mesma sessao.
+        state.audit.append(
+            tenant_id=fixture.tenant_id, actor=fixture.user_id, action="CAMPAIGN_RESUME", target=record.campaign_id
+        )
+        return serialize_campaign(record).model_dump(mode="json")
+
+    try:
+        result, _replay = state.idempotency.execute(fixture.tenant_id, idem_key, _do_resume)
+    except ApiError:
+        raise
+    except CampaiaError as exc:
+        raise from_domain_error(exc)
+
+    # Contract: 202 Accepted, mesmo shape de pause_campaign.
     return JSONResponse(result, status_code=202)
 
 
