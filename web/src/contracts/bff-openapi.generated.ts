@@ -627,9 +627,9 @@ export interface components {
             }[];
             budget?: {
                 currency?: string;
-                total_amount?: number;
-                daily_cap?: number;
-                spent_to_date?: number;
+                total_amount?: string;
+                daily_cap?: string;
+                spent_to_date?: string;
             };
             /** Format: date-time */
             created_at?: string;

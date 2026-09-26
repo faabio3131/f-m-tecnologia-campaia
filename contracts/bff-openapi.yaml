@@ -905,9 +905,15 @@ components:
           type: object
           properties:
             currency: { type: string }
-            total_amount: { type: number }
-            daily_cap: { type: number }
-            spent_to_date: { type: number }
+            # Achado (reconciliacao PR#6, 26/09/2026, confirmado por execucao real de
+            # Decimal.model_dump_json() nesta sessao): estes 3 campos sao `Decimal` em
+            # api/models.py e o pydantic v2 sempre serializa Decimal como STRING em
+            # model_dump_json(), nunca como number. O contrato dizia `number` desde a
+            # construcao original -- nunca era verdade em runtime. Corrigido para
+            # refletir o CURRENT real, mesmo padrao ja usado em ApprovalRequest.amount.
+            total_amount: { type: string }
+            daily_cap: { type: string }
+            spent_to_date: { type: string }
         created_at: { type: string, format: date-time }
 
     PolicyDecision:
