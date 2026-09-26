@@ -691,6 +691,7 @@ export interface components {
             campaign_id?: string;
             /** Format: date-time */
             last_synced_at?: string | null;
+            note?: string;
             points?: {
                 /** Format: date */
                 date?: string;

@@ -999,6 +999,13 @@ components:
       properties:
         campaign_id: { type: string, format: uuid }
         last_synced_at: { type: [string, 'null'], format: date-time }
+        # WP-11 (achado 15): InsightSeriesResponse.model_dump_json() real sempre inclui
+        # `note` (o backend usa este campo para declarar honestamente, ao cliente, que
+        # ainda nao ha camada de analytics real -- "No analytics layer implemented yet
+        # in campaia_core; this is an honest placeholder, not fabricated data.") --
+        # confirmado por execucao direta nesta sessao. Contrato nunca declarava este
+        # campo -- aditivo, sem mudanca de comportamento do backend.
+        note: { type: string }
         points:
           type: array
           items:
