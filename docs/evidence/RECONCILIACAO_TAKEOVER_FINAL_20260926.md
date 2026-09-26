@@ -399,3 +399,97 @@ Registrado como `DECISÃO HUMANA NECESSÁRIA` (não implementado): se/quando `GL
   `DRAFT`); o caminho real de pausar uma campanha genuinamente ativa já está coberto no
   backend (`test_kill_switch_platform_scope_pauses_matching_channel`,
   `test_kill_switch_global_scope_crosses_tenants`), não duplicado aqui.
+
+---
+
+## WP-09 — Capacidades de conexão
+
+**Estado:** `IMPLEMENTADO E TESTADO NESTA SESSÃO` (unit + component + backend regression +
+E2E cross-stack). FM QA Engineer formal ainda pendente (ressalva histórica).
+
+### CURRENT antes deste bloco
+
+- Backend: `GET /connections/{connectionId}/capabilities`
+  (`routes_connections.py::connection_capabilities`) **já existia** em PR#5/main. Nenhum
+  arquivo de `campaia_core`/`api/routes_connections.py` foi alterado neste bloco.
+- Web: a página `/connections` (WP-04) já lista conexões reais e completa o ciclo
+  OAuth simulado, mas **não exibia capacidades** -- confirmado por busca antes de
+  escrever qualquer código.
+
+### Achado real de contrato, confirmado por execução nesta sessão
+
+`CapabilityResponse.model_dump_json()` sempre inclui `provider`, `country` e
+`api_version`, mas o contrato's `Capability` schema só declarava `capability_key`,
+`supported`, `requires_approval`, `evidence_url`, `verified_at` e `notes` -- mesma classe
+de achado de WP-06/07/08 (campos reais do backend ausentes do contrato). Corrigido de
+forma aditiva.
+
+### Achado real de comportamento, confirmado por execução direta (não corrigido nesta sessão)
+
+`campaia_core/infra.py::CapabilityRegistry` é indexado por `(provider, capability_key,
+country, api_version)`. `api/state.py::_seed_capabilities()` só registra capacidades sob
+`provider="SIMULATOR"` -- mas nenhuma `Connection` real criada pelo fluxo de OAuth
+(`Provider` do contrato é `GOOGLE_ADS | META | WHATSAPP`, nunca `"SIMULATOR"`) jamais tem
+esse provider. Confirmado por execução direta em Python: `is_supported("GOOGLE_ADS", ...)`
+→ `False`; `is_supported("SIMULATOR", ...)` → `True`.
+
+**Decisão registrada, não uma correção silenciosa:** isso significa que `GET
+/connections/{id}/capabilities` hoje sempre devolve `supported: false` para qualquer
+conexão real. `"SIMULATOR"` também é usado deliberadamente em
+`routes_campaigns.py::validate_campaign` como o publicador simulado da PLATAFORMA
+(independente da conta OAuth escolhida) -- mudar o seed para "provar" capacidades de
+contas reais fabricaria um `supported: true` que nunca foi de fato verificado para
+nenhuma conta real, contrariando a mesma disciplina de honestidade já aplicada a
+`insights` (nunca fabricar métricas, mantido honestamente vazio) e ao Gemini/IA (nunca
+inventar verificação). Por isso este bloco **não alterou** `_seed_capabilities()` --
+construiu a Web para exibir fielmente o que o backend real diz, incluindo o
+`supported: false` honesto, em vez de mascarar isso ou de "consertar" o seed para exibir
+algo mais bonito. Registrado para avaliação futura (Fase 3 ou decisão humana): se o
+objetivo do produto é algum dia mostrar capacidades "verificadas" para contas reais antes
+de existir integração real, esse desenho precisa ser repensado (provavelmente exigindo o
+item de verificação real de conta, não um seed estático).
+
+### O que foi construído (comportamento portado, frontend reconstruído)
+
+- `web/src/components/CapabilitiesPanel.tsx` (novo) -- "Ver capacidades" expansível por
+  conexão ativa, busca sob demanda (só uma vez por expansão, não recarrega ao
+  ocultar/mostrar de novo), mostra `capability_key`, badge Suportada/Não suportada,
+  país/versão de API, `requires_approval`, `verified_at` formatado, e evidência --
+  nunca inventa um `evidence_url` quando o backend devolve `null` (mostra "sem evidência
+  registrada" honestamente).
+- `web/src/components/CapabilitiesPanel.module.css` (novo), mesmos tokens de design.
+- Integrado em `connections/page.tsx`, um painel por conexão `ACTIVE`.
+
+### Testes
+
+- Novo: `web/tests/capabilities-panel.test.tsx` -- 3 casos (não busca nada até expandir,
+  busca e mostra capacidades reais incluindo suportada/não suportada e evidência
+  ausente, busca só uma vez ao alternar mostrar/ocultar repetidamente). Todos verdes.
+- Comando: `npm run test -- --run` → **18 arquivos, 60 testes, 0 failures** (antes desta
+  sessão: 17/57; +1 arquivo, +3 testes).
+- `npm run typecheck`, `npm run lint`, `npm run contracts:check` → OK; `npm run
+  boundary:check` → **61 arquivos** (antes 59) → OK.
+- Backend regressão completa: `PYTHONPATH=. python3 -m pytest -q` → **526 passed, 58
+  subtests passed** (idêntico ao baseline -- só o contrato foi tocado).
+- E2E cross-stack novo: `web/e2e/capabilities.spec.ts` -- fecha o ciclo real de conexão
+  (tenant B, isolado de propósito do tenant A já usado por `session-protocol.spec.ts`'s
+  teste L para não competir pela mesma conexão GOOGLE_ADS), expande "Ver capacidades" e
+  confirma o `GET /connections/{id}/capabilities` real: `supported: false` e
+  `evidence_url: null` para as duas capacidades, exatamente o comportamento honesto
+  documentado acima -- não um resultado fabricado. `npx playwright test
+  --config=playwright.session.config.ts` (com `capabilities.spec.ts` incluído em
+  `testMatch`) → **21 passed** (20 pré-existentes + 1 novo), 0 failures.
+- Achado de teste corrigido no processo: `page.getByTestId(...).isVisible()` não espera
+  a resposta real do backend nem a re-renderização da página -- usado assim, o primeiro
+  run desta suite corrompeu o teste L pré-existente de `session-protocol.spec.ts`
+  (competindo pela mesma conexão GOOGLE_ADS do tenant A). Corrigido usando tenant B
+  neste E2E novo e uma espera real (`expect(...).toBeVisible()`) antes de decidir entre
+  os dois estados possíveis da página.
+
+### Pendências reais deste bloco (não escondidas)
+
+- FM QA Engineer formal: pendente (ressalva histórica).
+- O achado de `_seed_capabilities()` (`provider="SIMULATOR"` nunca corresponde a uma
+  conexão real) não foi corrigido -- decisão deliberada de não fabricar um
+  `supported: true` sem verificação real, registrada acima para decisão de produto
+  futura.
