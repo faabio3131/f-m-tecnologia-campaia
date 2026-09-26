@@ -182,3 +182,46 @@ por vínculo mude no futuro.
   corrida é "a troca que terminar por último vence", nunca um estado corrompido — não
   testado explicitamente, proporcional ao estágio (mesma disciplina já aceita para outros
   stores em memória deste projeto).
+
+---
+
+## Revisão adicional — WP-04 (callback OAuth simulado, 26/09/2026)
+
+**Escopo:** `backend/api/state.py` (`PendingOAuthState`, `start_oauth_state`,
+`redeem_oauth_state`), `backend/api/routes_connections.py` (`oauth_callback`),
+`web/src/app/(app)/(authenticated)/connections/page.tsx`.
+
+### Verificado, sem achado
+
+1. **Cross-tenant**: o `state` de OAuth é amarrado ao `tenant_id` que o emitiu;
+   resgate de outro tenant é recusado (403), mesmo com o `state` correto. Confirmado
+   por teste real (`test_state_from_another_tenant_is_rejected`).
+2. **Replay**: `redeem_oauth_state` sempre remove o registro, mesmo em falha — nunca
+   uma segunda tentativa com o mesmo `state`. Confirmado
+   (`test_state_is_single_use`).
+3. **Step-up**: `oauth_callback` exige `X-Step-Up-Token` como `oauth_start` já exigia
+   (defesa em profundidade consistente com o resto do código). Confirmado
+   (`test_callback_without_step_up_is_rejected`).
+4. **Idempotência**: criação de `Connection` via `Idempotency-Key`, mesmo padrão de
+   `create_brand_profile`. Confirmado (`test_callback_requires_idempotency_key`).
+5. **Nenhum provider real contatado**: `oauth_start`/`oauth_callback` continuam 100%
+   simulados (URL sob domínio `.invalid`, nenhuma chamada de rede de saída) —
+   confirmado por leitura do código, sem chamada HTTP externa em nenhum dos dois
+   handlers.
+
+### Achado residual, não corrigido (proporcional ao risco atual)
+
+**Severidade: baixa.** `PendingOAuthState` é 100% em memória, sem persistência — um
+restart do processo entre `oauth_start` e `oauth_callback` perde o `state` pendente
+(o usuário precisaria recomeçar o fluxo). Mesma disciplina já aceita para
+`SessionStore`/outros stores em memória deste estágio do projeto; não é uma falha de
+segurança (fail-closed: perde o estado, nunca aceita um resgate inválido).
+
+### Frontend — step-up honesto
+
+A confirmação de step-up na UI (`connections/page.tsx`) é explicitamente rotulada como
+uma confirmação do usuário, não um desafio de segurança real — o texto exibido diz
+isso literalmente. Não é um "fake" de segurança porque não finge ser algo que não é;
+é uma UI honesta sobre uma lacuna real (desafio de reautenticação genuíno depende do
+item 1.6). A autoridade de decisão continua 100% no backend (`require_step_up`
+recusa fail-closed se o header estiver ausente, independente do que a UI mostrar).

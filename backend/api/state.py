@@ -74,6 +74,26 @@ class TokenPrincipal:
         )
 
 
+@dataclass(frozen=True)
+class PendingOAuthState:
+    """WP-04 (26/09/2026): registro em memoria do `state` devolvido por
+    POST /connections/oauth/start, ate' ser resgatado pelo callback simulado. Nunca uma
+    credencial real -- so o suficiente para amarrar o resgate ao mesmo tenant que
+    iniciou o fluxo e ao provider escolhido, com expiracao curta (uso pontual, nao uma
+    sessao)."""
+
+    tenant_id: str
+    provider: str
+    created_at: datetime
+
+
+#: Quanto tempo um `state` de OAuth pendente fica valido para resgate -- generoso o
+#: bastante para o usuario escolher a conta no provedor (real ou simulado), curto o
+#: bastante para nao acumular estado indefinidamente nem virar uma janela de replay
+#: longa.
+OAUTH_PENDING_STATE_TTL = timedelta(minutes=10)
+
+
 #: Item 1.3/WP-02 (24/09/2026): ambientes onde o fixture de bearer token de dev pode
 #: existir. Fora destes, `AppState.__post_init__` recusa a inicializacao -- nunca so
 #: "esconde a opcao" (exigencia literal do WP-02, docs/web/06_ROADMAP_WORK_PACKAGES.md).
@@ -265,6 +285,12 @@ class AppState:
     idempotency: IdempotencyStore = field(default_factory=IdempotencyStore)
     capabilities: CapabilityRegistry = field(default_factory=_seed_capabilities)
 
+    #: WP-04 (26/09/2026): `state` de OAuth emitido por POST /connections/oauth/start,
+    #: guardado ate' o callback simulado (POST /connections/oauth/callback) resgatar --
+    #: uso unico (removido no resgate), amarrado ao tenant que iniciou o fluxo, nunca
+    #: aceito de um tenant diferente. Em memoria, mesma disciplina de `step_up_at`.
+    oauth_pending_states: dict[str, "PendingOAuthState"] = field(default_factory=dict)
+
     brand_profiles: BrandProfileRepository = field(default_factory=BrandProfileRepository)
     connections: ConnectionRepository = field(default_factory=ConnectionRepository)
     campaigns: CampaignRepository = field(default_factory=CampaignRepository)
@@ -391,3 +417,23 @@ class AppState:
 
     def last_step_up(self, tenant_id: str, user_id: str) -> datetime | None:
         return self.step_up_at.get((tenant_id, user_id))
+
+    def start_oauth_state(self, state_token: str, *, tenant_id: str, provider: str, now: datetime) -> None:
+        self.oauth_pending_states[state_token] = PendingOAuthState(
+            tenant_id=tenant_id, provider=provider, created_at=now
+        )
+
+    def redeem_oauth_state(
+        self, state_token: str, *, tenant_id: str, now: datetime
+    ) -> PendingOAuthState | None:
+        """Resgate de UNICO uso: sempre remove o registro, mesmo quando a validacao
+        falha (nunca deixa um `state` invalido/expirado/de outro tenant disponivel para
+        uma segunda tentativa -- fail-closed, sem replay)."""
+        pending = self.oauth_pending_states.pop(state_token, None)
+        if pending is None:
+            return None
+        if pending.tenant_id != tenant_id:
+            return None
+        if (now - pending.created_at) > OAUTH_PENDING_STATE_TTL:
+            return None
+        return pending

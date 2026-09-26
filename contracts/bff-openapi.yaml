@@ -239,6 +239,43 @@ paths:
                   state: { type: string }
         '403': { $ref: '#/components/responses/StepUpRequired' }
 
+  /connections/oauth/callback:
+    post:
+      tags: [Conexoes]
+      summary: Resgata o `state` do fluxo OAuth e cria a Connection (WP-04, 26/09/2026)
+      description: |
+        `state` de uso unico, amarrado ao tenant que chamou startOAuth -- nunca aceito
+        de outro tenant nem reutilizavel apos o primeiro resgate (sucesso ou falha).
+        `external_account_id`/`display_name` representam a conta selecionada pelo
+        usuario no provedor (simulado nesta etapa; nenhum provider real e contatado).
+      operationId: oauthCallback
+      parameters:
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state, external_account_id, display_name]
+              properties:
+                state: { type: string }
+                external_account_id: { type: string }
+                display_name: { type: string }
+      responses:
+        '201':
+          description: Connection criada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Connection' }
+        '403':
+          description: state invalido, expirado, ja usado, de outro tenant, ou reautenticacao ausente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
   /connections/{connectionId}:
     delete:
       tags: [Conexoes]

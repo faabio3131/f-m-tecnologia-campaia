@@ -157,6 +157,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/connections/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resgata o `state` do fluxo OAuth e cria a Connection (WP-04, 26/09/2026)
+         * @description `state` de uso unico, amarrado ao tenant que chamou startOAuth -- nunca aceito
+         *     de outro tenant nem reutilizavel apos o primeiro resgate (sucesso ou falha).
+         *     `external_account_id`/`display_name` representam a conta selecionada pelo
+         *     usuario no provedor (simulado nesta etapa; nenhum provider real e contatado).
+         */
+        post: operations["oauthCallback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/connections/{connectionId}": {
         parameters: {
             query?: never;
@@ -1015,6 +1038,49 @@ export interface operations {
                 };
             };
             403: components["responses"]["StepUpRequired"];
+        };
+    };
+    oauthCallback: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao. */
+                "X-Step-Up-Token": components["parameters"]["StepUpToken"];
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    state: string;
+                    external_account_id: string;
+                    display_name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Connection criada */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Connection"];
+                };
+            };
+            /** @description state invalido, expirado, ja usado, de outro tenant, ou reautenticacao ausente */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
         };
     };
     revokeConnection: {

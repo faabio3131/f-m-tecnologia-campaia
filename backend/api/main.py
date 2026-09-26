@@ -40,6 +40,7 @@ from .routes_campaigns import (
 from .routes_connections import (
     connection_capabilities,
     list_connections,
+    oauth_callback,
     oauth_start,
     revoke_connection,
 )
@@ -76,6 +77,7 @@ routes = [
 
     Route("/connections", list_connections, methods=["GET"]),
     Route("/connections/oauth/start", oauth_start, methods=["POST"]),
+    Route("/connections/oauth/callback", oauth_callback, methods=["POST"]),
     Route("/connections/{connectionId}", revoke_connection, methods=["DELETE"]),
     Route("/connections/{connectionId}/capabilities", connection_capabilities, methods=["GET"]),
 

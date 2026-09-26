@@ -126,6 +126,18 @@ class OAuthStartResponse(BaseModel):
     state: str
 
 
+class OAuthCallbackRequest(ApiModel):
+    #: `state` devolvido por POST /connections/oauth/start -- resgatado uma unica vez,
+    #: amarrado ao tenant que iniciou o fluxo (nunca aceito de outro tenant).
+    state: str
+    #: Conta selecionada pelo usuario no provedor (simulado nesta etapa -- nenhum
+    #: provider real e contatado). Nunca inventada pelo backend: sempre o que o
+    #: cliente envia apos a "selecao" na tela (real, quando existir, ou simulada, como
+    #: hoje).
+    external_account_id: str
+    display_name: str
+
+
 class CapabilityResponse(BaseModel):
     provider: str
     capability_key: str

@@ -9,3 +9,7 @@ export type ApiErrorBody = components["schemas"]["Error"];
 export type SessionUser = components["schemas"]["SessionUser"];
 export type Membership = components["schemas"]["MembershipItem"];
 export type MembershipsResponse = components["schemas"]["MembershipsResponse"];
+export type BrandProfile = components["schemas"]["BrandProfile"];
+export type BrandProfileInput = components["schemas"]["BrandProfileInput"];
+export type Connection = components["schemas"]["Connection"];
+export type Provider = components["schemas"]["Provider"];

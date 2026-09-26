@@ -1,0 +1,60 @@
+.sectionTitle {
+  margin: 0 0 var(--campaia-space-3);
+  font-size: var(--campaia-font-size-lg);
+  color: var(--campaia-color-text);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-3);
+}
+
+.textareaField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-1);
+}
+
+.textareaLabel {
+  font-size: var(--campaia-font-size-sm);
+  color: var(--campaia-color-text);
+}
+
+.textarea {
+  font-family: var(--campaia-font-sans);
+  font-size: var(--campaia-font-size-md);
+  padding: var(--campaia-space-2);
+  border: 1px solid var(--campaia-color-border);
+  border-radius: var(--campaia-radius-sm);
+  background: var(--campaia-color-surface);
+  color: var(--campaia-color-text);
+  resize: vertical;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-2);
+}
+
+.listItem {
+  padding: var(--campaia-space-3);
+  border: 1px solid var(--campaia-color-border);
+  border-radius: var(--campaia-radius-md);
+}
+
+.itemName {
+  margin: 0;
+  font-weight: 600;
+  color: var(--campaia-color-text);
+}
+
+.itemDetail {
+  margin: var(--campaia-space-1) 0 0;
+  color: var(--campaia-color-text-muted);
+  font-size: var(--campaia-font-size-sm);
+}

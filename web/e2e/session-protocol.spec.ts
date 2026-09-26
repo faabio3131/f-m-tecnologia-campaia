@@ -270,4 +270,57 @@ test.describe("Protocolo de sessao real", () => {
     });
     expect((await meResponse.json()).tenant_id).toBe("other-tenant");
   });
+
+  test("L. WP-04 real: Brand Kit e Conexao completos via UI, backend real", async ({ page }) => {
+    await page.goto("/login");
+    await loginViaTestHarness(page, TENANT_A_TESTID);
+    await expect(page).toHaveURL(/\/dashboard/);
+
+    // Brand Kit: cria um real via UI, backend real persiste. Nao assume lista vazia --
+    // outros testes deste mesmo arquivo ja podem ter criado brand-profiles para
+    // demo-tenant no mesmo processo de backend (E2E nao reinicia o servidor por teste).
+    await page.goto("/brand-kit");
+    await page.getByLabel("Nome").fill("Marca E2E");
+    await page.getByLabel("Tom de voz").fill("inspirador");
+    const createResponsePromise = page.waitForResponse(
+      (r) => r.url().endsWith("/brand-profiles") && r.request().method() === "POST",
+    );
+    await page.getByRole("button", { name: "Salvar Brand Kit" }).click();
+    const createResponse = await createResponsePromise;
+    expect(createResponse.status()).toBe(201);
+    await expect(page.getByText("Marca E2E")).toBeVisible();
+
+    // Conexoes: fecha o ciclo real start -> callback -> Connection persistida.
+    await page.goto("/connections");
+    await expect(page.getByTestId("connect-GOOGLE_ADS")).toBeVisible();
+    await page.getByTestId("connect-GOOGLE_ADS").click();
+    await expect(page.getByText(/esta ação exige reautenticação recente/i)).toBeVisible();
+
+    const startResponsePromise = page.waitForResponse((r) =>
+      r.url().endsWith("/connections/oauth/start"),
+    );
+    await page.getByRole("button", { name: "Confirmar e conectar" }).click();
+    const startResponse = await startResponsePromise;
+    expect(startResponse.status()).toBe(200);
+
+    await expect(page.getByTestId("complete-connection-GOOGLE_ADS")).toBeVisible();
+    await page.getByLabel("ID da conta").fill("acct-e2e-real");
+    await page.getByLabel("Nome de exibição").fill("Conta E2E Real");
+
+    const callbackResponsePromise = page.waitForResponse((r) =>
+      r.url().endsWith("/connections/oauth/callback"),
+    );
+    await page.getByTestId("complete-connection-GOOGLE_ADS").click();
+    const callbackResponse = await callbackResponsePromise;
+    expect(callbackResponse.status()).toBe(201);
+    await expect(page.getByText(/conectado — conta e2e real/i)).toBeVisible();
+
+    // Backend real: a Connection de fato existe, nao so na UI otimista.
+    const listResponse = await page.request.get("/api/campaia/connections", {
+      headers: await sessionCookieHeader(page),
+    });
+    const connections = await listResponse.json();
+    expect(connections).toHaveLength(1);
+    expect(connections[0].external_account_id).toBe("acct-e2e-real");
+  });
 });
