@@ -650,3 +650,107 @@ levantados e deliberadamente não corrigidos nesta Fase 2 -- a lacuna de consumo
 `ApprovalRequest.status`, achado do WP-07, e o descasamento do seed de capacidades,
 achado do WP-09), Fase 4 (gaps internos), Fase 5 (classificação final) e a PR final de
 reconciliação (nunca mesclada).
+
+## FASE 3 — Mineração técnica da PR#6
+
+Autorização explícita do Diretor (Fábio Aluizio da Silva, 26/09/2026) para prosseguir das
+Fases 3, 4 e 5 sem nova autorização entre blocos puramente técnicos ("REPRODUZIR →
+CLASSIFICAR → CORRIGIR → TESTAR → DOCUMENTAR → COMMITAR", parar apenas para decisão
+humana genuína, credencial/aprovação/infraestrutura externa, risco arquitetural não
+autorizado, produção, merge ou deploy).
+
+### Item 1 — Consumo de approvals (achado 19)
+
+**Status:** `FIXED`.
+
+**CURRENT evidence (reproduzido por execução real, ANTES da correção):**
+
+```
+first patch: 202
+second patch (same approval reused): 202 {...daily_cap: 600...}
+approval status after reuse: APPROVED
+```
+
+Script real executado nesta sessão (backend Starlette real, `TestClient`, sem mock):
+propor `BUDGET_CHANGE`, aprovar, aplicar uma vez (`PATCH /campaigns/{id}/budget` →
+`202`), e então reaproveitar o MESMO `approval_id` com uma Idempotency-Key NOVA -- o
+backend aceitava (`202` de novo, orçamento mudando pela segunda vez) e
+`approval.status` permanecia `APPROVED` para sempre. Reproduzido de forma idêntica para
+`PUT /autonomy` (`AUTONOMY_CHANGE`). `POST /campaigns/{id}/publish` (`PUBLISH`) nunca foi
+diretamente explorável pelo mesmo vetor porque a máquina de estados da campanha já o
+protegia incidentalmente (uma campanha não volta sozinha para `APPROVED` depois de
+`ACTIVE`), mas apresentava a mesma lacuna de modelo (a aprovação em si nunca era marcada
+como usada).
+
+**Causa raiz:** `ApprovalRequest.status` (`api/repositories.py`) só transicionava para
+`REJECTED`/`CHANGES_REQUESTED`/`APPROVED` (`api/routes_approvals.py::decide_approval`) --
+nunca para um estado terminal de "já usada para aplicar a mudança real". Os três
+handlers que consomem uma aprovação (`patch_budget`, `publish_campaign`,
+`put_autonomy` em `api/routes_campaigns.py`/`api/routes_autonomy.py`) checavam apenas
+`approval.status == "APPROVED"`, sem nunca escrever de volta.
+
+**Ação (correção na camada autoritativa, não só na UI):**
+
+- Novo estado terminal `APPLIED` adicionado ao enum de `ApprovalRequest.status`
+  (`api/repositories.py`) e ao schema `ApprovalRequest.status` do contrato
+  (`contracts/bff-openapi.yaml`) -- aditivo, nenhum valor existente removido/renomeado;
+  `npm run contracts:generate` + `npm run contracts:check` → `OK: ... em sincronia`.
+- `patch_budget`, `publish_campaign` e `put_autonomy` passam a marcar
+  `approval.status = "APPLIED"` logo após a mutação real ter sido efetivamente aplicada
+  (dentro do bloco que só roda para uma Idempotency-Key genuinamente nova).
+- **Idempotência preservada (não quebra replay legítimo):** o gate de replay por
+  Idempotency-Key (`state.idempotency.get(...)`) foi movido para ANTES da checagem de
+  `approval.status` nos três handlers -- do contrário, repetir a MESMA Idempotency-Key
+  (replay legítimo, ex.: cliente retransmitindo por timeout de rede) seria incorretamente
+  rejeitado como "aprovação já usada", já que a primeira chamada bem-sucedida já teria
+  marcado a aprovação como `APPLIED`. Uma tentativa NOVA (Idempotency-Key diferente)
+  reaproveitando o mesmo `approval_id` continua caindo nas checagens normalmente e é
+  corretamente recusada com `403 APPROVAL_REQUIRED`.
+- Auditoria: nenhuma mudança -- os eventos `BUDGET_CHANGE`/`AUTONOMY_CHANGE`/
+  `CAMPAIGN_PUBLISH` já eram registrados por `state.audit.append(...)` como antes;
+  `APPLIED` só afeta a própria `ApprovalRequest`, nunca o audit trail.
+- Aprovações históricas: nenhuma migração necessária -- o repositório em memória/tabela
+  não tem registros pré-existentes reais fora desta sessão de testes; uma aprovação
+  histórica com `status == "APPROVED"` continua válida para UM uso (o comportamento
+  correto), só deixa de ser reutilizável depois de efetivamente consumida.
+
+**Teste (verificação real, execução direta e regressão automatizada):**
+
+- Reprodução manual confirmada por execução real (scripts Python ad-hoc contra
+  `TestClient`, antes e depois da correção) para `BUDGET_CHANGE`, `AUTONOMY_CHANGE` e
+  `PUBLISH`: reuso com Idempotency-Key nova → `403 APPROVAL_REQUIRED` após a correção;
+  replay com a MESMA Idempotency-Key → resultado original preservado (`202`/`200`, sem
+  reexecutar a mutação nem reavaliar a aprovação).
+- Novo `backend/tests_api/test_approval_consumption.py` -- 6 testes: para cada um dos 3
+  kinds (`BUDGET_CHANGE`, `AUTONOMY_CHANGE`, `PUBLISH`), (a) uma segunda tentativa com
+  Idempotency-Key nova reaproveitando a aprovação já usada é recusada com
+  `403 APPROVAL_REQUIRED` e o estado real (orçamento/nível/campanha) não muda pela
+  segunda vez, e (b) repetir a MESMA Idempotency-Key continua devolvendo o resultado
+  original (replay idempotente preservado). Todos verdes.
+- Regressão completa: `PYTHONPATH=. python3 -m pytest -q` → **532 passed, 58 subtests
+  passed** (526 pré-existentes + 6 novos, 0 failures, 0 skips).
+- E2E cross-stack novo: `web/e2e/approval-consumption.spec.ts` -- fluxo completo real
+  pela UI (propor → aprovar por um segundo usuário real do mesmo tenant → aplicar,
+  orçamento real mudando de 500 para 600), seguido de uma tentativa REAL de reuso da
+  mesma aprovação direto contra o backend real (`page.request.patch`, sessão/CSRF/
+  step-up reais, Idempotency-Key nova) -- confirma `403 APPROVAL_REQUIRED` e que o
+  orçamento real não mudou pela segunda vez. `testMatch` de
+  `playwright.session.config.ts` estendido para incluir este spec.
+  `npx playwright test --config=playwright.session.config.ts` → **25 passed** (24
+  pré-existentes + 1 novo), 0 failures.
+- `npm run typecheck`, `npm run lint`, `npm run contracts:check`, `npm run
+  boundary:check` (65 arquivos) → todos OK. Nenhum arquivo de Web precisou de mudança
+  de comportamento: `AutonomyPanel.tsx`/`BudgetPanel.tsx` já filtravam
+  `pickRelevant()` por `status === "PENDING" || status === "APPROVED"` -- uma aprovação
+  `APPLIED` já cai fora desse filtro automaticamente, sem nenhuma mudança de código Web.
+
+**Observação sobre o achado histórico do WP-07:** o workaround documentado no E2E de
+WP-07 (`web/e2e/autonomy-level.spec.ts`, usar dois tenants diferentes para o cenário
+feliz e o cenário negativo, para evitar a aprovação obsoleta sendo redescoberta pelo
+`pickRelevant()`) deixou de ser estritamente necessário agora que a aprovação é marcada
+`APPLIED` após o uso -- mas foi deliberadamente mantido como está nesta Fase 3 (o teste
+já passa, e simplificá-lo é uma limpeza cosmética sem valor de reconciliação, fora do
+escopo desta correção pontual).
+
+**Commits:** `892fb22` (fix domínio + contrato, APPLIED aditivo), `4be6399` (fix backend,
+consumo real nos 3 handlers + regressão), `3ba4f37` (test e2e cross-stack).
