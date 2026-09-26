@@ -18,7 +18,13 @@ from .deps import (
 )
 from .errors import ApiError
 from .helpers import json_response, list_response, parse_body, serialize_connection
-from .models import CapabilityResponse, ConnectionResponse, OAuthStartRequest, OAuthStartResponse
+from .models import (
+    CapabilityResponse,
+    ConnectionResponse,
+    OAuthCallbackRequest,
+    OAuthStartRequest,
+    OAuthStartResponse,
+)
 
 
 def _authorize(request: Request, permission: Permission):
@@ -55,6 +61,12 @@ async def oauth_start(request: Request) -> JSONResponse:
         f"https://auth.simulated-ads-provider.invalid/oauth/authorize"
         f"?provider={body.provider}&state={oauth_state}&client_id=sandbox-fixture"
     )
+    state.start_oauth_state(
+        oauth_state,
+        tenant_id=fixture.tenant_id,
+        provider=body.provider,
+        now=datetime.now(timezone.utc),
+    )
     state.audit.append(
         tenant_id=fixture.tenant_id,
         actor=fixture.user_id,
@@ -63,6 +75,51 @@ async def oauth_start(request: Request) -> JSONResponse:
         details={"note": "simulated, no real provider contacted", "state": oauth_state},
     )
     return json_response(OAuthStartResponse(authorization_url=fake_url, state=oauth_state))
+
+
+async def oauth_callback(request: Request) -> JSONResponse:
+    """Resgata o `state` de POST /connections/oauth/start e cria a Connection real.
+
+    WP-04 (26/09/2026): antes desta rota, `oauth_start` devolvia uma URL e nada mais --
+    nenhuma Connection era jamais criada (achado confirmado por leitura do codigo real
+    antes de codificar, nao presumido). Ainda simulado (nenhum provider real e
+    contatado); `external_account_id`/`display_name` vem do cliente (conta que o
+    usuario "selecionaria" no provedor) -- nunca inventados aqui.
+    """
+    fixture, state = _authorize(request, Permission.CONNECTION_MANAGE)
+    require_step_up(request, fixture)
+    idem_key = require_idempotency_key(request)
+    body = await parse_body(request, OAuthCallbackRequest)
+
+    pending = state.redeem_oauth_state(
+        body.state, tenant_id=fixture.tenant_id, now=datetime.now(timezone.utc)
+    )
+    if pending is None:
+        raise ApiError(
+            "PERMISSION_DENIED",
+            "state de OAuth invalido, expirado, ja usado, ou de outro tenant.",
+        )
+
+    def _do_create():
+        conn = state.connections.create(
+            fixture.tenant_id,
+            provider=pending.provider,
+            external_account_id=body.external_account_id,
+            display_name=body.display_name,
+        )
+        state.audit.append(
+            tenant_id=fixture.tenant_id,
+            actor=fixture.user_id,
+            action="CONNECTION_CREATE",
+            target=conn.connection_id,
+            details={"provider": pending.provider},
+        )
+        return serialize_connection(conn).model_dump(mode="json")
+
+    result, _replay = state.idempotency.execute(
+        fixture.tenant_id, f"http:oauth_callback:{idem_key}", _do_create
+    )
+    return JSONResponse(result, status_code=201)
 
 
 async def revoke_connection(request: Request) -> Response:

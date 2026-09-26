@@ -20,7 +20,7 @@ from campaia_core.errors import CampaiaError
 from .errors import ApiError, from_domain_error
 from .routes_approvals import create_approval, decide_approval, list_approvals
 from .routes_audit import list_audit_events
-from .routes_auth import get_session, login, logout
+from .routes_auth import get_session, list_memberships, login, logout, switch_membership
 from .routes_autonomy import get_autonomy, put_autonomy
 from .routes_billing import asaas_webhook, create_charge, get_subscription, put_subscription
 from .routes_brand import create_brand_profile, list_brand_profiles
@@ -40,6 +40,7 @@ from .routes_campaigns import (
 from .routes_connections import (
     connection_capabilities,
     list_connections,
+    oauth_callback,
     oauth_start,
     revoke_connection,
 )
@@ -66,14 +67,17 @@ routes = [
     Route("/auth/session", login, methods=["POST"]),
     Route("/auth/session", get_session, methods=["GET"]),
     Route("/auth/session", logout, methods=["DELETE"]),
+    Route("/auth/session/switch", switch_membership, methods=["POST"]),
 
     Route("/me", get_me, methods=["GET"]),
+    Route("/me/memberships", list_memberships, methods=["GET"]),
 
     Route("/brand-profiles", list_brand_profiles, methods=["GET"]),
     Route("/brand-profiles", create_brand_profile, methods=["POST"]),
 
     Route("/connections", list_connections, methods=["GET"]),
     Route("/connections/oauth/start", oauth_start, methods=["POST"]),
+    Route("/connections/oauth/callback", oauth_callback, methods=["POST"]),
     Route("/connections/{connectionId}", revoke_connection, methods=["DELETE"]),
     Route("/connections/{connectionId}/capabilities", connection_capabilities, methods=["GET"]),
 

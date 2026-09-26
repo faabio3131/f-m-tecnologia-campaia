@@ -25,7 +25,7 @@ from api.session import (
 from api.state import AppState
 from campaia_core.identity_provider import IdentityError, VerifiedIdentity
 from campaia_core.permissions import Role
-from tests_api.test_helpers import idem, unique_idem
+from tests_api.test_helpers import idem, unique_idem, with_step_up
 
 #: Mesma origem usada pelo TestClient (base_url abaixo) -- unica origem permitida nos
 #: testes, configurada explicitamente (nunca herdada de env var global, para nao
@@ -63,6 +63,12 @@ OTHER_TENANT_TOKEN = "fake-id-token-other-owner"
 OTHER_TENANT_IDENTITY = VerifiedIdentity(
     subject="google-uid-other", email="owner@other-tenant.campaia.test", email_verified=True
 )
+#: WP-03 (25/09/2026): identidade com DOIS vinculos reais (seed_dev_identity_directory),
+#: usada pelos testes de listagem/troca de tenant/unidade abaixo.
+MULTI_TENANT_TOKEN = "fake-id-token-multi-tenant-owner"
+MULTI_TENANT_IDENTITY = VerifiedIdentity(
+    subject="google-uid-multi", email="owner@multi-tenant.campaia.test", email_verified=True
+)
 
 
 def _client(verifier: FakeIdTokenVerifier, *, allowed_origins=None) -> TestClient:
@@ -84,6 +90,7 @@ def _default_verifier() -> FakeIdTokenVerifier:
             UNVERIFIED_TOKEN: UNVERIFIED_IDENTITY,
             UNKNOWN_EMAIL_TOKEN: UNKNOWN_EMAIL_IDENTITY,
             OTHER_TENANT_TOKEN: OTHER_TENANT_IDENTITY,
+            MULTI_TENANT_TOKEN: MULTI_TENANT_IDENTITY,
         }
     )
 
@@ -417,6 +424,206 @@ class DevFixtureFailClosedTests(unittest.TestCase):
         client = TestClient(app)
         r = client.get("/me", headers={"Authorization": "Bearer demo-owner-token"})
         self.assertEqual(r.status_code, 401, r.text)
+
+
+class MembershipsAndSwitchTests(unittest.TestCase):
+    """WP-03 (25/09/2026): listagem e troca real de vinculo (tenant/unidade) ativo na
+    sessao. `owner@multi-tenant.campaia.test` (seed_dev_identity_directory) tem dois
+    vinculos reais: user-multi-1a em demo-tenant, user-multi-1b em other-tenant."""
+
+    def _logged_in_multi_tenant_client(self) -> TestClient:
+        client = _client(_default_verifier())
+        r = _login(client, MULTI_TENANT_TOKEN)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["user_id"], "user-multi-1a")
+        self.assertEqual(r.json()["tenant_id"], "demo-tenant")
+        return client
+
+    def test_single_membership_user_lists_exactly_one_active_membership(self) -> None:
+        client = self._logged_in_client_owner()
+        r = client.get("/me/memberships")
+        self.assertEqual(r.status_code, 200, r.text)
+        memberships = r.json()["memberships"]
+        self.assertEqual(len(memberships), 1)
+        self.assertTrue(memberships[0]["active"])
+        self.assertEqual(memberships[0]["tenant_id"], "demo-tenant")
+
+    def _logged_in_client_owner(self) -> TestClient:
+        client = _client(_default_verifier())
+        r = _login(client, OWNER_TOKEN)
+        self.assertEqual(r.status_code, 200, r.text)
+        return client
+
+    def test_multi_membership_user_lists_both_with_only_the_first_active(self) -> None:
+        client = self._logged_in_multi_tenant_client()
+        r = client.get("/me/memberships")
+        self.assertEqual(r.status_code, 200, r.text)
+        memberships = r.json()["memberships"]
+        self.assertEqual(len(memberships), 2)
+        by_tenant = {m["tenant_id"]: m for m in memberships}
+        self.assertEqual({"demo-tenant", "other-tenant"}, set(by_tenant))
+        self.assertTrue(by_tenant["demo-tenant"]["active"])
+        self.assertFalse(by_tenant["other-tenant"]["active"])
+
+    def test_memberships_requires_a_real_session_never_the_dev_bearer_fixture(self) -> None:
+        client = TestClient(create_app(env="test"))
+        r = client.get("/me/memberships", headers={"Authorization": "Bearer demo-owner-token"})
+        self.assertEqual(r.status_code, 401, r.text)
+
+    def test_switch_to_a_real_membership_changes_the_active_tenant(self) -> None:
+        client = self._logged_in_multi_tenant_client()
+        csrf = client.get("/auth/session").json()["csrf_token"]
+
+        r = client.post(
+            "/auth/session/switch",
+            json={"user_id": "user-multi-1b"},
+            headers={CSRF_HEADER_NAME: csrf},
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertEqual(body["user_id"], "user-multi-1b")
+        self.assertEqual(body["tenant_id"], "other-tenant")
+        self.assertEqual(body["business_unit_id"], "bu-2")
+        # Mesma sessao/cookie/csrf_secret -- so o vinculo ativo mudou.
+        self.assertEqual(body["csrf_token"], csrf)
+
+        # GET /me reflete o novo tenant imediatamente, sem novo login.
+        r2 = client.get("/me")
+        self.assertEqual(r2.status_code, 200, r2.text)
+        self.assertEqual(r2.json()["tenant_id"], "other-tenant")
+
+    def test_switch_to_a_membership_not_owned_by_this_identity_is_rejected_fail_closed(
+        self,
+    ) -> None:
+        """Nunca aceita um tenant/vinculo arbitrario -- so um dos que ja pertencem a esta
+        identidade (capturados no login)."""
+        client = self._logged_in_multi_tenant_client()
+        csrf = client.get("/auth/session").json()["csrf_token"]
+
+        r = client.post(
+            "/auth/session/switch",
+            # user-owner-2 e' um vinculo REAL, mas de outra identidade
+            # (owner@other-tenant.campaia.test) -- nunca alcancavel a partir desta sessao.
+            json={"user_id": "user-owner-2"},
+            headers={CSRF_HEADER_NAME: csrf},
+        )
+        self.assertEqual(r.status_code, 403, r.text)
+        self.assertEqual(r.json()["code"], "PERMISSION_DENIED")
+
+        # Sessao permanece intocada no tenant original.
+        r2 = client.get("/me")
+        self.assertEqual(r2.json()["tenant_id"], "demo-tenant")
+
+    def test_switch_without_csrf_token_is_rejected(self) -> None:
+        client = self._logged_in_multi_tenant_client()
+        r = client.post("/auth/session/switch", json={"user_id": "user-multi-1b"})
+        self.assertEqual(r.status_code, 403, r.text)
+
+    def test_switch_via_dev_bearer_fixture_is_rejected(self) -> None:
+        client = TestClient(create_app(env="test"))
+        r = client.post(
+            "/auth/session/switch",
+            json={"user_id": "user-multi-1b"},
+            headers={"Authorization": "Bearer demo-owner-token"},
+        )
+        self.assertEqual(r.status_code, 401, r.text)
+
+    def test_switching_tenant_never_leaks_a_resource_from_the_previous_tenant(self) -> None:
+        """Isolamento cross-tenant DENTRO da mesma sessao apos a troca -- nao so entre
+        sessoes distintas (ja coberto em outros testes deste arquivo/E2E)."""
+        client = self._logged_in_multi_tenant_client()
+        csrf = client.get("/auth/session").json()["csrf_token"]
+
+        create = client.post(
+            "/brand-profiles",
+            headers={**unique_idem(), CSRF_HEADER_NAME: csrf},
+            json={"name": "Segredo do vinculo demo-tenant", "tone": ""},
+        )
+        self.assertEqual(create.status_code, 201, create.text)
+
+        switch = client.post(
+            "/auth/session/switch",
+            json={"user_id": "user-multi-1b"},
+            headers={CSRF_HEADER_NAME: csrf},
+        )
+        self.assertEqual(switch.status_code, 200, switch.text)
+
+        listed = client.get("/brand-profiles")
+        self.assertEqual(listed.status_code, 200, listed.text)
+        self.assertEqual(listed.json(), [])
+
+    def test_successful_switch_is_recorded_in_the_audit_log(self) -> None:
+        """Achado de fm-security-review (25/09/2026): a troca de tenant/unidade ativo e'
+        um evento relevante o bastante para ficar no audit log, como qualquer outra
+        operacao que muda o contexto de autorizacao de uma sessao."""
+        client = self._logged_in_multi_tenant_client()
+        csrf = client.get("/auth/session").json()["csrf_token"]
+
+        client.post(
+            "/auth/session/switch",
+            json={"user_id": "user-multi-1b"},
+            headers={CSRF_HEADER_NAME: csrf},
+        )
+
+        # A sessao agora esta ativa em other-tenant -- GET /audit-events le desse tenant.
+        r = client.get("/audit-events")
+        self.assertEqual(r.status_code, 200, r.text)
+        switch_events = [e for e in r.json()["items"] if e["action"] == "SESSION_SWITCH"]
+        self.assertEqual(len(switch_events), 1)
+        self.assertEqual(switch_events[0]["evidence"]["from_tenant_id"], "demo-tenant")
+        self.assertEqual(switch_events[0]["evidence"]["to_tenant_id"], "other-tenant")
+
+    def test_rejected_switch_attempt_is_recorded_in_the_audit_log(self) -> None:
+        client = self._logged_in_multi_tenant_client()
+        csrf = client.get("/auth/session").json()["csrf_token"]
+
+        client.post(
+            "/auth/session/switch",
+            json={"user_id": "user-owner-2"},
+            headers={CSRF_HEADER_NAME: csrf},
+        )
+
+        # A troca foi recusada -- sessao permanece em demo-tenant.
+        r = client.get("/audit-events")
+        self.assertEqual(r.status_code, 200, r.text)
+        rejected = [e for e in r.json()["items"] if e["action"] == "SESSION_SWITCH_REJECTED"]
+        self.assertEqual(len(rejected), 1)
+        self.assertEqual(rejected[0]["target"], "user-owner-2")
+
+    def test_switching_tenant_requires_fresh_step_up_for_sensitive_operations(self) -> None:
+        """step_up_at e' rastreado por (tenant_id, user_id) -- como cada vinculo tem seu
+        proprio user_id, o vinculo novo nunca tem step-up recente registrado apos a
+        troca, mesmo que o vinculo ANTERIOR tivesse acabado de se reautenticar."""
+        client = self._logged_in_multi_tenant_client()
+        csrf = client.get("/auth/session").json()["csrf_token"]
+
+        # Com o header de step-up: registra E imediatamente exercita step_up_at fresco
+        # para (demo-tenant, user-multi-1a).
+        r = client.post(
+            "/connections/oauth/start",
+            json={"provider": "GOOGLE_ADS"},
+            headers=with_step_up({CSRF_HEADER_NAME: csrf}),
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+
+        switch = client.post(
+            "/auth/session/switch",
+            json={"user_id": "user-multi-1b"},
+            headers={CSRF_HEADER_NAME: csrf},
+        )
+        self.assertEqual(switch.status_code, 200, switch.text)
+
+        # Mesma sessao, novo vinculo ativo (other-tenant/user-multi-1b) -- SEM header de
+        # step-up: nunca teve step_up_at registrado para este par, entao a operacao
+        # sensivel exige reautenticacao de novo, mesmo a sessao tendo acabado de se
+        # autenticar no vinculo anterior.
+        r2 = client.post(
+            "/connections/oauth/start",
+            json={"provider": "GOOGLE_ADS"},
+            headers={CSRF_HEADER_NAME: csrf},
+        )
+        self.assertEqual(r2.status_code, 403, r2.text)
+        self.assertEqual(r2.json()["code"], "STEP_UP_REQUIRED")
 
 
 if __name__ == "__main__":

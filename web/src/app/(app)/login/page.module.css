@@ -1,0 +1,19 @@
+.card {
+  max-width: 480px;
+  margin: var(--campaia-space-7) auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-4);
+}
+
+.testOptions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-2);
+}
+
+.testNotice {
+  margin: 0;
+  font-size: var(--campaia-font-size-sm);
+  color: var(--campaia-color-text-muted);
+}

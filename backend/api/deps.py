@@ -15,7 +15,7 @@ from starlette.requests import Request
 from campaia_core.permissions import Principal
 
 from .errors import ApiError
-from .session import CSRF_HEADER_NAME, SESSION_COOKIE_NAME
+from .session import CSRF_HEADER_NAME, SESSION_COOKIE_NAME, SessionRecord
 from .state import AppState, TokenPrincipal
 
 MIN_IDEMPOTENCY_KEY_LEN = 16
@@ -31,11 +31,14 @@ def get_state(request: Request) -> AppState:
     return request.app.state.campaia
 
 
-def _require_auth_via_session(request: Request, state: AppState) -> TokenPrincipal | None:
+def _require_session_record(request: Request, state: AppState) -> SessionRecord | None:
     """Caminho real (ADR-0018): sessao server-side via cookie HttpOnly. Devolve None se
     nao houver cookie (deixa require_auth tentar o fixture de dev/teste); levanta
     ApiError fail-closed se o cookie EXISTIR mas for invalido/expirado -- um cookie
-    presente e ruim nunca cai silenciosamente para outro mecanismo."""
+    presente e ruim nunca cai silenciosamente para outro mecanismo. Devolve o
+    `SessionRecord` inteiro (nao so o principal) para que WP-03 (memberships/switch,
+    api/routes_auth.py) tenha acesso a `available_principals` sem uma segunda leitura da
+    sessao."""
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
     if session_id is None:
         return None
@@ -50,7 +53,24 @@ def _require_auth_via_session(request: Request, state: AppState) -> TokenPrincip
         if not record.csrf_token_valid(presented):
             raise ApiError("PERMISSION_DENIED", "Token CSRF ausente ou invalido.")
 
-    return record.principal
+    return record
+
+
+def require_session_record(request: Request) -> SessionRecord:
+    """Como `require_auth`, mas para os endpoints de WP-03 (`GET /me/memberships`,
+    `POST /auth/session/switch`) que precisam do `SessionRecord` inteiro, nao so do
+    principal ativo -- essas rotas so fazem sentido para sessao real (cookie); o fixture
+    de bearer token de dev/teste nao tem conceito de "vinculos", entao e recusado aqui
+    fail-closed em vez de fingir um `SessionRecord` sintetico."""
+    state = get_state(request)
+    record = _require_session_record(request, state)
+    if record is None:
+        raise ApiError(
+            "UNAUTHENTICATED",
+            "Esta operacao exige uma sessao real (cookie); o fixture de bearer token de "
+            "teste nao tem vinculos multiplos.",
+        )
+    return record
 
 
 def _require_auth_via_dev_fixture(request: Request, state: AppState) -> TokenPrincipal:
@@ -76,9 +96,9 @@ def require_auth(request: Request) -> TokenPrincipal:
     caso -- nunca um bypass silencioso entre os dois mecanismos."""
     state = get_state(request)
 
-    principal = _require_auth_via_session(request, state)
-    if principal is not None:
-        return principal
+    record = _require_session_record(request, state)
+    if record is not None:
+        return record.principal
 
     return _require_auth_via_dev_fixture(request, state)
 

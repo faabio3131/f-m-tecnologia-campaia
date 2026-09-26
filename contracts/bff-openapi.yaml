@@ -28,6 +28,7 @@ security:
 
 tags:
   - name: Conta
+  - name: Sessao
   - name: Marca
   - name: Conexoes
   - name: Campanhas
@@ -35,6 +36,99 @@ tags:
   - name: Metricas
 
 paths:
+  /auth/session:
+    post:
+      tags: [Sessao]
+      summary: Login real via Google Identity Platform -- troca id_token por sessao server-side
+      description: |
+        Autoridade de identidade e sempre o backend: verifica o `id_token` do provedor,
+        resolve tenant/unidade/papeis pelo diretorio interno (nunca por claim do provedor,
+        nunca autoprovisiona). Em caso de sucesso, cria uma sessao server-side e devolve o
+        cookie de sessao `campaia_session` (HttpOnly; Secure; SameSite=Lax) -- nunca o
+        id_token bruto do Google. Nao exige `security` previa (nao ha sessao ainda);
+        protegido contra login-CSRF por validacao de Origin/Referer no servidor.
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id_token]
+              properties:
+                id_token: { type: string }
+      responses:
+        '200':
+          description: OK -- cookie de sessao setado via Set-Cookie
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionUser' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Identidade provada, mas sem vinculo com nenhum tenant do CampaIA (fail-closed, nunca autoprovisiona)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    get:
+      tags: [Sessao]
+      summary: Recupera a sessao ativa e um novo csrf_token (apos reload, sem novo login)
+      operationId: getSession
+      security: [cookieAuth: []]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionUser' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    delete:
+      tags: [Sessao]
+      summary: Logout -- invalida a sessao server-side e limpa o cookie
+      description: |
+        Sempre devolve 204, mesmo sem sessao ativa ou com sessao ja invalida/expirada --
+        nunca falha o logout do lado do cliente por um estado de sessao que ja nao importa.
+      operationId: logout
+      security: [cookieAuth: []]
+      responses:
+        '204': { description: Sessao invalidada (ou ja nao havia nenhuma) }
+
+  /auth/session/switch:
+    post:
+      tags: [Sessao]
+      summary: Troca o vinculo (tenant/unidade) ATIVO da sessao para outro vinculo real da mesma identidade
+      description: |
+        So aceita um `user_id` presente entre os vinculos capturados no login desta mesma
+        identidade (nunca um tenant/vinculo arbitrario de outra identidade -- validado
+        fail-closed pelo backend). Mesma sessao/cookie/csrf_secret depois da troca; invalida
+        implicitamente `step_up_at` (chave `(tenant_id, user_id)`), exigindo nova
+        reautenticacao para operacoes sensiveis no vinculo novo.
+      operationId: switchMembership
+      security: [cookieAuth: []]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id: { type: string, description: user_id de um dos vinculos devolvidos por GET /me/memberships }
+      responses:
+        '200':
+          description: OK -- vinculo ativo trocado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionUser' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: CSRF ausente/invalido, ou o vinculo solicitado nao pertence a esta identidade
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /me:
     get:
       tags: [Conta]
@@ -46,6 +140,24 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Me' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/memberships:
+    get:
+      tags: [Conta, Sessao]
+      summary: Lista os vinculos (tenant/unidade/papeis) reais da sessao atual, marcando o ativo
+      description: |
+        Exige sessao real (cookie) -- o fixture de bearer token de dev/teste nao tem conceito
+        de vinculos multiplos e e recusado aqui (401). Vinculos vem exclusivamente do login
+        desta identidade, nunca de outra.
+      operationId: listMemberships
+      security: [cookieAuth: []]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MembershipsResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /brand-profiles:
@@ -126,6 +238,43 @@ paths:
                   authorization_url: { type: string, format: uri }
                   state: { type: string }
         '403': { $ref: '#/components/responses/StepUpRequired' }
+
+  /connections/oauth/callback:
+    post:
+      tags: [Conexoes]
+      summary: Resgata o `state` do fluxo OAuth e cria a Connection (WP-04, 26/09/2026)
+      description: |
+        `state` de uso unico, amarrado ao tenant que chamou startOAuth -- nunca aceito
+        de outro tenant nem reutilizavel apos o primeiro resgate (sucesso ou falha).
+        `external_account_id`/`display_name` representam a conta selecionada pelo
+        usuario no provedor (simulado nesta etapa; nenhum provider real e contatado).
+      operationId: oauthCallback
+      parameters:
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state, external_account_id, display_name]
+              properties:
+                state: { type: string }
+                external_account_id: { type: string }
+                display_name: { type: string }
+      responses:
+        '201':
+          description: Connection criada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Connection' }
+        '403':
+          description: state invalido, expirado, ja usado, de outro tenant, ou reautenticacao ausente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
 
   /connections/{connectionId}:
     delete:
@@ -357,6 +506,35 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/ApprovalRequest' }
+    post:
+      tags: [Governanca]
+      summary: Cria um pedido de aprovacao pendente para uma campanha (WP-05, 26/09/2026)
+      description: |
+        Nao documentado anteriormente (achado, ver api/routes_approvals.py::create_approval):
+        os fluxos gated por aprovacao (publicar, mudar verba, mudar autonomia) exigem uma
+        ApprovalRequest ja registrada, mas nenhum endpoint a criava no contrato -- sem isto,
+        POST /approvals/{id}/decision nao tinha nada para decidir. Este e' um criador
+        minimo: nao produz nenhum efeito de dominio por si so.
+      operationId: createApproval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [campaign_id, kind]
+              properties:
+                campaign_id: { type: string }
+                kind: { type: string, enum: [PUBLISH, BUDGET_CHANGE, AUTONOMY_CHANGE] }
+                amount: { type: [string, 'null'] }
+                requires_dual_approval: { type: boolean, default: false }
+      responses:
+        '201':
+          description: Pedido de aprovacao criado (PENDING)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /approvals/{approvalId}/decision:
     post:
@@ -507,8 +685,27 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: Token de sessao. O `tenant_id` e derivado dele e nunca aceito do cliente.
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: campaia_session
+      description: |
+        Sessao real Web (ADR-0018/WP-02) -- cookie HttpOnly/Secure/SameSite=Lax, opaco,
+        emitido por POST /auth/session apos login real via Google Identity Platform. O
+        `tenant_id` e derivado da sessao server-side, nunca aceito do cliente. Mutacoes sob
+        este esquema exigem tambem o header X-CSRF-Token (ver parametro CsrfToken) --
+        double-submit cookie, diferente do fluxo bearerAuth (mobile), que nao usa CSRF.
 
   parameters:
+    CsrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema: { type: string }
+      description: |
+        Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+        login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+        servidor. Ausente/invalido -> 403.
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -606,6 +803,42 @@ components:
         permissions: { type: array, items: { type: string } }
         mfa_enabled: { type: boolean }
 
+    SessionUser:
+      type: object
+      description: |
+        Corpo real de POST/GET /auth/session e POST /auth/session/switch
+        (backend/api/models.py::SessionLoginResponse). user_id/tenant_id NAO sao UUID no
+        backend real hoje (ex.: "user-owner-1", "demo-tenant") -- por isso `type: string`
+        simples aqui, sem `format: uuid` (divergencia pre-existente do schema Me, fora do
+        escopo desta correcao pontual).
+      required: [user_id, tenant_id, business_unit_id, roles, csrf_token]
+      properties:
+        user_id: { type: string }
+        tenant_id: { type: string }
+        business_unit_id: { type: [string, 'null'] }
+        roles: { type: array, items: { type: string } }
+        csrf_token:
+          type: string
+          description: Devolver no header X-CSRF-Token em toda mutacao subsequente sob cookieAuth.
+
+    MembershipItem:
+      type: object
+      required: [user_id, tenant_id, business_unit_id, roles, active]
+      properties:
+        user_id: { type: string, description: Identificador do VINCULO -- valor usado em POST /auth/session/switch. }
+        tenant_id: { type: string }
+        business_unit_id: { type: [string, 'null'] }
+        roles: { type: array, items: { type: string } }
+        active: { type: boolean, description: true para exatamente um item -- o vinculo ativo na sessao agora. }
+
+    MembershipsResponse:
+      type: object
+      required: [memberships]
+      properties:
+        memberships:
+          type: array
+          items: { $ref: '#/components/schemas/MembershipItem' }
+
     BrandProfileInput:
       type: object
       required: [name, tone]
@@ -679,6 +912,7 @@ components:
 
     PolicyDecision:
       type: object
+      required: [outcome, requires_human_approval, requires_dual_approval, findings]
       properties:
         policy_decision_id: { type: [string, 'null'], format: uuid }
         outcome: { type: string, enum: [APPROVABLE, BLOCKED, NEEDS_CHANGES] }
@@ -696,10 +930,16 @@ components:
 
     ApprovalRequest:
       type: object
+      required: [id, campaign_id, kind, requested_by, status, requires_dual_approval, decided_by]
       properties:
         id: { type: string, format: uuid }
         campaign_id: { type: string, format: uuid }
         reason: { type: string, description: Gatilho que exigiu aprovacao humana. }
+        # Campos reais sempre serializados pelo backend (api/models.py::ApprovalResponse)
+        # que nunca tinham sido documentados aqui (achado, WP-05, 26/09/2026).
+        kind: { type: string, enum: [PUBLISH, BUDGET_CHANGE, AUTONOMY_CHANGE] }
+        requested_by: { type: string, description: user_id de quem propos -- nunca pode decidir a propria proposta (segregacao de funcoes). }
+        amount: { type: [string, 'null'] }
         plan_version: { type: integer }
         status: { type: string, enum: [PENDING, APPROVED, REJECTED, CHANGES_REQUESTED, EXPIRED] }
         requires_dual_approval: { type: boolean }
