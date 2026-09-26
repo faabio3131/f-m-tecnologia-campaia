@@ -554,3 +554,99 @@ E2E cross-stack). FM QA Engineer formal ainda pendente (ressalva histórica).
 - Sem paginação real na Web -- reflete honestamente a mesma limitação já documentada no
   backend (`next_cursor` sempre `null`); se o volume real de eventos crescer, isso precisa
   de uma paginação real no backend primeiro, não fabricada na Web.
+
+## WP-11 — Métricas honestas
+
+**Estado:** `IMPLEMENTADO E TESTADO NESTA SESSÃO` (unit + component + backend regression +
+E2E cross-stack). Este é o último WP da sequência WP-06→WP-11 explicitamente autorizada
+para a Fase 2 desta missão. FM QA Engineer formal ainda pendente (ressalva histórica).
+
+### CURRENT antes deste bloco
+
+- Backend: `GET /campaigns/{campaignId}/insights` (`routes_campaigns.py::get_insights`)
+  **já existia** em PR#5/main -- um placeholder honesto, documentado no próprio código:
+  "No analytics layer implemented yet in campaia_core; this is an honest placeholder, not
+  fabricated data." Sempre devolve `points: []` (nenhuma camada de analytics real existe
+  em `campaia_core`) e um campo `note` com esse texto. Os parâmetros `from`/`to` são
+  validados (data ISO) mas não usados no resultado ainda -- documentado no próprio backend
+  como achado conhecido (achado 14). Nenhum arquivo de `campaia_core`/
+  `api/routes_campaigns.py` foi alterado neste bloco.
+- **Drift de contrato encontrado e corrigido (achado 15, aditivo):** `InsightSeriesResponse.
+  model_dump_json()` real sempre inclui o campo `note` -- confirmado por execução direta
+  nesta sessão (`python3 -c "from api.models import InsightSeriesResponse; ..."` →
+  `{"campaign_id":"c1","points":[],"last_synced_at":null,"note":"test note"}`). O schema
+  `InsightSeries` do contrato (`contracts/bff-openapi.yaml`) nunca declarava esse campo.
+  Corrigido adicionando `note: { type: string }` ao schema, sem qualquer mudança de
+  comportamento do backend. `npm run contracts:generate` + `npm run contracts:check` →
+  `OK: ... esta em sincronia`.
+- Web: **nenhuma UI de métricas existia** em `web/src` do CURRENT -- primeira leitura de
+  insights pela Web.
+- PR#6 (`origin/feat/campaia-v1-complete-saas`) tinha uma seção "Métricas" na página de
+  detalhe de campanha (Server Component, `getServerInsights` em `lib/session.ts`),
+  mostrando a lista de pontos quando presente, ou o `note` real quando `points` vem vazio
+  -- mesmo comportamento honesto do backend, mas construído sobre a arquitetura de Server
+  Components da PR#6 (fora de escopo desta reconciliação: "PORTAR COMPORTAMENTO, NÃO
+  FRONTEND/ARQUITETURA").
+
+### O que foi construído (comportamento portado, frontend novo sobre a arquitetura PR#5)
+
+- Novo componente `InsightsPanel` (`web/src/components/InsightsPanel.tsx`) -- Client
+  Component (`"use client"`, `useEffect` + `useState`, mesmo padrão de `CapabilitiesPanel`/
+  `AuditPage` desta reconciliação, não o padrão Server Component da PR#6), busca `GET
+  /campaigns/{id}/insights` ao montar. Quando `points` tem itens, lista cada ponto (data,
+  canal, impressões, cliques, conversões, CPA quando presente). Quando `points` vem vazio
+  (sempre, hoje), mostra o `note` real devolvido pelo backend -- nunca um gráfico, nunca um
+  placeholder genérico da Web, nunca um número inventado.
+- `InsightsPanel` adicionado à página de detalhe de campanha (`campaigns/[campaignId]/
+  page.tsx`), abaixo do `KillSwitchPanel` de escopo CAMPAIGN.
+- `InsightSeries` exportado em `web/src/contracts/types.ts`.
+- Nenhum arquivo de `backend/` foi alterado neste bloco (além do contrato, que é
+  documentação, não código de execução).
+
+### Testes
+
+- Novo: `web/tests/insights-panel.test.tsx` -- 3 casos (nota honesta quando `points` vazio
+  -- e confirma que nenhuma `<ul>`/lista é renderizada nesse caso --, lista pontos reais
+  quando o backend devolve dados, erro honesto quando `GET /insights` falha). Todos
+  verdes.
+- Comando: `npm run test -- --run` → **20 arquivos, 66 testes, 0 failures** (antes desta
+  sessão: 19/63; +1 arquivo, +3 testes).
+- `npm run typecheck`, `npm run lint`, `npm run contracts:check` → OK; `npm run
+  boundary:check` → **65 arquivos** (antes 63) → OK.
+- Backend regressão completa: `PYTHONPATH=. python3 -m pytest -q` → **526 passed, 58
+  subtests passed** (idêntico ao baseline -- nenhum arquivo de comportamento de backend
+  alterado, só o contrato).
+- E2E cross-stack novo: `web/e2e/insights-honesty.spec.ts`, um cenário -- cria uma
+  campanha real via UI (sem nenhum evento de analytics jamais sincronizado para ela, por
+  construção), navega para o detalhe da campanha, confirma que `GET /campaigns/{id}/
+  insights` real devolve `points: []` e um `note` não vazio, e que a tela mostra
+  literalmente esse `note` (nunca um placeholder da Web, nunca dado fabricado).
+  `npx playwright test --config=playwright.session.config.ts` (com
+  `insights-honesty.spec.ts` incluído em `testMatch`) → **24 passed** (23 pré-existentes +
+  1 novo), 0 failures.
+
+### Pendências reais deste bloco (não escondidas)
+
+- FM QA Engineer formal: pendente (ressalva histórica).
+- Não há camada de analytics real em `campaia_core` -- `points` continuará vazio até que
+  essa camada exista de fato (integração com providers reais). A Web não fabrica dados
+  para preencher essa lacuna; apenas reflete honestamente o `note` real do backend, e já
+  sabe listar pontos reais assim que existirem.
+- Parâmetros `from`/`to` continuam validados mas não usados no resultado (achado 14,
+  já documentado no próprio backend) -- não alterado neste bloco, pois é comportamento de
+  backend fora do escopo desta reconciliação de Web.
+
+### Fechamento da sequência WP-06→WP-11
+
+Com WP-11 concluído, a sequência explicitamente autorizada para a Fase 2 desta missão
+("COMECE A FASE 2 PELO WP-06... não espere nova autorização para WP-06→WP-11 dentro desta
+missão") está completa: WP-06 (orçamento), WP-07 (autonomia), WP-08 (kill switch), WP-09
+(capacidades), WP-10 (auditoria), WP-11 (métricas honestas) -- todos com comportamento
+reconciliado, testes unit/component, regressão de backend, E2E cross-stack real, evidência
+registrada e commit local atômico, árvore de trabalho limpa após cada bloco. Próximos
+passos (Fase 3 em diante) permanecem conforme o PROMPT MESTRE original: mineração da PR#6
+por correções técnicas ainda válidas (incluindo os dois achados cross-cutting já
+levantados e deliberadamente não corrigidos nesta Fase 2 -- a lacuna de consumo de
+`ApprovalRequest.status`, achado do WP-07, e o descasamento do seed de capacidades,
+achado do WP-09), Fase 4 (gaps internos), Fase 5 (classificação final) e a PR final de
+reconciliação (nunca mesclada).
