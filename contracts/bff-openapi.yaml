@@ -466,6 +466,31 @@ paths:
       responses:
         '202': { description: Pausa solicitada }
 
+  /campaigns/{campaignId}/resume:
+    post:
+      tags: [Campanhas]
+      summary: Retoma uma campanha pausada (PAUSED -> ACTIVE)
+      description: |
+        Fase 4, item A da missao de reconciliacao/takeover (26/09/2026): o dominio
+        (campaia_core/states.py) ja tinha a transicao PAUSED -> ACTIVE modelada e
+        testada (guarda `_guard_resume`, bloqueia se o kill switch estiver ativo) --
+        so faltava exposicao via API. Exige o mesmo nivel de cautela que publicar
+        (step-up), pois volta a gerar gasto externo real; NAO exige nova aprovacao
+        humana porque a guarda de dominio para esta transicao especifica nao exige
+        uma (diferente de APPROVED -> PUBLISHING, que exige `approval_id`).
+      operationId: resumeCampaign
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/StepUpToken'
+      responses:
+        '202':
+          description: Retomada solicitada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Campaign' }
+        '409': { $ref: '#/components/responses/InvalidState' }
+
   /campaigns/{campaignId}/budget:
     patch:
       tags: [Governanca]

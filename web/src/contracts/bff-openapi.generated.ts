@@ -366,6 +366,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/campaigns/{campaignId}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retoma uma campanha pausada (PAUSED -> ACTIVE)
+         * @description Fase 4, item A da missao de reconciliacao/takeover (26/09/2026): o dominio
+         *     (campaia_core/states.py) ja tinha a transicao PAUSED -> ACTIVE modelada e
+         *     testada (guarda `_guard_resume`, bloqueia se o kill switch estiver ativo) --
+         *     so faltava exposicao via API. Exige o mesmo nivel de cautela que publicar
+         *     (step-up), pois volta a gerar gasto externo real; NAO exige nova aprovacao
+         *     humana porque a guarda de dominio para esta transicao especifica nao exige
+         *     uma (diferente de APPROVED -> PUBLISHING, que exige `approval_id`).
+         */
+        post: operations["resumeCampaign"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/campaigns/{campaignId}/budget": {
         parameters: {
             query?: never;
@@ -1362,6 +1388,34 @@ export interface operations {
                 };
                 content?: never;
             };
+        };
+    };
+    resumeCampaign: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao. */
+                "X-Step-Up-Token": components["parameters"]["StepUpToken"];
+            };
+            path: {
+                campaignId: components["parameters"]["CampaignId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Retomada solicitada */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Campaign"];
+                };
+            };
+            409: components["responses"]["InvalidState"];
         };
     };
     updateBudget: {
