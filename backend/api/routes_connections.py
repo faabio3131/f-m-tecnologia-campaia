@@ -195,7 +195,9 @@ async def revoke_connection(request: Request) -> Response:
         )
         return None
 
-    state.idempotency.execute(fixture.tenant_id, idem_key, _do_revoke)
+    # SECURITY FIX (Fase C4, 27/09/2026) -- ver mesma nota em pause_campaign
+    # (api/routes_campaigns.py).
+    state.idempotency.execute(fixture.tenant_id, f"http:revoke_connection:{idem_key}", _do_revoke)
     # Contract: 204 with no body (achado 4) -- previously returned 200 with the revoked
     # connection's JSON representation.
     return Response(status_code=204)

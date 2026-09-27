@@ -494,7 +494,15 @@ async def pause_campaign(request: Request) -> JSONResponse:
         return serialize_campaign(record).model_dump(mode="json")
 
     try:
-        result, _replay = state.idempotency.execute(fixture.tenant_id, idem_key, _do_pause)
+        # SECURITY FIX (Fase C4, 27/09/2026 -- auditoria independente): chave crua, sem
+        # namespace de operacao -- a MESMA Idempotency-Key usada aqui e em outra
+        # mutacao (ex.: resume_campaign, patch_budget) colidiria no mesmo store
+        # (tenant_id, chave), fazendo uma operacao devolver o resultado cacheado da
+        # outra por engano. Todo outro endpoint mutante ja usa `http:<operacao>:<chave>`
+        # -- este e resume_campaign/revoke_connection eram as 3 exececoes reais.
+        result, _replay = state.idempotency.execute(
+            fixture.tenant_id, f"http:pause_campaign:{idem_key}", _do_pause
+        )
     except ApiError:
         raise
     except CampaiaError as exc:
@@ -564,7 +572,10 @@ async def resume_campaign(request: Request) -> JSONResponse:
         return serialize_campaign(record).model_dump(mode="json")
 
     try:
-        result, _replay = state.idempotency.execute(fixture.tenant_id, idem_key, _do_resume)
+        # SECURITY FIX (Fase C4, 27/09/2026) -- ver mesma nota em pause_campaign acima.
+        result, _replay = state.idempotency.execute(
+            fixture.tenant_id, f"http:resume_campaign:{idem_key}", _do_resume
+        )
     except ApiError:
         raise
     except CampaiaError as exc:
