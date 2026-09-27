@@ -1,0 +1,51 @@
+name: CAMPAIA One-shot Contract Sync
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "contracts/bff-openapi.yaml"
+      - ".github/workflows/contract-sync-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.head_ref == 'reconciliation/campaia-final-takeover'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Generate canonical OpenAPI TypeScript
+        working-directory: web
+        run: npm run contracts:generate
+
+      - name: Commit generated file if and only if drift exists
+        shell: bash
+        run: |
+          if git diff --quiet -- web/src/contracts/bff-openapi.generated.ts; then
+            echo "Generated contract already in sync."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/src/contracts/bff-openapi.generated.ts
+          git commit -m "chore(contracts): sync generated types"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
