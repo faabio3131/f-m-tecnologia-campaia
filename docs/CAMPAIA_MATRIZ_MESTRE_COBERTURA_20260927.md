@@ -33,8 +33,8 @@
 
 | Requisito | WP primário | Complementar | Estado |
 |---|---|---|---|
-| F1.1 Criar empresa | WP-F01-01 | F2/F4 | TARGET |
-| F1.2 Unidade de negócio | WP-F01-01 | F2/F4 | TARGET |
+| F1.1 Criar empresa | WP-F01-01 | F2/F4 | PARTIAL |
+| F1.2 Unidade de negócio | WP-F01-01 | F2/F4 | PARTIAL |
 | F1.3 Google Ads | WP-F08-01 | F2/F9 | TARGET |
 | F1.4 Meta | WP-F10-01 | F2 | TARGET |
 | F1.5 WhatsApp | WP-F11-01 | F2 | TARGET |
