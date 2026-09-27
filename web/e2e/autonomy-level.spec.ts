@@ -135,7 +135,7 @@ test.describe("WP-07: nível de autonomia cross-stack", () => {
     const ownerContext = await browser.newContext();
     const ownerPage = await ownerContext.newPage();
     await ownerPage.goto("/login");
-    const { body: ownerLogin } = await loginViaTestHarness(ownerPage, OWNER_B_TESTID);
+    await loginViaTestHarness(ownerPage, OWNER_B_TESTID);
     await expect(ownerPage).toHaveURL(/\/dashboard/);
 
     await createCampaignViaUi(ownerPage, `WP-07 E2E self-approve ${Date.now()}`);
@@ -162,17 +162,32 @@ test.describe("WP-07: nível de autonomia cross-stack", () => {
     // o backend real recusa com 403 STEP_UP_REQUIRED mesmo com approval_id de uma
     // aprovacao real (ainda PENDING, o que sozinho ja bastaria para recusar, mas o gate
     // de step-up roda antes de qualquer lookup de aprovacao em routes_autonomy.py).
-    const noStepUpResponse = await ownerPage.request.put("/api/campaia/autonomy", {
+    //
+    // SECURITY FIX (27/09/2026 -- correcao final pre-Google-Ads): esta checagem precisa
+    // de uma sessao SEM nenhum step-up persistido ainda -- `ownerPage` ja nao serve mais,
+    // porque a tentativa de autoaprovacao acima (clique real na UI de Aprovacoes) ja
+    // enviou um X-Step-Up-Token genuino (STEP_UP_HEADER em approvals/page.tsx) e,
+    // corretamente, esse step-up agora permanece valido por ate' STEP_UP_MAX_AGE
+    // (10 min) -- reusar `ownerPage` aqui testaria uma sessao que JA tem step-up, nao a
+    // ausencia dele. Um segundo contexto/login do MESMO OWNER, que nunca passou por
+    // nenhuma acao com step-up, prova a exigencia real.
+    const freshOwnerContext = await browser.newContext();
+    const freshOwnerPage = await freshOwnerContext.newPage();
+    await freshOwnerPage.goto("/login");
+    const { body: freshOwnerLogin } = await loginViaTestHarness(freshOwnerPage, OWNER_B_TESTID);
+
+    const noStepUpResponse = await freshOwnerPage.request.put("/api/campaia/autonomy", {
       data: { level: 0, approval_id: proposed.id },
       headers: {
-        ...(await sessionCookieHeader(ownerPage)),
-        "x-csrf-token": ownerLogin.csrf_token,
+        ...(await sessionCookieHeader(freshOwnerPage)),
+        "x-csrf-token": freshOwnerLogin.csrf_token,
         "idempotency-key": `e2e-no-step-up-autonomy-${Date.now()}`,
       },
     });
     expect(noStepUpResponse.status()).toBe(403);
     expect((await noStepUpResponse.json()).code).toBe("STEP_UP_REQUIRED");
 
+    await freshOwnerContext.close();
     await ownerContext.close();
   });
 });

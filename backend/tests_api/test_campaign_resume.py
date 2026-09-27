@@ -14,6 +14,9 @@ nunca lido em lugar nenhum).
 from __future__ import annotations
 
 import unittest
+from datetime import datetime, timedelta, timezone
+
+from campaia_core.permissions import STEP_UP_MAX_AGE
 
 from tests_api.test_helpers import (
     OTHER_OWNER,
@@ -64,12 +67,40 @@ class TestCampaignResume(unittest.TestCase):
         self.assertEqual(resume_events[0]["target"], cid)
 
     def test_resume_requires_step_up(self):
+        """SECURITY FIX (27/09/2026 -- correcao final pre-Google-Ads): `_publish_and_pause`
+        ja passa por um step-up genuino (para publicar, tambem `CAMPAIGN_PUBLISH`) --
+        antes da correcao de `require_step_up`, isso nao importava, porque a rota
+        reexigia o header em toda chamada de qualquer forma (bug corrigido: a janela de
+        step-up persistida praticamente nao existia entre requisicoes). Agora que o
+        step-up persistido de fato vale por `STEP_UP_MAX_AGE`, resume LOGO EM SEGUIDA a
+        publicacao, sem header novo, e' esperado que FUNCIONE (ver
+        test_resume_allowed_without_a_new_header_within_the_step_up_window abaixo) --
+        entao este teste precisa expirar de verdade o step-up persistido para continuar
+        provando a exigencia real."""
         client = make_client()
         cid = _publish_and_pause(client)
+
+        state = client.app.state.campaia
+        for key in list(state.step_up_at):
+            state.step_up_at[key] = datetime.now(timezone.utc) - STEP_UP_MAX_AGE - timedelta(seconds=1)
 
         r = client.post(f"/campaigns/{cid}/resume", headers={**OWNER, **idem("resume-no-stepup")})
         self.assertEqual(r.status_code, 403, r.text)
         self.assertEqual(r.json()["code"], "STEP_UP_REQUIRED")
+
+    def test_resume_allowed_without_a_new_header_within_the_step_up_window(self):
+        """SECURITY FIX (27/09/2026 -- correcao final pre-Google-Ads): o step-up feito
+        para publicar (segundos antes, mesma sessao) continua valido para resume, que
+        tambem exige `CAMPAIGN_PUBLISH` -- nenhum header novo e' necessario dentro da
+        janela de `STEP_UP_MAX_AGE`. Antes da correcao, `require_step_up` reexigia o
+        header em toda chamada, contradizendo `authorize()` (que ja aceitava o step-up
+        persistido) -- ver `api/deps.py::require_step_up`."""
+        client = make_client()
+        cid = _publish_and_pause(client)
+
+        r = client.post(f"/campaigns/{cid}/resume", headers={**OWNER, **idem("resume-within-window")})
+        self.assertEqual(r.status_code, 202, r.text)
+        self.assertEqual(r.json()["state"], "ACTIVE")
 
     def test_resume_requires_idempotency_key(self):
         client = make_client()

@@ -91,11 +91,46 @@ class PendingOAuthState:
     POST /connections/oauth/start, ate' ser resgatado pelo callback simulado. Nunca uma
     credencial real -- so o suficiente para amarrar o resgate ao mesmo tenant que
     iniciou o fluxo e ao provider escolhido, com expiracao curta (uso pontual, nao uma
-    sessao)."""
+    sessao).
+
+    PREPARACAO para OAuth real (27/09/2026 -- correcao final pre-Google-Ads, NAO
+    implementada nesta tarefa): um provider real (Google/Meta) redireciona o navegador
+    de volta para `redirect_uri?code=...&state=...` -- NUNCA reenvia `X-Step-Up-Token`
+    nem qualquer outro header que este backend tenha mandado no Start (o navegador do
+    usuario e' quem faz essa requisicao de callback, nao este backend, e o provider nao
+    conhece nem devolve headers arbitrarios do Start). Por isso um OAuth callback real
+    JAMAIS podera' exigir `X-Step-Up-Token` (rota `require_step_up`) -- a prova de que o
+    fluxo comecou sob step-up valido, e de que quem esta' voltando e' a MESMA
+    identidade/sessao que iniciou, precisa estar amarrada a este `state` desde o Start,
+    nao a um header que o provider nunca envia. Os tres campos abaixo (`user_id`,
+    `session_key`, `step_up_verified_at`) existem para isso -- capturados no Start,
+    nunca reconstruidos ou confiados no Callback. O callback futuro devera' validar
+    `state` + esse binding de sessao/identidade (nunca um header do provider); NENHUMA
+    logica de validacao nova foi adicionada ao callback simulado atual por esta
+    preparacao -- so' o registro dos dados que essa validacao futura vai precisar.
+    """
 
     tenant_id: str
     provider: str
     created_at: datetime
+    #: Identidade (achado 1, mesma disciplina de `TokenPrincipal.email`/step-up) que
+    #: iniciou o fluxo -- o callback futuro so' podera' resgatar este `state` para a
+    #: MESMA identidade, nunca para outro usuario que descubra/adivinhe o valor do
+    #: `state` (que ja e' de uso unico e curto TTL, mas isolamento por identidade e'
+    #: defesa adicional, mesmo racional do achado 1 do step-up).
+    user_id: str
+    #: Mesma nocao de `api/deps.py::session_key_for` -- amarra o resgate a MESMA
+    #: sessao/credencial que iniciou o fluxo (nunca sobrevive a logout->login ou troca
+    #: de vinculo, mesma disciplina do step-up -- achados C3/3).
+    session_key: str
+    #: Instante do step-up persistido (`AppState.step_up_at`) que estava valido NO
+    #: MOMENTO do Start -- a prova de step-up que um callback real tera' que checar,
+    #: em vez de um `X-Step-Up-Token` que o provider nunca reenvia. `None` significaria
+    #: que o Start ocorreu sem step-up valido (hoje isso e' impossivel: `oauth_start`
+    #: exige `Permission.CONNECTION_MANAGE`, que ja esta' em `REQUIRES_STEP_UP` -- este
+    #: campo so' documenta explicitamente essa prova para o callback futuro, nunca a
+    #: cria).
+    step_up_verified_at: datetime | None
 
 
 #: Quanto tempo um `state` de OAuth pendente fica valido para resgate -- generoso o
@@ -481,9 +516,24 @@ class AppState:
         for key in stale_keys:
             del self.step_up_at[key]
 
-    def start_oauth_state(self, state_token: str, *, tenant_id: str, provider: str, now: datetime) -> None:
+    def start_oauth_state(
+        self,
+        state_token: str,
+        *,
+        tenant_id: str,
+        provider: str,
+        now: datetime,
+        user_id: str,
+        session_key: str,
+        step_up_verified_at: datetime | None,
+    ) -> None:
         self.oauth_pending_states[state_token] = PendingOAuthState(
-            tenant_id=tenant_id, provider=provider, created_at=now
+            tenant_id=tenant_id,
+            provider=provider,
+            created_at=now,
+            user_id=user_id,
+            session_key=session_key,
+            step_up_verified_at=step_up_verified_at,
         )
 
     def redeem_oauth_state(

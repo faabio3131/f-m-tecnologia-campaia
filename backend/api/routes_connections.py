@@ -16,6 +16,7 @@ from .deps import (
     require_auth,
     require_idempotency_key,
     require_step_up,
+    session_key_for,
 )
 from .errors import ApiError
 from .helpers import json_response, list_response, parse_body, serialize_connection
@@ -64,11 +65,20 @@ async def oauth_start(request: Request) -> JSONResponse:
         f"https://auth.simulated-ads-provider.invalid/oauth/authorize"
         f"?provider={body.provider}&state={oauth_state}&client_id=sandbox-fixture"
     )
+    # PREPARACAO para OAuth real (27/09/2026 -- correcao final pre-Google-Ads, ver
+    # PendingOAuthState): captura a identidade/sessao/prova de step-up deste Start, para
+    # um callback futuro validar contra o `state` -- nunca contra um header que o
+    # provider real nao reenvia. `require_step_up` acima ja garante que
+    # `step_up_verified_at` e' sempre um instante fresco aqui.
+    session_key = session_key_for(request)
     state.start_oauth_state(
         oauth_state,
         tenant_id=fixture.tenant_id,
         provider=body.provider,
         now=datetime.now(timezone.utc),
+        user_id=fixture.user_id,
+        session_key=session_key,
+        step_up_verified_at=state.last_step_up(fixture.tenant_id, fixture.user_id, session_key),
     )
     state.audit.append(
         tenant_id=fixture.tenant_id,

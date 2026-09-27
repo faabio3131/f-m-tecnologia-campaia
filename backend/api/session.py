@@ -112,6 +112,17 @@ class SessionRecord:
     #: ja usada para `roles`/TTL da sessao (ver docstring do modulo). Sempre inclui
     #: `principal`. Vinculo unico (caso comum ate aqui) -> tupla de 1 elemento.
     available_principals: tuple[TokenPrincipal, ...] = ()
+    #: IDENTITY HARDENING (27/09/2026 -- correcao final pre-Google-Ads): `subject`
+    #: (`VerifiedIdentity.subject`, o `sub` do provedor OIDC/Firebase) capturado no
+    #: momento do login -- nunca reconsultado. E-mail pode, em tese, ser reciclado ou ter
+    #: variacao de caixa entre provedores; `subject` e' o identificador que o proprio
+    #: provedor garante estavel e unico por conta. `None` so' quando a sessao nao veio de
+    #: um login real com identidade verificada (nao deveria acontecer no caminho real,
+    #: mas o campo e' opcional para nao quebrar nenhum `SessionRecord` construido em
+    #: outro lugar). E-mail continua guardado em `principal`/no diretorio -- nao removido,
+    #: so' deixou de ser o unico criterio de binding criptografico quando `subject` esta'
+    #: disponivel (ver `api/deps.py::_is_genuine_step_up`).
+    subject: str | None = None
 
     def is_expired(self, *, now: datetime) -> bool:
         return now >= self.expires_at
@@ -129,6 +140,7 @@ class SessionStore(Protocol):
         *,
         now: datetime,
         available_principals: tuple[TokenPrincipal, ...] = (),
+        subject: str | None = None,
     ) -> SessionRecord: ...
     def get(self, session_id: str) -> SessionRecord | None: ...
     def invalidate(self, session_id: str) -> None: ...
@@ -150,6 +162,7 @@ class InMemorySessionStore:
         *,
         now: datetime,
         available_principals: tuple[TokenPrincipal, ...] = (),
+        subject: str | None = None,
     ) -> SessionRecord:
         # session_id sempre novo -- nunca reaproveita um id pre-login (protecao contra
         # session fixation, exigencia literal da NFR 4.1 e do WP-02).
@@ -160,6 +173,7 @@ class InMemorySessionStore:
             created_at=now,
             expires_at=now + self._ttl,
             available_principals=available_principals or (principal,),
+            subject=subject,
         )
         self._sessions[record.session_id] = record
         return record
@@ -173,12 +187,13 @@ class InMemorySessionStore:
     def switch_principal(
         self, session_id: str, principal: TokenPrincipal
     ) -> SessionRecord | None:
-        """Troca o vinculo ATIVO de uma sessao ja existente, preservando `session_id` e
-        `csrf_secret` (mesma sessao autenticada, so muda o tenant/unidade ativo -- o
-        cliente nao precisa de um novo `csrf_token`). Quem chama e' responsavel por
-        confirmar que `principal` pertence de fato a `record.available_principals` (ver
-        api/routes_auth.py::switch_membership) -- este metodo nao valida isso sozinho,
-        so troca o que recebe."""
+        """Troca o vinculo ATIVO de uma sessao ja existente, preservando `session_id`,
+        `csrf_secret` e `subject` (mesma sessao/identidade autenticada, so muda o
+        tenant/unidade ativo -- o cliente nao precisa de um novo `csrf_token`, e a
+        identidade que provou `subject` no login continua a mesma). Quem chama e'
+        responsavel por confirmar que `principal` pertence de fato a
+        `record.available_principals` (ver api/routes_auth.py::switch_membership) --
+        este metodo nao valida isso sozinho, so troca o que recebe."""
         current = self._sessions.get(session_id)
         if current is None:
             return None
@@ -189,6 +204,7 @@ class InMemorySessionStore:
             created_at=current.created_at,
             expires_at=current.expires_at,
             available_principals=current.available_principals,
+            subject=current.subject,
         )
         self._sessions[session_id] = updated
         return updated

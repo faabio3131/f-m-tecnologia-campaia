@@ -131,7 +131,7 @@ test.describe("WP-06: alteração de orçamento cross-stack (dois usuários reai
     const ownerContext = await browser.newContext();
     const ownerPage = await ownerContext.newPage();
     await ownerPage.goto("/login");
-    const { body: ownerLogin } = await loginViaTestHarness(ownerPage, OWNER_TESTID);
+    await loginViaTestHarness(ownerPage, OWNER_TESTID);
     await expect(ownerPage).toHaveURL(/\/dashboard/);
 
     const campaignId = await createCampaignViaUi(ownerPage, `WP-06 E2E self-approve ${Date.now()}`);
@@ -159,13 +159,27 @@ test.describe("WP-06: alteração de orçamento cross-stack (dois usuários reai
     // mas SEM o header de step-up -- o backend real recusa com 403
     // STEP_UP_REQUIRED, mesmo sem approval_id valido (o gate de step-up roda antes
     // de qualquer lookup de aprovacao em routes_campaigns.py::patch_budget).
-    const noStepUpResponse = await ownerPage.request.patch(
+    //
+    // SECURITY FIX (27/09/2026 -- correcao final pre-Google-Ads): esta checagem
+    // precisa de uma sessao SEM nenhum step-up persistido ainda -- `ownerPage` ja
+    // nao serve mais, porque a tentativa de autoaprovacao acima (clique real na UI
+    // de Aprovacoes) ja enviou um X-Step-Up-Token genuino (STEP_UP_HEADER em
+    // approvals/page.tsx) e, corretamente, esse step-up agora permanece valido por
+    // ate' STEP_UP_MAX_AGE (10 min) -- reusar `ownerPage` aqui testaria uma sessao
+    // que JA tem step-up, nao a ausencia dele. Um segundo contexto/login do MESMO
+    // OWNER, que nunca passou por nenhuma acao com step-up, prova a exigencia real.
+    const freshOwnerContext = await browser.newContext();
+    const freshOwnerPage = await freshOwnerContext.newPage();
+    await freshOwnerPage.goto("/login");
+    const { body: freshOwnerLogin } = await loginViaTestHarness(freshOwnerPage, OWNER_TESTID);
+
+    const noStepUpResponse = await freshOwnerPage.request.patch(
       `/api/campaia/campaigns/${campaignId}/budget`,
       {
         data: { approval_id: proposed.id, daily_cap: "650" },
         headers: {
-          ...(await sessionCookieHeader(ownerPage)),
-          "x-csrf-token": ownerLogin.csrf_token,
+          ...(await sessionCookieHeader(freshOwnerPage)),
+          "x-csrf-token": freshOwnerLogin.csrf_token,
           "idempotency-key": `e2e-no-step-up-${Date.now()}`,
         },
       },
@@ -174,6 +188,7 @@ test.describe("WP-06: alteração de orçamento cross-stack (dois usuários reai
     const noStepUpBody = await noStepUpResponse.json();
     expect(noStepUpBody.code).toBe("STEP_UP_REQUIRED");
 
+    await freshOwnerContext.close();
     await ownerContext.close();
   });
 });

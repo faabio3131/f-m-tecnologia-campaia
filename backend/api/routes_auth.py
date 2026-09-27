@@ -87,7 +87,14 @@ async def login(request: Request) -> JSONResponse:
     # POST /auth/session/switch, sem precisar de novo login.
     principal = memberships[0]
     now = datetime.now(timezone.utc)
-    record = state.sessions.create(principal, now=now, available_principals=memberships)
+    # IDENTITY HARDENING (27/09/2026 -- correcao final pre-Google-Ads): `identity.subject`
+    # (o `sub` do provedor, verificado por `state.id_token_verifier` acima) capturado no
+    # login -- usado depois por `api/deps.py::_is_genuine_step_up` como o binding de
+    # identidade preferido para step-up (mais estavel que e-mail, que em tese pode ser
+    # reciclado/ter variacao de caixa entre provedores).
+    record = state.sessions.create(
+        principal, now=now, available_principals=memberships, subject=identity.subject
+    )
 
     response = JSONResponse(
         _serialize_session(principal, csrf_token=record.csrf_secret).model_dump()

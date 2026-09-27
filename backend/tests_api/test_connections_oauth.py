@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import os
 import unittest
+from datetime import datetime, timedelta, timezone
 
 from campaia_core.credential_vault import CredentialCipher
+from campaia_core.permissions import STEP_UP_MAX_AGE
 
 from tests_api.test_helpers import OTHER_OWNER, OWNER, idem, make_client, unique_idem, with_step_up
 
@@ -118,8 +120,22 @@ class OAuthCallbackTests(unittest.TestCase):
         self.assertEqual(len(listed.json()), 1)
 
     def test_callback_without_step_up_is_rejected(self):
+        """SECURITY FIX (27/09/2026 -- correcao final pre-Google-Ads): `_start_oauth` ja
+        passa por um step-up genuino (`CONNECTION_MANAGE`, mesma sessao) -- antes da
+        correcao de `require_step_up`, isso nao importava, porque a rota reexigia o
+        header em toda chamada de qualquer forma (bug corrigido: a janela de step-up
+        persistida praticamente nao existia entre requisicoes). Agora que o step-up
+        persistido de fato vale por `STEP_UP_MAX_AGE`, o callback LOGO EM SEGUIDA ao
+        start, sem header novo, e' esperado que FUNCIONE (ver
+        test_callback_allowed_without_a_new_header_within_the_step_up_window abaixo) --
+        entao este teste precisa expirar de verdade o step-up persistido para continuar
+        provando a exigencia real."""
         client = make_client()
         state_token = _start_oauth(client, OWNER)
+
+        state = client.app.state.campaia
+        for key in list(state.step_up_at):
+            state.step_up_at[key] = datetime.now(timezone.utc) - STEP_UP_MAX_AGE - timedelta(seconds=1)
 
         r = client.post(
             "/connections/oauth/callback",
@@ -128,6 +144,23 @@ class OAuthCallbackTests(unittest.TestCase):
         )
         self.assertEqual(r.status_code, 403, r.text)
         self.assertEqual(r.json()["code"], "STEP_UP_REQUIRED")
+
+    def test_callback_allowed_without_a_new_header_within_the_step_up_window(self):
+        """SECURITY FIX (27/09/2026 -- correcao final pre-Google-Ads): o step-up feito
+        para iniciar o OAuth (segundos antes, mesma sessao) continua valido para o
+        callback, que tambem exige `CONNECTION_MANAGE` -- nenhum header novo e'
+        necessario dentro da janela de `STEP_UP_MAX_AGE`. Antes da correcao,
+        `require_step_up` reexigia o header em toda chamada, contradizendo `authorize()`
+        (que ja aceitava o step-up persistido) -- ver `api/deps.py::require_step_up`."""
+        client = make_client()
+        state_token = _start_oauth(client, OWNER)
+
+        r = client.post(
+            "/connections/oauth/callback",
+            headers={**OWNER, **unique_idem()},
+            json={"state": state_token, "external_account_id": "acct-1", "display_name": "X"},
+        )
+        self.assertEqual(r.status_code, 201, r.text)
 
     def test_callback_requires_idempotency_key(self):
         client = make_client()
@@ -163,6 +196,33 @@ class OAuthCallbackTests(unittest.TestCase):
 
         listed = client.get("/connections", headers=OWNER)
         self.assertEqual(len(listed.json()), 1)
+
+    def test_oauth_start_binds_identity_session_and_step_up_proof_for_a_future_real_callback(
+        self,
+    ) -> None:
+        """PREPARACAO para OAuth real (27/09/2026 -- correcao final pre-Google-Ads, ver
+        api/state.py::PendingOAuthState): um callback real (Google/Meta) nunca reenvia
+        `X-Step-Up-Token` -- o navegador do usuario e' quem faz essa requisicao, nao este
+        backend, e o provider nao devolve headers arbitrarios do Start. Por isso o
+        `state` de OAuth precisa carregar, desde o Start, tudo que um callback real vai
+        precisar para validar identidade/sessao/step-up sem depender de um header que
+        nunca chega. Este teste prova que esses tres campos sao capturados de verdade,
+        nao so' declarados no dataclass."""
+        client = make_client()
+        r = client.post(
+            "/connections/oauth/start",
+            headers=with_step_up(OWNER),
+            json={"provider": "GOOGLE_ADS"},
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        oauth_state = r.json()["state"]
+
+        pending = client.app.state.campaia.oauth_pending_states[oauth_state]
+        self.assertEqual(pending.tenant_id, "demo-tenant")
+        self.assertEqual(pending.provider, "GOOGLE_ADS")
+        self.assertEqual(pending.user_id, "user-owner-1")
+        self.assertTrue(pending.session_key.startswith("bearer:"))
+        self.assertIsNotNone(pending.step_up_verified_at)
 
 
 def _create_connection(client, headers=OWNER) -> dict:

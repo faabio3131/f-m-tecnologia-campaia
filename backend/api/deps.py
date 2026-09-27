@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from starlette.requests import Request
 
 from campaia_core.identity_provider import IdentityError
-from campaia_core.permissions import Principal
+from campaia_core.permissions import STEP_UP_MAX_AGE, Principal
 
 from .errors import ApiError
 from .session import CSRF_HEADER_NAME, SESSION_COOKIE_NAME, SessionRecord
@@ -159,31 +159,39 @@ def note_step_up_header(request: Request, fixture: TokenPrincipal) -> None:
 
 def _is_genuine_step_up(request: Request, state: AppState, fixture: TokenPrincipal) -> bool:
     """SECURITY FIX (Fase C2, 27/09/2026; endurecido pelos achados 1 e 2 da auditoria
-    independente #3, mesma data): a versao original aceitava QUALQUER valor nao-vazio de
-    `X-Step-Up-Token` como reautenticacao valida, em qualquer ambiente -- isso nunca foi
-    uma verificacao real, so uma conveniencia de sandbox documentada como tal. A correcao
-    de Fase C2 exigiu um ID token real fora de test/dev-local, mas isso sozinho ainda
-    nao bastava:
+    independente #3, e pelo identity hardening da correcao final pre-Google-Ads, mesma
+    data): a versao original aceitava QUALQUER valor nao-vazio de `X-Step-Up-Token` como
+    reautenticacao valida, em qualquer ambiente -- isso nunca foi uma verificacao real,
+    so uma conveniencia de sandbox documentada como tal. A correcao de Fase C2 exigiu um
+    ID token real fora de test/dev-local, mas isso sozinho ainda nao bastava:
 
     - achado 1: validar que o token e' um ID token real, verificado, NAO prova que ele
       pertence ao mesmo usuario da sessao corrente -- um token real de OUTRO usuario
-      elevaria a sessao de qualquer um. Corrigido comparando `identity.email` contra
-      `fixture.email` (o e-mail do vinculo ATIVO desta sessao/token, resolvido pelo
-      diretorio interno -- ver `api/identity_directory.py` e `api/state.py::
-      TokenPrincipal.email`).
+      elevaria a sessao de qualquer um. Corrigido correlacionando a identidade do token
+      com a da sessao corrente.
     - achado 2: um ID token pode continuar criptograficamente valido muito depois do
       login original (o provedor pode renovar a sessao em segundo plano) -- validade do
       token NAO prova reautenticacao recente. Corrigido exigindo `identity.auth_time`
       (instante real da autenticacao, nunca `iat`/expiracao do token/hora da requisicao)
       dentro de `STEP_UP_TOKEN_MAX_AUTH_AGE`.
+    - IDENTITY HARDENING (correcao final pre-Google-Ads): a correlacao do achado 1
+      comparava so' `identity.email` contra `fixture.email`. E-mail continua guardado e
+      usado (nunca removido), mas nao e' o identificador criptografico mais estavel que
+      existe -- `identity.subject` (o `sub` do provedor OIDC/Firebase, capturado no login
+      em `SessionRecord.subject`) e' o que o proprio provedor garante unico e estavel por
+      conta, imune a reciclagem/variacao de caixa de e-mail. Quando a sessao corrente e'
+      uma sessao REAL (cookie) com `subject` capturado no login, a correlacao agora usa
+      `identity.subject == session.subject`; so' cai de volta para `identity.email ==
+      fixture.email` quando nao ha sessao real com `subject` disponivel (ex.: o fixture
+      de bearer token de dev/teste, que nunca passa por um login real).
 
     A conveniencia de "qualquer valor nao-vazio" continua existindo, mas SOMENTE em
     test/dev-local (mesmo guard de `DEV_AUTH_FIXTURE_ALLOWED_ENVS` usado para o fixture
     de bearer token) -- nao passa por nenhuma das checagens acima, por construcao (nao ha
     ID token real nenhum para verificar ou correlacionar nesse caminho). Em qualquer
     outro ambiente, o header tem que ser um ID token real, verificado pelo
-    `state.id_token_verifier` ja usado para login (WP-02), pertencente ao MESMO e-mail
-    do vinculo ativo, e recem-emitido -- hoje o verificador default e'
+    `state.id_token_verifier` ja usado para login (WP-02), pertencente a MESMA identidade
+    da sessao ativa, e recem-emitido -- hoje o verificador default e'
     `AlwaysRejectIdTokenVerifier` (nenhum projeto Firebase real configurado), entao o
     resultado pratico e' fail-closed em produção ate' um verificador real existir.
     """
@@ -196,25 +204,57 @@ def _is_genuine_step_up(request: Request, state: AppState, fixture: TokenPrincip
         identity = state.id_token_verifier.verify(value)
     except IdentityError:
         return False
-    if identity.email != fixture.email:
+
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    session_record = state.sessions.get(session_id) if session_id is not None else None
+    if session_record is not None and session_record.subject is not None:
+        if identity.subject != session_record.subject:
+            return False
+    elif identity.email != fixture.email:
         return False
+
     if (datetime.now(timezone.utc) - identity.auth_time) > STEP_UP_TOKEN_MAX_AUTH_AGE:
         return False
     return True
 
 
 def require_step_up(request: Request, fixture: TokenPrincipal) -> None:
-    """Back-compat explicit check, for permissions that are gated at the HTTP layer only
-    (not every sensitive endpoint's permission is in campaia_core.permissions.
-    REQUIRES_STEP_UP -- e.g. OAuth start has no dedicated Permission of its own beyond
-    CONNECTION_MANAGE, which IS covered, so this mostly acts as a defence-in-depth
-    re-check). Must be called AFTER note_step_up_header/authorize.
+    """Defence-in-depth explicit assertion, at the HTTP layer, that THIS session
+    currently carries a valid, fresh step-up elevation -- for endpoints whose
+    permission is already in `campaia_core.permissions.REQUIRES_STEP_UP` (so
+    `campaia_core.permissions.authorize()`, called inside each route's `_authorize()`
+    BEFORE this runs, has ALREADY enforced the exact same rule and would have raised
+    STEP_UP_REQUIRED on its own if it were missing/stale -- this is a second look at
+    the same fact, never a second, different rule).
 
-    Reusa `_is_genuine_step_up` (Fase C2/achados 1-2) -- mesmo criterio real/fixture do
-    resto do fluxo de step-up, nunca "qualquer valor nao-vazio" fora de test/dev-local.
+    SECURITY FIX (27/09/2026 -- correcao final pre-Google-Ads): a versao anterior
+    demandava um `X-Step-Up-Token` GENUINO NESTA MESMA requisicao, incondicionalmente
+    -- contradizendo o proprio modelo de step-up persistido por sessao (Fase C2/C3,
+    achados 1-3 da auditoria independente #3): mesmo com um `step_up_at` fresco
+    (dentro de `STEP_UP_MAX_AGE`, ja concedido por uma requisicao anterior e ja
+    validado pelo `authorize()` de `_authorize()` alguns milissegundos antes), uma
+    SEGUNDA operacao sensivel sem o header era recusada aqui -- a janela de
+    reautenticacao persistida praticamente nao existia entre requisicoes, ja que toda
+    rota que a chamava reexigia o header sempre.
+
+    Correcao: consulta o MESMO estado persistido que `campaia_core.permissions.
+    authorize()` ja usa (`AppState.step_up_at`, chaveado por sessao -- ver
+    `session_key_for`), em vez de reexigir o header aqui. Se `note_step_up_header` ja
+    registrou um step-up genuino NESTA requisicao (porque um header valido veio
+    junto), esse registro ja esta em `state.step_up_at` no momento em que chegamos
+    aqui (roda sempre ANTES, dentro de `_authorize` de cada modulo de rotas) -- entao
+    esta funcao nunca deixa de contar um step-up legitimo apresentado agora, so' para
+    de EXIGI-LO de novo quando a sessao ja tem um valido e recente. O ciclo de vida
+    completo (concede -> vale por `STEP_UP_MAX_AGE` -> expira -> logout invalida ->
+    troca de vinculo invalida -> nova sessao nao herda -> token de outro usuario nunca
+    eleva) continua inteiramente decidido por `note_step_up_header`/
+    `_is_genuine_step_up` (quem concede) e por este mesmo criterio de frescor (quem
+    confere) -- nunca reimplementado de duas formas diferentes.
     """
     state = get_state(request)
-    if not _is_genuine_step_up(request, state, fixture):
+    session_key = session_key_for(request)
+    last = state.last_step_up(fixture.tenant_id, fixture.user_id, session_key)
+    if last is None or (datetime.now(timezone.utc) - last) > STEP_UP_MAX_AGE:
         raise ApiError(
             "STEP_UP_REQUIRED",
             "This operation requires a recent step-up re-authentication "

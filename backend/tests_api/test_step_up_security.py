@@ -1,24 +1,32 @@
 """Fase C2/C3 (27/09/2026 -- auditoria independente) + achados 1/2/3 da auditoria
-independente #3 (mesma data): prova que o step-up parou de aceitar "qualquer valor
-nao-vazio" fora de test/dev-local (C2), que passou a ficar amarrado a sessao/credencial
-corrente em vez de sobreviver a logout->login ou troca de tenant na mesma sessao (C3),
-que o token apresentado precisa pertencer ao MESMO usuario da sessao (achado 1), que
-precisa ser recente (achado 2), e que QUALQUER troca de vinculo (WP-03) invalida todo
-step-up daquela sessao, mesmo o de vinculos aos quais ela volta depois (achado 3).
+independente #3 (mesma data) + correcao final pre-Google-Ads (27/09/2026, mesma data):
+prova que o step-up parou de aceitar "qualquer valor nao-vazio" fora de test/dev-local
+(C2), que passou a ficar amarrado a sessao/credencial corrente em vez de sobreviver a
+logout->login ou troca de tenant na mesma sessao (C3), que o token apresentado precisa
+pertencer ao MESMO usuario da sessao (achado 1), que precisa ser recente (achado 2), que
+QUALQUER troca de vinculo (WP-03) invalida todo step-up daquela sessao, mesmo o de
+vinculos aos quais ela volta depois (achado 3), e que a janela de step-up persistida
+(`STEP_UP_MAX_AGE`) agora de fato dispensa um novo header em cada requisicao dentro dela
+(correcao final: `require_step_up` parou de contradizer `authorize()`).
 
-Testado diretamente contra `api/deps.py` (nao via HTTP) porque toda rota protegida por
-step-up hoje tambem chama `require_step_up` explicitamente por defesa em profundidade
-(le o header a cada chamada) -- isso mascara, num teste HTTP, a propriedade real que
-queremos provar aqui: o valor GRAVADO em `AppState.step_up_at` esta corretamente
-amarrado a sessao, nao so a (tenant_id, user_id). O achado 3 tambem tem um teste REAL de
-rota/sessao em `test_step_up_invalidated_on_membership_switch.py`, provando a mesma
-propriedade fim-a-fim via `POST /auth/session/switch`.
+As classes `TestStepUp*` abaixo (exceto `TestStepUpElevationPersistsWithinTheWindow`)
+testam diretamente contra `api/deps.py` (nao via HTTP) a funcao que DECIDE conceder um
+step-up (`_is_genuine_step_up`/`note_step_up_header`) -- o valor GRAVADO em
+`AppState.step_up_at` esta corretamente amarrado a sessao, nao so a (tenant_id, user_id).
+`TestStepUpElevationPersistsWithinTheWindow`, abaixo, e' o teste REAL via HTTP
+(`api/main.py` real, `TestClient`) que prova o ciclo de vida completo da janela
+persistida (concede -> reutilizavel sem header -> expira). O achado 3 tambem tem um
+teste REAL de rota/sessao em
+`test_auth_session.py::test_switching_a_to_b_then_back_to_a_requires_a_fresh_step_up_in_a_too`,
+provando a mesma propriedade fim-a-fim via `POST /auth/session/switch`.
 """
 
 from __future__ import annotations
 
 import unittest
 from datetime import datetime, timedelta, timezone
+
+from campaia_core.permissions import STEP_UP_MAX_AGE
 
 from api.deps import (
     STEP_UP_TOKEN_MAX_AUTH_AGE,
@@ -28,6 +36,7 @@ from api.deps import (
     session_key_for,
 )
 from api.state import AppState
+from tests_api.test_helpers import OWNER, make_client, with_step_up
 from campaia_core.identity_provider import IdentityError, VerifiedIdentity
 
 
@@ -84,9 +93,11 @@ class FakeIdTokenVerifier:
         return identity
 
 
-def _identity(*, email: str = "x@example.com", auth_time: datetime | None = None) -> VerifiedIdentity:
+def _identity(
+    *, email: str = "x@example.com", subject: str = "uid", auth_time: datetime | None = None
+) -> VerifiedIdentity:
     return VerifiedIdentity(
-        subject="uid",
+        subject=subject,
         email=email,
         email_verified=True,
         auth_time=auth_time if auth_time is not None else datetime.now(timezone.utc),
@@ -179,6 +190,56 @@ class TestStepUpIdentityBinding(unittest.TestCase):
         self.assertIsNone(
             state.last_step_up("tenant-a", fixture_a.user_id, session_key_for(request))
         )
+
+
+class TestStepUpPrefersSubjectOverEmailForRealSessions(unittest.TestCase):
+    """IDENTITY HARDENING (correcao final pre-Google-Ads, 27/09/2026): para uma sessao
+    REAL (cookie) com `subject` capturado no login (`SessionRecord.subject`), a
+    correlacao de identidade do step-up (achado 1) agora usa `identity.subject ==
+    session.subject` -- o identificador que o proprio provedor OIDC/Firebase garante
+    estavel e unico por conta -- em vez de e-mail (que, em tese, pode ser reciclado ou
+    variar de caixa entre provedores). E-mail continua guardado e usado como fallback
+    quando nao ha sessao real com `subject` disponivel (ver `TestStepUpIdentityBinding`
+    acima, que cobre exatamente esse caminho de fallback com o fixture de bearer token)."""
+
+    def test_same_subject_different_email_is_still_allowed(self) -> None:
+        state = AppState(env="staging")
+        fixture_a = _fixture(email="old-address@example.com")
+        session = state.sessions.create(
+            fixture_a, now=datetime.now(timezone.utc), subject="google-uid-stable-123"
+        )
+        state.id_token_verifier = FakeIdTokenVerifier(
+            {
+                "token": _identity(
+                    email="brand-new-address@example.com", subject="google-uid-stable-123"
+                )
+            }
+        )
+        request = FakeRequest(
+            cookies={"campaia_session": session.session_id},
+            headers={"x-step-up-token": "token"},
+            state=state,
+        )
+        self.assertTrue(_is_genuine_step_up(request, state, fixture_a))
+
+    def test_same_email_different_subject_is_rejected(self) -> None:
+        """Um token com o e-mail certo mas `subject` (sub) diferente e' exatamente o
+        cenario que binding por e-mail sozinho nao pegaria -- prova que subject e' o
+        criterio realmente aplicado para sessoes reais, nao so' um campo extra ignorado."""
+        state = AppState(env="staging")
+        fixture_a = _fixture(email="a@example.com")
+        session = state.sessions.create(
+            fixture_a, now=datetime.now(timezone.utc), subject="google-uid-real-owner"
+        )
+        state.id_token_verifier = FakeIdTokenVerifier(
+            {"token": _identity(email="a@example.com", subject="google-uid-impostor")}
+        )
+        request = FakeRequest(
+            cookies={"campaia_session": session.session_id},
+            headers={"x-step-up-token": "token"},
+            state=state,
+        )
+        self.assertFalse(_is_genuine_step_up(request, state, fixture_a))
 
 
 class TestStepUpFreshness(unittest.TestCase):
@@ -293,6 +354,63 @@ class TestStepUpSessionBound(unittest.TestCase):
         state.invalidate_step_up_for_session(session_key_for(same_session))
         principal_a_again = build_domain_principal(same_session, state, fixture_a)
         self.assertIsNone(principal_a_again.step_up_at)
+
+
+class TestStepUpElevationPersistsWithinTheWindow(unittest.TestCase):
+    """SECURITY FIX (27/09/2026 -- correcao final pre-Google-Ads): antes desta correcao,
+    `require_step_up` (chamado por toda rota sensivel logo apos `_authorize`, que ja
+    validou o step-up via `campaia_core.permissions.authorize`) reexigia um
+    `X-Step-Up-Token` genuino NESTA MESMA requisicao, incondicionalmente --
+    contradizendo o proprio modelo de step-up persistido por sessao: mesmo com um
+    `step_up_at` fresco (concedido segundos antes, dentro de `STEP_UP_MAX_AGE`), uma
+    segunda operacao sensivel sem o header era recusada. Teste REAL via HTTP (nao
+    FakeRequest): usa `POST /connections/oauth/start` (permissao `CONNECTION_MANAGE`,
+    em `REQUIRES_STEP_UP`, sem exigencia de Idempotency-Key), a mesma rota que motivou o
+    achado."""
+
+    def test_step_up_grants_a_window_then_expires(self) -> None:
+        client = make_client()
+
+        first = client.post(
+            "/connections/oauth/start",
+            headers=with_step_up(OWNER),
+            json={"provider": "GOOGLE_ADS"},
+        )
+        self.assertEqual(first.status_code, 200, first.text)
+
+        # Segunda operacao sensivel, SEM X-Step-Up-Token, dentro da janela concedida
+        # pela primeira -- tem que continuar permitida (regra 2 da correcao final).
+        second = client.post(
+            "/connections/oauth/start",
+            headers=OWNER,
+            json={"provider": "GOOGLE_ADS"},
+        )
+        self.assertEqual(second.status_code, 200, second.text)
+
+        # Expira de verdade o step-up persistido (equivalente a esperar STEP_UP_MAX_AGE
+        # de verdade, sem depender de um sleep real no teste).
+        state = client.app.state.campaia
+        for key in list(state.step_up_at):
+            state.step_up_at[key] = (
+                datetime.now(timezone.utc) - STEP_UP_MAX_AGE - timedelta(seconds=1)
+            )
+
+        # Apos expirar, a mesma operacao volta a exigir reautenticacao (regra 3).
+        third = client.post(
+            "/connections/oauth/start",
+            headers=OWNER,
+            json={"provider": "GOOGLE_ADS"},
+        )
+        self.assertEqual(third.status_code, 403, third.text)
+        self.assertEqual(third.json()["code"], "STEP_UP_REQUIRED")
+
+        # Um novo header genuino reconcede a janela normalmente.
+        fourth = client.post(
+            "/connections/oauth/start",
+            headers=with_step_up(OWNER),
+            json={"provider": "GOOGLE_ADS"},
+        )
+        self.assertEqual(fourth.status_code, 200, fourth.text)
 
 
 def _fixture(*, tenant_id: str = "demo-tenant", email: str = "user-1@example.com"):
