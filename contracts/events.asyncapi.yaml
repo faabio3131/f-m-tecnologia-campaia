@@ -1,0 +1,651 @@
+asyncapi: 3.0.0
+
+info:
+  title: CAMPAIA — Catálogo de Eventos
+  version: 1.0.0
+  description: >
+    Especificação AsyncAPI 3.0 do catálogo de eventos assíncronos do CAMPAIA, formalizando os eventos
+    documentados em `contracts/connector-hub-e-eventos.md` (Seção 2, corrigida na P-15 em 28/08/2026) contra
+    o envelope canônico definido em `contracts/event-envelope.schema.json`.
+
+    A Seção 2 do contrato de referência lista 23 linhas de tabela, mas uma delas agrupa dois eventos distintos
+    (`CampaignApproved` / `CampaignRejected`) -- logo o catálogo real tem 24 eventos distintos, não 22 como
+    uma caracterização anterior deste projeto havia registrado. Essa contagem foi corrigida nesta formalização
+    após verificação programática direta contra o arquivo-fonte (ver script de validação anexo).
+
+    Este documento é uma FORMALIZAÇÃO de um catálogo já decidido, não uma nova decisão de arquitetura: todo
+    evento, emissor, consumidor e obrigatoriedade de `policy_decision_id` listados aqui reproduzem exatamente
+    a tabela da Seção 2 do contrato de referência. Nenhum evento foi adicionado, removido ou reclassificado em
+    conteúdo nesta formalização -- apenas a contagem total foi corrigida de 22 para 24, refletindo o que a
+    tabela sempre conteve.
+
+    Broker/protocolo: este documento descreve o CONTRATO de payload e roteamento por tópico — não prescreve
+    a tecnologia de mensageria (Kafka, SNS/SQS, Rabbit etc.), que é uma decisão de infraestrutura ainda em
+    aberto no projeto. O binding `kafka` abaixo é usado apenas como convenção de nomenclatura de tópico
+    (`campaia.events.<evento>`), reversível para qualquer broker equivalente sem alterar o contrato de payload.
+  license:
+    name: Proprietary — F&M Tecnologia
+
+defaultContentType: application/json
+
+servers:
+  eventBus:
+    host: 'campaia-event-bus:9092'
+    protocol: kafka
+    description: >
+      Espaço de nomes lógico do barramento de eventos do CAMPAIA. A escolha real de broker é uma decisão de
+      infraestrutura em aberto; este servidor documenta apenas a convenção de tópicos usada pelos canais
+      abaixo (`campaia.events.<evento>`).
+
+channels:
+  CampaignBriefSubmitted:
+    address: campaia.events.CampaignBriefSubmitted
+    description: Emitido pelo BFF quando o usuário submete um briefing de campanha.
+    messages:
+      CampaignBriefSubmitted.message:
+        $ref: '#/components/messages/CampaignBriefSubmitted'
+
+  StrategyGenerated:
+    address: campaia.events.StrategyGenerated
+    description: Emitido pelo Orchestrator após a IA gerar uma estratégia/plano para o briefing.
+    messages:
+      StrategyGenerated.message:
+        $ref: '#/components/messages/StrategyGenerated'
+
+  CreativeGenerated:
+    address: campaia.events.CreativeGenerated
+    description: Emitido pelo Orchestrator após a IA gerar variantes de criativo (copy/imagem).
+    messages:
+      CreativeGenerated.message:
+        $ref: '#/components/messages/CreativeGenerated'
+
+  PolicyEvaluated:
+    address: campaia.events.PolicyEvaluated
+    description: >
+      Emitido pelo Policy Engine ao avaliar um plano/ação contra as políticas do tenant. Este evento EMITE
+      `policy_decision_id` (é a origem do identificador, não um consumidor dele).
+    messages:
+      PolicyEvaluated.message:
+        $ref: '#/components/messages/PolicyEvaluated'
+
+  BudgetReserved:
+    address: campaia.events.BudgetReserved
+    description: Emitido pelo Budget Engine ao reservar orçamento para uma campanha/ação.
+    messages:
+      BudgetReserved.message:
+        $ref: '#/components/messages/BudgetReserved'
+
+  CampaignValidated:
+    address: campaia.events.CampaignValidated
+    description: Emitido pelo Orchestrator quando um plano de campanha passa em todas as validações determinísticas.
+    messages:
+      CampaignValidated.message:
+        $ref: '#/components/messages/CampaignValidated'
+
+  ApprovalRequested:
+    address: campaia.events.ApprovalRequested
+    description: Emitido pelo Approval Engine ao abrir uma solicitação de aprovação humana.
+    messages:
+      ApprovalRequested.message:
+        $ref: '#/components/messages/ApprovalRequested'
+
+  CampaignApproved:
+    address: campaia.events.CampaignApproved
+    description: Emitido pelo Approval Engine quando uma solicitação de aprovação é decidida positivamente.
+    messages:
+      CampaignApproved.message:
+        $ref: '#/components/messages/CampaignApproved'
+
+  CampaignRejected:
+    address: campaia.events.CampaignRejected
+    description: Emitido pelo Approval Engine quando uma solicitação de aprovação é decidida negativamente.
+    messages:
+      CampaignRejected.message:
+        $ref: '#/components/messages/CampaignRejected'
+
+  PublicationStarted:
+    address: campaia.events.PublicationStarted
+    description: Emitido pelo Workflow (Saga) ao iniciar a publicação multicanal de uma campanha aprovada.
+    messages:
+      PublicationStarted.message:
+        $ref: '#/components/messages/PublicationStarted'
+
+  PlatformResourceCreated:
+    address: campaia.events.PlatformResourceCreated
+    description: Emitido por um Adaptador de plataforma (Google Ads/Meta/WhatsApp) ao criar um recurso externo real.
+    messages:
+      PlatformResourceCreated.message:
+        $ref: '#/components/messages/PlatformResourceCreated'
+
+  PublicationPartiallyFailed:
+    address: campaia.events.PublicationPartiallyFailed
+    description: Emitido pela Saga quando parte do lote de publicação multicanal falha.
+    messages:
+      PublicationPartiallyFailed.message:
+        $ref: '#/components/messages/PublicationPartiallyFailed'
+
+  CompensationExecuted:
+    address: campaia.events.CompensationExecuted
+    description: Emitido pela Saga ao executar uma ação de compensação (pausar; nunca excluir silenciosamente).
+    messages:
+      CompensationExecuted.message:
+        $ref: '#/components/messages/CompensationExecuted'
+
+  CampaignActivated:
+    address: campaia.events.CampaignActivated
+    description: Emitido pelo Reconciliador quando o estado real na(s) plataforma(s) confirma a campanha ativa.
+    messages:
+      CampaignActivated.message:
+        $ref: '#/components/messages/CampaignActivated'
+
+  InsightImported:
+    address: campaia.events.InsightImported
+    description: Emitido pelo Worker de métricas ao importar dados de desempenho de uma plataforma externa.
+    messages:
+      InsightImported.message:
+        $ref: '#/components/messages/InsightImported'
+
+  ConversionRegistered:
+    address: campaia.events.ConversionRegistered
+    description: Emitido por um Worker/webhook ao registrar uma conversão atribuída a uma campanha.
+    messages:
+      ConversionRegistered.message:
+        $ref: '#/components/messages/ConversionRegistered'
+
+  BudgetThresholdReached:
+    address: campaia.events.BudgetThresholdReached
+    description: Emitido pelo Budget Engine quando um limiar de orçamento configurado é atingido.
+    messages:
+      BudgetThresholdReached.message:
+        $ref: '#/components/messages/BudgetThresholdReached'
+
+  OptimizationProposed:
+    address: campaia.events.OptimizationProposed
+    description: Emitido pelo Orchestrator ao propor uma otimização (roteada para aprovação ou execução automática por nível de autonomia).
+    messages:
+      OptimizationProposed.message:
+        $ref: '#/components/messages/OptimizationProposed'
+
+  OptimizationApplied:
+    address: campaia.events.OptimizationApplied
+    description: Emitido pelo Connector Hub ao aplicar de fato uma otimização em uma plataforma externa.
+    messages:
+      OptimizationApplied.message:
+        $ref: '#/components/messages/OptimizationApplied'
+
+  CampaignPaused:
+    address: campaia.events.CampaignPaused
+    description: >
+      Emitido pelo Orchestrator ou pelo kill switch ao pausar uma campanha. Único evento cujo
+      `policy_decision_id` é condicional: obrigatório, EXCETO quando a pausa se origina do kill switch de
+      emergência (que só reduz efeito e pode pular a fila normal de decisão).
+    messages:
+      CampaignPaused.message:
+        $ref: '#/components/messages/CampaignPaused'
+
+  KillSwitchActivated:
+    address: campaia.events.KillSwitchActivated
+    description: Emitido pela Governança ao ativar um kill switch (escopo CAMPAIGN, ACCOUNT, TENANT, PLATFORM ou GLOBAL).
+    messages:
+      KillSwitchActivated.message:
+        $ref: '#/components/messages/KillSwitchActivated'
+
+  ExternalOperationFailed:
+    address: campaia.events.ExternalOperationFailed
+    description: Emitido por um Adaptador quando uma operação contra a plataforma externa falha.
+    messages:
+      ExternalOperationFailed.message:
+        $ref: '#/components/messages/ExternalOperationFailed'
+
+  ReconciliationDivergenceDetected:
+    address: campaia.events.ReconciliationDivergenceDetected
+    description: Emitido pelo Reconciliador ao detectar divergência entre o estado interno e o estado real na plataforma.
+    messages:
+      ReconciliationDivergenceDetected.message:
+        $ref: '#/components/messages/ReconciliationDivergenceDetected'
+
+  AutonomyLevelChanged:
+    address: campaia.events.AutonomyLevelChanged
+    description: Emitido pela Governança quando o nível de autonomia de um tenant ou campanha é alterado.
+    messages:
+      AutonomyLevelChanged.message:
+        $ref: '#/components/messages/AutonomyLevelChanged'
+
+operations:
+  onCampaignBriefSubmitted:
+    action: receive
+    channel:
+      $ref: '#/channels/CampaignBriefSubmitted'
+    summary: Orchestrator recebe um briefing recém-submetido pelo BFF.
+
+  onStrategyGenerated:
+    action: receive
+    channel:
+      $ref: '#/channels/StrategyGenerated'
+    summary: Projeções e auditoria recebem a estratégia gerada.
+
+  onCreativeGenerated:
+    action: receive
+    channel:
+      $ref: '#/channels/CreativeGenerated'
+    summary: Projeções e auditoria recebem os criativos gerados.
+
+  onPolicyEvaluated:
+    action: receive
+    channel:
+      $ref: '#/channels/PolicyEvaluated'
+    summary: Orchestrator e auditoria recebem o resultado da avaliação de política.
+
+  onBudgetReserved:
+    action: receive
+    channel:
+      $ref: '#/channels/BudgetReserved'
+    summary: Orchestrator e auditoria recebem a confirmação de reserva de orçamento.
+
+  onCampaignValidated:
+    action: receive
+    channel:
+      $ref: '#/channels/CampaignValidated'
+    summary: Fluxo de aprovação recebe um plano já validado deterministicamente.
+
+  onApprovalRequested:
+    action: receive
+    channel:
+      $ref: '#/channels/ApprovalRequested'
+    summary: Notificações e app recebem uma nova solicitação de aprovação.
+
+  onCampaignApproved:
+    action: receive
+    channel:
+      $ref: '#/channels/CampaignApproved'
+    summary: Orchestrator e auditoria recebem a aprovação de uma campanha.
+
+  onCampaignRejected:
+    action: receive
+    channel:
+      $ref: '#/channels/CampaignRejected'
+    summary: Orchestrator e auditoria recebem a rejeição de uma campanha.
+
+  onPublicationStarted:
+    action: receive
+    channel:
+      $ref: '#/channels/PublicationStarted'
+    summary: Connector Hub recebe o comando de início de publicação multicanal.
+
+  onPlatformResourceCreated:
+    action: receive
+    channel:
+      $ref: '#/channels/PlatformResourceCreated'
+    summary: Reconciliador e auditoria recebem a confirmação de um recurso criado na plataforma externa.
+
+  onPublicationPartiallyFailed:
+    action: receive
+    channel:
+      $ref: '#/channels/PublicationPartiallyFailed'
+    summary: Orchestrator e notificações recebem aviso de falha parcial na publicação multicanal.
+
+  onCompensationExecuted:
+    action: receive
+    channel:
+      $ref: '#/channels/CompensationExecuted'
+    summary: Auditoria recebe o registro de uma compensação executada pela Saga.
+
+  onCampaignActivated:
+    action: receive
+    channel:
+      $ref: '#/channels/CampaignActivated'
+    summary: Projeções e app recebem a confirmação de ativação real da campanha.
+
+  onInsightImported:
+    action: receive
+    channel:
+      $ref: '#/channels/InsightImported'
+    summary: Projeções e Performance Agent recebem métricas importadas de uma plataforma externa.
+
+  onConversionRegistered:
+    action: receive
+    channel:
+      $ref: '#/channels/ConversionRegistered'
+    summary: Projeções recebem uma conversão registrada.
+
+  onBudgetThresholdReached:
+    action: receive
+    channel:
+      $ref: '#/channels/BudgetThresholdReached'
+    summary: Alertas e kill switch recebem aviso de limiar de orçamento atingido.
+
+  onOptimizationProposed:
+    action: receive
+    channel:
+      $ref: '#/channels/OptimizationProposed'
+    summary: Fluxo de aprovação ou execução automática (por autonomia) recebe uma proposta de otimização.
+
+  onOptimizationApplied:
+    action: receive
+    channel:
+      $ref: '#/channels/OptimizationApplied'
+    summary: Auditoria e projeções recebem a confirmação de uma otimização aplicada de fato.
+
+  onCampaignPaused:
+    action: receive
+    channel:
+      $ref: '#/channels/CampaignPaused'
+    summary: Todos os consumidores interessados recebem o aviso de pausa de campanha.
+
+  onKillSwitchActivated:
+    action: receive
+    channel:
+      $ref: '#/channels/KillSwitchActivated'
+    summary: Todos os consumidores interessados recebem o aviso de ativação de kill switch.
+
+  onExternalOperationFailed:
+    action: receive
+    channel:
+      $ref: '#/channels/ExternalOperationFailed'
+    summary: Saga e o painel de incidentes recebem o aviso de falha de operação externa.
+
+  onReconciliationDivergenceDetected:
+    action: receive
+    channel:
+      $ref: '#/channels/ReconciliationDivergenceDetected'
+    summary: Alertas e o painel de incidentes recebem o aviso de divergência de reconciliação.
+
+  onAutonomyLevelChanged:
+    action: receive
+    channel:
+      $ref: '#/channels/AutonomyLevelChanged'
+    summary: Auditoria recebe o registro de mudança de nível de autonomia.
+
+components:
+  messages:
+    CampaignBriefSubmitted:
+      name: CampaignBriefSubmitted
+      title: Briefing de campanha submetido
+      summary: Emissor -- BFF. Consumidores -- Orchestrator. policy_decision_id -- não aplicável (não precede efeito externo).
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+      examples:
+        - name: briefing-leads-google-meta
+          summary: Briefing de geração de leads solicitando Google Ads e Meta.
+          payload:
+            event_id: '3fa85f64-5717-4562-b3fc-2c963f66afa6'
+            event_type: CampaignBriefSubmitted
+            event_version: 1
+            tenant_id: '11111111-1111-1111-1111-111111111111'
+            occurred_at: '2026-08-29T12:00:00Z'
+            actor:
+              kind: USER
+              user_id: 'user-marketer-1'
+            correlation_id: '22222222-2222-2222-2222-222222222222'
+            payload:
+              brief_id: '33333333-3333-3333-3333-333333333333'
+              objective: LEADS
+              requested_channels: [GOOGLE_ADS, META_FACEBOOK]
+
+    StrategyGenerated:
+      name: StrategyGenerated
+      title: Estratégia gerada pela IA
+      summary: Emissor -- Orchestrator. Consumidores -- Projeções, auditoria. policy_decision_id -- não aplicável.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+    CreativeGenerated:
+      name: CreativeGenerated
+      title: Criativo gerado pela IA
+      summary: Emissor -- Orchestrator. Consumidores -- Projeções, auditoria. policy_decision_id -- não aplicável.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+    PolicyEvaluated:
+      name: PolicyEvaluated
+      title: Avaliação de política concluída
+      summary: >
+        Emissor -- Policy Engine. Consumidores -- Orchestrator, auditoria. policy_decision_id -- EMITE (este
+        evento é a origem do identificador consumido por eventos posteriores).
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+    BudgetReserved:
+      name: BudgetReserved
+      title: Orçamento reservado
+      summary: Emissor -- Budget Engine. Consumidores -- Orchestrator, auditoria. policy_decision_id -- exige.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+    CampaignValidated:
+      name: CampaignValidated
+      title: Campanha validada deterministicamente
+      summary: Emissor -- Orchestrator. Consumidores -- Aprovação. policy_decision_id -- exige.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+    ApprovalRequested:
+      name: ApprovalRequested
+      title: Aprovação solicitada
+      summary: Emissor -- Approval Engine. Consumidores -- Notificações, app. policy_decision_id -- exige.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+    CampaignApproved:
+      name: CampaignApproved
+      title: Campanha aprovada
+      summary: Emissor -- Approval Engine. Consumidores -- Orchestrator, auditoria. policy_decision_id -- exige.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+    CampaignRejected:
+      name: CampaignRejected
+      title: Campanha rejeitada
+      summary: Emissor -- Approval Engine. Consumidores -- Orchestrator, auditoria. policy_decision_id -- exige.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+    PublicationStarted:
+      name: PublicationStarted
+      title: Publicação multicanal iniciada
+      summary: Emissor -- Workflow (Saga). Consumidores -- Connector Hub. policy_decision_id -- **exige**.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+    PlatformResourceCreated:
+      name: PlatformResourceCreated
+      title: Recurso criado na plataforma externa
+      summary: Emissor -- Adaptador. Consumidores -- Reconciliador, auditoria. policy_decision_id -- **exige**.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+    PublicationPartiallyFailed:
+      name: PublicationPartiallyFailed
+      title: Falha parcial na publicação multicanal
+      summary: Emissor -- Saga. Consumidores -- Orchestrator, notificações. policy_decision_id -- **exige**.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+    CompensationExecuted:
+      name: CompensationExecuted
+      title: Compensação executada
+      summary: >
+        Emissor -- Saga. Consumidores -- Auditoria. policy_decision_id -- **exige**. Compensação padrão é
+        pausar; recurso externo nunca é apagado silenciosamente.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+    CampaignActivated:
+      name: CampaignActivated
+      title: Campanha ativada (confirmado por reconciliação)
+      summary: Emissor -- Reconciliador. Consumidores -- Projeções, app. policy_decision_id -- não aplicável.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+    InsightImported:
+      name: InsightImported
+      title: Métricas de desempenho importadas
+      summary: Emissor -- Worker de métricas. Consumidores -- Projeções, Performance Agent. policy_decision_id -- não aplicável.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+    ConversionRegistered:
+      name: ConversionRegistered
+      title: Conversão registrada
+      summary: Emissor -- Worker/webhook. Consumidores -- Projeções. policy_decision_id -- não aplicável.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+    BudgetThresholdReached:
+      name: BudgetThresholdReached
+      title: Limiar de orçamento atingido
+      summary: Emissor -- Budget Engine. Consumidores -- Alertas, kill switch. policy_decision_id -- não aplicável.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+    OptimizationProposed:
+      name: OptimizationProposed
+      title: Otimização proposta
+      summary: >
+        Emissor -- Orchestrator. Consumidores -- Aprovação ou execução automática (por nível de autonomia).
+        policy_decision_id -- não aplicável (a proposta em si não executa efeito externo).
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+    OptimizationApplied:
+      name: OptimizationApplied
+      title: Otimização aplicada
+      summary: Emissor -- Connector Hub. Consumidores -- Auditoria, projeções. policy_decision_id -- **exige**.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+    CampaignPaused:
+      name: CampaignPaused
+      title: Campanha pausada
+      summary: >
+        Emissor -- Orchestrator ou kill switch. Consumidores -- Todos. policy_decision_id -- exige, SALVO
+        quando a pausa se origina do kill switch de emergência (único caminho que pode pular a fila normal
+        de decisão, por só reduzir efeito).
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+    KillSwitchActivated:
+      name: KillSwitchActivated
+      title: Kill switch ativado
+      summary: >
+        Emissor -- Governança. Consumidores -- Todos. policy_decision_id -- não aplicável. Escopo em
+        {CAMPAIGN, ACCOUNT, TENANT, PLATFORM, GLOBAL}; GLOBAL é a única exceção documentada de auditoria
+        cross-tenant (achado 17 do backend).
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+    ExternalOperationFailed:
+      name: ExternalOperationFailed
+      title: Falha em operação externa
+      summary: Emissor -- Adaptador. Consumidores -- Saga, incidentes. policy_decision_id -- não aplicável.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+    ReconciliationDivergenceDetected:
+      name: ReconciliationDivergenceDetected
+      title: Divergência de reconciliação detectada
+      summary: Emissor -- Reconciliador. Consumidores -- Alertas, incidentes. policy_decision_id -- não aplicável.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+    AutonomyLevelChanged:
+      name: AutonomyLevelChanged
+      title: Nível de autonomia alterado
+      summary: Emissor -- Governança. Consumidores -- Auditoria. policy_decision_id -- exige.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+
+  schemas:
+    EventEnvelope:
+      $id: 'https://contracts.campaia.app/v1/event-envelope.schema.json'
+      description: >
+        Envelope canônico usado por todos os 24 eventos. Reproduzido byte-a-byte, na estrutura, a partir de
+        `contracts/event-envelope.schema.json` (JSON Schema draft 2020-12) -- não é uma reinterpretação: cada
+        campo abaixo, obrigatoriedade e descrição correspondem exatamente ao arquivo de origem.
+      type: object
+      additionalProperties: false
+      required:
+        - event_id
+        - event_type
+        - event_version
+        - tenant_id
+        - occurred_at
+        - actor
+        - correlation_id
+        - payload
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+          pattern: '^[A-Z][A-Za-z]+$'
+        event_version:
+          type: integer
+          minimum: 1
+        tenant_id:
+          type: string
+          format: uuid
+          description: Obrigatório. Consumidor deve recusar evento sem tenant.
+        business_unit_id:
+          type: ['string', 'null']
+          format: uuid
+        occurred_at:
+          type: string
+          format: date-time
+        actor:
+          type: object
+          additionalProperties: false
+          properties:
+            kind:
+              type: string
+              enum: [USER, SYSTEM, AI, EXTERNAL_PROVIDER]
+            user_id:
+              type: ['string', 'null']
+            ai_run_id:
+              type: ['string', 'null']
+            provider:
+              type: ['string', 'null']
+        correlation_id:
+          type: string
+          format: uuid
+          description: Amarra briefing, plano, aprovação, publicação e reconciliação.
+        causation_id:
+          type: ['string', 'null']
+          format: uuid
+        policy_decision_id:
+          type: ['string', 'null']
+          format: uuid
+          description: Obrigatório em qualquer evento que preceda efeito externo.
+        payload:
+          type: object
+          description: >
+            Corpo específico do evento. Ver `contracts/campaign-brief.schema.json`,
+            `contracts/campaign-plan.schema.json` e `contracts/ai-gateway.schema.json` para os payloads dos
+            eventos que carregam briefing, plano ou resultado de IA respectivamente; os demais eventos (ex.
+            PlatformResourceCreated, ReconciliationDivergenceDetected) têm payload específico ao seu domínio,
+            fora do escopo desta formalização de catálogo.

@@ -5,7 +5,8 @@
 **Status oficial:** `PARTIAL`  
 **Repositório:** `faabio3131/f-m-tecnologia-campaia`  
 **Branch:** `reconciliation/campaia-final-takeover`  
-**HEAD funcional auditado:** `9add6f540f2d81e82f4a508db11dffb6dc943232`\n**Base documental consolidada:** `711e164526e741b6ff512af932a1d107dd03ffc4`
+**HEAD funcional auditado:** `9add6f540f2d81e82f4a508db11dffb6dc943232`
+**Base documental consolidada:** `711e164526e741b6ff512af932a1d107dd03ffc4`
 
 ## 1. CURRENT confirmado
 

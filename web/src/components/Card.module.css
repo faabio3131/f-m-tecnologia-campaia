@@ -1,0 +1,7 @@
+.card {
+  background: var(--campaia-color-surface);
+  border: 1px solid var(--campaia-color-border);
+  border-radius: var(--campaia-radius-lg);
+  box-shadow: var(--campaia-shadow-sm);
+  padding: var(--campaia-space-5);
+}

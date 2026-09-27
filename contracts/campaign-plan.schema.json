@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.campaia.app/v1/campaign-plan.schema.json",
+  "title": "CampaignPlan",
+  "description": "Proposta estruturada. E SEMPRE uma proposta: nenhum campo deste documento autoriza efeito externo. A execucao exige policy_decision_id emitido pelo Policy Engine.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "plan_id",
+    "brief_id",
+    "tenant_id",
+    "plan_version",
+    "generated_at",
+    "strategy",
+    "channel_plans",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "plan_id": { "type": "string", "format": "uuid" },
+    "brief_id": { "type": "string", "format": "uuid" },
+    "tenant_id": { "type": "string", "format": "uuid" },
+    "plan_version": { "type": "integer", "minimum": 1 },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "strategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["objective", "funnel_stage", "rationale"],
+      "properties": {
+        "objective": { "type": "string", "enum": ["MESSAGES", "LEADS", "ONLINE_SALES", "STORE_VISITS", "TRAFFIC", "AWARENESS"] },
+        "funnel_stage": { "type": "string", "enum": ["AWARENESS", "CONSIDERATION", "CONVERSION", "RETENTION"] },
+        "rationale": {
+          "type": "string",
+          "maxLength": 2000,
+          "description": "Explicacao apresentada ao usuario. Obrigatoria: o produto nunca recomenda sem justificar."
+        }
+      }
+    },
+    "channel_plans": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["channel", "budget_share", "ad_sets"],
+        "properties": {
+          "channel": { "type": "string", "enum": ["GOOGLE_ADS", "META_FACEBOOK", "META_INSTAGRAM", "WHATSAPP"] },
+          "budget_share": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1,
+            "description": "Fracao do orcamento total. A soma de todos os channel_plans deve ser 1, validado por servico deterministico, nao pelo modelo."
+          },
+          "targeting_proposal": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "geo": { "type": "array", "items": { "type": "string" } },
+              "age_min": { "type": ["integer", "null"], "minimum": 18 },
+              "age_max": { "type": ["integer", "null"], "maximum": 99 },
+              "interests": { "type": "array", "items": { "type": "string" }, "maxItems": 30 },
+              "exclusions": { "type": "array", "items": { "type": "string" }, "maxItems": 30 },
+              "sensitive": {
+                "type": "boolean",
+                "default": false,
+                "description": "Marcado por analise deterministica de categoria. Se true, aprovacao humana e obrigatoria em qualquer nivel de autonomia."
+              }
+            }
+          },
+          "ad_sets": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "copy_variants"],
+              "properties": {
+                "name": { "type": "string", "maxLength": 120 },
+                "keywords": { "type": "array", "items": { "type": "string" }, "maxItems": 200 },
+                "copy_variants": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 20,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["headline", "description"],
+                    "properties": {
+                      "headline": { "type": "string", "maxLength": 200 },
+                      "description": { "type": "string", "maxLength": 500 },
+                      "cta": { "type": ["string", "null"], "maxLength": 60 },
+                      "claims_flagged": {
+                        "type": "array",
+                        "description": "Alegacoes detectadas que exigem verificacao de politica.",
+                        "items": { "type": "string" }
+                      }
+                    }
+                  }
+                },
+                "creative_refs": { "type": "array", "items": { "type": "string", "format": "uuid" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "forecast": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Previsao SEMPRE em faixa, com hipoteses explicitas. Nunca apresentar numero unico como promessa.",
+      "properties": {
+        "assumptions": { "type": "array", "items": { "type": "string" }, "maxItems": 20 },
+        "reach_range": { "$ref": "#/$defs/range" },
+        "clicks_range": { "$ref": "#/$defs/range" },
+        "confidence": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH"] }
+      }
+    },
+    "policy_flags": {
+      "type": "array",
+      "description": "Alertas levantados pelo Policy Agent. Nao substituem o Policy Engine deterministico.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "severity"],
+        "properties": {
+          "code": { "type": "string" },
+          "severity": { "type": "string", "enum": ["INFO", "WARNING", "BLOCKING"] },
+          "detail": { "type": "string" }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ai_run_id", "provider", "model", "prompt_version"],
+      "properties": {
+        "ai_run_id": { "type": "string", "format": "uuid" },
+        "provider": { "type": "string" },
+        "model": { "type": "string" },
+        "prompt_version": { "type": "string" },
+        "fallback_used": { "type": "boolean", "default": false },
+        "fallback_reason": { "type": ["string", "null"] }
+      }
+    }
+  },
+  "$defs": {
+    "range": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min", "max"],
+      "properties": {
+        "min": { "type": "number", "minimum": 0 },
+        "max": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}

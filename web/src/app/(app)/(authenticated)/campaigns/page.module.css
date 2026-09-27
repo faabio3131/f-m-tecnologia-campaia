@@ -1,0 +1,44 @@
+.sectionTitle {
+  margin: 0 0 var(--campaia-space-3);
+  font-size: var(--campaia-font-size-lg);
+  color: var(--campaia-color-text);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-3);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-2);
+}
+
+.listItem {
+  border: 1px solid var(--campaia-color-border);
+  border-radius: var(--campaia-radius-md);
+}
+
+.link {
+  display: block;
+  padding: var(--campaia-space-3);
+  text-decoration: none;
+  color: inherit;
+}
+
+.itemName {
+  margin: 0;
+  font-weight: 600;
+  color: var(--campaia-color-text);
+}
+
+.itemDetail {
+  margin: var(--campaia-space-1) 0 0;
+  color: var(--campaia-color-text-muted);
+  font-size: var(--campaia-font-size-sm);
+}

@@ -1,0 +1,32 @@
+name: Asaas Sandbox Smoke Test
+
+# So roda por acionamento manual (Actions -> este workflow -> "Run workflow").
+# Nunca em push/PR: cria um cliente e uma cobranca reais na conta Sandbox configurada.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  smoke:
+    name: Verify AsaasGateway against the real Sandbox API
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Run Asaas sandbox smoke test
+        working-directory: backend
+        env:
+          ASAAS_API_KEY: ${{ secrets.ASAAS_API_KEY }}
+          ASAAS_MODE: SANDBOX
+          PYTHONPATH: .
+        run: python3 scripts/asaas_smoke_test.py

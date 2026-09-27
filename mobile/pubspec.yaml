@@ -1,0 +1,30 @@
+name: campaia_app
+description: >
+  CampaIA — app mobile de campanhas de marketing com IA (Google Ads, Meta,
+  WhatsApp), com aprovação humana obrigatória para publicação e Modo
+  Automático opcional (Nível 2 de autonomia) para otimização de campanhas
+  já aprovadas. Ver docs/product/13_ESPECIFICACAO_TELAS_APP.md.
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+# Sem dependências externas nesta primeira fatia (onboarding): apenas o SDK
+# do Flutter. Navegação usa Navigator 2.0 nativo (não go_router/auto_route
+# ainda) e gerenciamento de estado usa ChangeNotifier nativo (não
+# provider/riverpod/bloc ainda) -- decisão deliberada para não introduzir
+# dependência externa sem necessidade comprovada, seguindo o princípio do
+# menor delta. Reavaliar quando o fluxo de Nova Campanha (mais telas, mais
+# estado compartilhado) justificar uma lib de estado dedicada.
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true

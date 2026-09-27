@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.campaia.app/v1/ai-gateway.schema.json",
+  "title": "AIGatewayContract",
+  "description": "Contrato unico para qualquer provedor de IA. Nenhuma regra de negocio ou tela referencia provedor especifico.",
+  "type": "object",
+  "$defs": {
+    "AIRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_id", "tenant_id", "task", "input", "output_schema_id", "limits"],
+      "properties": {
+        "request_id": { "type": "string", "format": "uuid" },
+        "tenant_id": { "type": "string", "format": "uuid" },
+        "task": {
+          "type": "string",
+          "enum": ["PLAN_CAMPAIGN", "GENERATE_COPY", "GENERATE_IMAGE", "ANALYZE_CREATIVE", "PROPOSE_AUDIENCE", "INTERPRET_METRICS", "MODERATE", "EMBED"]
+        },
+        "input": {
+          "type": "object",
+          "description": "Payload ja sanitizado. Validado por sanitizador deterministico antes de sair do backend."
+        },
+        "output_schema_id": {
+          "type": "string",
+          "description": "Schema que a saida DEVE satisfazer. Saida invalida e rejeitada, nao corrigida silenciosamente."
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["max_cost_units", "timeout_ms"],
+          "properties": {
+            "max_cost_units": { "type": "number", "exclusiveMinimum": 0 },
+            "timeout_ms": { "type": "integer", "minimum": 1000, "maximum": 120000 },
+            "max_retries": { "type": "integer", "minimum": 0, "maximum": 3, "default": 1 }
+          }
+        },
+        "selection_hint": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Preferencia, nao ordem. A selecao final e do gateway, com base em capacidade, custo, latencia e saude.",
+          "properties": {
+            "prefer": { "type": "string", "enum": ["QUALITY", "COST", "LATENCY"] },
+            "pinned_provider": { "type": ["string", "null"] }
+          }
+        }
+      }
+    },
+    "AIResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_id", "ai_run_id", "status", "provenance"],
+      "properties": {
+        "request_id": { "type": "string", "format": "uuid" },
+        "ai_run_id": { "type": "string", "format": "uuid" },
+        "status": { "type": "string", "enum": ["OK", "SCHEMA_INVALID", "BLOCKED_BY_MODERATION", "COST_LIMIT", "TIMEOUT", "PROVIDER_ERROR"] },
+        "output": { "type": ["object", "null"], "description": "Presente somente quando status = OK e a validacao de schema passou." },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider", "model", "prompt_version", "cost_units", "latency_ms", "attempted_providers"],
+          "properties": {
+            "provider": { "type": "string" },
+            "model": { "type": "string" },
+            "model_version": { "type": ["string", "null"] },
+            "prompt_version": { "type": "string" },
+            "cost_units": { "type": "number", "minimum": 0 },
+            "latency_ms": { "type": "integer", "minimum": 0 },
+            "attempted_providers": {
+              "type": "array",
+              "description": "Toda tentativa, inclusive as falhas. Fallback silencioso e proibido: se houve troca, ela aparece aqui e na auditoria.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["provider", "outcome"],
+                "properties": {
+                  "provider": { "type": "string" },
+                  "outcome": { "type": "string", "enum": ["OK", "ERROR", "TIMEOUT", "SCHEMA_INVALID", "CIRCUIT_OPEN"] },
+                  "reason": { "type": ["string", "null"] }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ProviderCapability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model", "supported_tasks", "structured_output", "verified_at"],
+      "properties": {
+        "provider": { "type": "string" },
+        "model": { "type": "string" },
+        "supported_tasks": { "type": "array", "items": { "type": "string" } },
+        "structured_output": { "type": "boolean" },
+        "max_input_units": { "type": ["integer", "null"] },
+        "cost_per_unit": { "type": ["number", "null"] },
+        "verified_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

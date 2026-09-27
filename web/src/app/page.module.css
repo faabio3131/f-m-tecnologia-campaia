@@ -1,0 +1,29 @@
+.header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--campaia-space-2);
+}
+
+.title {
+  font-size: var(--campaia-font-size-xl);
+  margin: 0;
+}
+
+.slogan {
+  margin: 0;
+  color: var(--campaia-color-text-muted);
+}
+
+.foundationNote {
+  margin: var(--campaia-space-3) 0 0;
+  color: var(--campaia-color-text-muted);
+  font-size: var(--campaia-font-size-sm);
+}
+
+.foundationNote code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--campaia-color-bg);
+  padding: 0 var(--campaia-space-1);
+  border-radius: var(--campaia-radius-sm);
+}

@@ -1,0 +1,49 @@
+.card {
+  max-width: 560px;
+  margin: var(--campaia-space-7) auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-4);
+}
+
+.testOptions,
+.onboardingForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-3);
+}
+
+.testNotice {
+  margin: 0;
+  font-size: var(--campaia-font-size-sm);
+  color: var(--campaia-color-text-muted);
+}
+
+.sectionTitle {
+  margin: 0 0 var(--campaia-space-1);
+  font-size: var(--campaia-font-size-lg);
+  color: var(--campaia-color-text);
+}
+
+.selectLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-1);
+  font-size: var(--campaia-font-size-sm);
+  color: var(--campaia-color-text);
+}
+
+.select {
+  min-height: 42px;
+  padding: var(--campaia-space-2);
+  border: 1px solid var(--campaia-color-border);
+  border-radius: var(--campaia-radius-sm);
+  background: var(--campaia-color-surface);
+  color: var(--campaia-color-text);
+}
+
+.actions {
+  display: flex;
+  gap: var(--campaia-space-2);
+  flex-wrap: wrap;
+}

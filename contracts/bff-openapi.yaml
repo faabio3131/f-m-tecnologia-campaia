@@ -1,0 +1,1370 @@
+openapi: 3.1.0
+info:
+  title: CAMPAIA — Web BFF API
+  version: 1.0.0-draft
+  description: |
+    Contrato entre a aplicacao Web CAMPAIA e o backend. Evolui de forma aditiva conforme os Gates.
+
+    Invariantes que este contrato materializa:
+      1. `tenant_id` NUNCA vem do cliente. E derivado do token de autenticacao. Nenhum endpoint
+         aceita tenant_id no corpo ou na query.
+      2. Nenhum endpoint devolve segredo, token de provedor ou credencial, em nenhuma circunstancia.
+      3. Toda operacao com efeito externo exige o header `Idempotency-Key`.
+      4. Operacoes sensiveis exigem `X-Step-Up-Token` (reautenticacao recente).
+      5. Publicar, alterar verba e mudar autonomia exigem uma aprovacao humana ja registrada.
+         O BFF nao aprova nada: ele encaminha decisao tomada por humano identificado.
+      6. Estado externo devolvido e sempre o ultimo estado reconciliado, com `last_synced_at`.
+         O produto nunca afirma publicacao sem ID externo confirmado.
+  contact:
+    name: CAMPAIA — Engenharia
+servers:
+  - url: https://api.campaia.app/v1
+    description: Producao (NAO PROVISIONADO — exige autorizacao do Diretor)
+  - url: https://api.staging.campaia.app/v1
+    description: Homologacao (NAO PROVISIONADO)
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Conta
+  - name: Sessao
+  - name: Marca
+  - name: Conexoes
+  - name: Campanhas
+  - name: Governanca
+  - name: Metricas
+
+paths:
+  /auth/session:
+    post:
+      tags: [Sessao]
+      summary: Login real via Google Identity Platform -- troca id_token por sessao server-side
+      description: |
+        Autoridade de identidade e sempre o backend: verifica o `id_token` do provedor,
+        resolve tenant/unidade/papeis pelo diretorio interno (nunca por claim do provedor,
+        nunca autoprovisiona). Em caso de sucesso, cria uma sessao server-side e devolve o
+        cookie de sessao `campaia_session` (HttpOnly; Secure; SameSite=Lax) -- nunca o
+        id_token bruto do Google. Nao exige `security` previa (nao ha sessao ainda);
+        protegido contra login-CSRF por validacao de Origin/Referer no servidor.
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id_token]
+              properties:
+                id_token: { type: string }
+      responses:
+        '200':
+          description: OK -- cookie de sessao setado via Set-Cookie
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionUser' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Identidade provada, mas sem vinculo com nenhum tenant do CampaIA (fail-closed, nunca autoprovisiona)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    get:
+      tags: [Sessao]
+      summary: Recupera a sessao ativa e um novo csrf_token (apos reload, sem novo login)
+      operationId: getSession
+      security: [cookieAuth: []]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionUser' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    delete:
+      tags: [Sessao]
+      summary: Logout -- invalida a sessao server-side e limpa o cookie
+      description: |
+        Sempre devolve 204, mesmo sem sessao ativa ou com sessao ja invalida/expirada --
+        nunca falha o logout do lado do cliente por um estado de sessao que ja nao importa.
+      operationId: logout
+      security: [cookieAuth: []]
+      responses:
+        '204': { description: Sessao invalidada (ou ja nao havia nenhuma) }
+
+  /auth/session/switch:
+    post:
+      tags: [Sessao]
+      summary: Troca o vinculo (tenant/unidade) ATIVO da sessao para outro vinculo real da mesma identidade
+      description: |
+        So aceita um `user_id` presente entre os vinculos capturados no login desta mesma
+        identidade (nunca um tenant/vinculo arbitrario de outra identidade -- validado
+        fail-closed pelo backend). Mesma sessao/cookie/csrf_secret depois da troca; invalida
+        implicitamente `step_up_at` (chave `(tenant_id, user_id)`), exigindo nova
+        reautenticacao para operacoes sensiveis no vinculo novo.
+      operationId: switchMembership
+      security: [cookieAuth: []]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id: { type: string, description: user_id de um dos vinculos devolvidos por GET /me/memberships }
+      responses:
+        '200':
+          description: OK -- vinculo ativo trocado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionUser' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: CSRF ausente/invalido, ou o vinculo solicitado nao pertence a esta identidade
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /me:
+    get:
+      tags: [Conta]
+      summary: Perfil, tenant, unidade e permissoes efetivas do usuario autenticado
+      operationId: getMe
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/memberships:
+    get:
+      tags: [Conta, Sessao]
+      summary: Lista os vinculos (tenant/unidade/papeis) reais da sessao atual, marcando o ativo
+      description: |
+        Exige sessao real (cookie) -- o fixture de bearer token de dev/teste nao tem conceito
+        de vinculos multiplos e e recusado aqui (401). Vinculos vem exclusivamente do login
+        desta identidade, nunca de outra.
+      operationId: listMemberships
+      security: [cookieAuth: []]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MembershipsResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /onboarding/tenant:
+    post:
+      tags: [Conta, Sessao]
+      summary: Cria explicitamente um novo tenant comercial para uma identidade verificada
+      description: |
+        Nao e login e nunca e autoprovisionamento por e-mail. O backend verifica o id_token,
+        normaliza/valida a empresa, cria o tenant + unidade Principal + primeiro Owner como
+        um unico agregado no runtime atual e emite sessao server-side. Documento/CNPJ, quando
+        informado, e unico entre tenants; duplicata exige recuperacao/reativacao, nao novo tenant.
+      operationId: createCommercialTenant
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TenantOnboardingRequest' }
+      responses:
+        '201':
+          description: Tenant criado e sessao emitida
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TenantOnboardingResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Origem/identidade nao autorizada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Documento ja associado a outro tenant ou estado incompativel
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /onboarding/invitations/accept:
+    post:
+      tags: [Conta, Sessao]
+      summary: Aceita convite vinculando identidade verificada ao tenant/unidade convidados
+      operationId: acceptCommercialInvitation
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InvitationAcceptRequest' }
+      responses:
+        '200':
+          description: Convite aceito e sessao emitida
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TenantOnboardingResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Identidade nao corresponde ao e-mail do convite
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Convite invalido, expirado ou ja utilizado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /memberships:
+    get:
+      tags: [Conta]
+      summary: Lista usuarios/vinculos do tenant atual para Owner/Admin
+      operationId: listCommercialMembers
+      security: [cookieAuth: []]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CommercialMembership' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Usuario sem MEMBER_VIEW
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /member-invitations:
+    get:
+      tags: [Conta]
+      summary: Lista convites do tenant atual
+      operationId: listMemberInvitations
+      security: [cookieAuth: []]
+      parameters:
+        - $ref: '#/components/parameters/StepUpToken'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MemberInvitation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+    post:
+      tags: [Conta]
+      summary: Cria convite de usuario no tenant/unidade atuais
+      description: |
+        Owner/Admin podem convidar. Admin nao pode criar Owner. O token bruto de aceite e
+        devolvido somente nesta primeira criacao; o servidor persiste apenas seu hash.
+      operationId: createMemberInvitation
+      security: [cookieAuth: []]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InvitationCreateRequest' }
+      responses:
+        '201':
+          description: Convite criado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MemberInvitation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '409':
+          description: Usuario ja ativo ou convite pendente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: Limite de usuarios do plano atingido
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /memberships/{membershipId}/deactivate:
+    post:
+      tags: [Conta]
+      summary: Desativa acesso sem apagar historico e revoga sessoes associadas
+      operationId: deactivateCommercialMember
+      security: [cookieAuth: []]
+      parameters:
+        - name: membershipId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Usuario desativado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommercialMembership' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Auto-desativacao/ultimo Owner ou estado invalido
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /memberships/{membershipId}/reactivate:
+    post:
+      tags: [Conta]
+      summary: Reativa o mesmo vinculo preservando identidade e historico
+      operationId: reactivateCommercialMember
+      security: [cookieAuth: []]
+      parameters:
+        - name: membershipId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Usuario reativado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommercialMembership' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429':
+          description: Limite de usuarios do plano atingido
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /brand-profiles:
+    get:
+      tags: [Marca]
+      summary: Lista Brand Kits do tenant
+      operationId: listBrandProfiles
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BrandProfile' }
+    post:
+      tags: [Marca]
+      summary: Cria Brand Kit
+      operationId: createBrandProfile
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BrandProfileInput' }
+      responses:
+        '201':
+          description: Criado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandProfile' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /connections:
+    get:
+      tags: [Conexoes]
+      summary: Contas externas conectadas
+      description: Nunca retorna token, refresh token ou qualquer segredo.
+      operationId: listConnections
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Connection' }
+
+  /connections/oauth/start:
+    post:
+      tags: [Conexoes]
+      summary: Inicia fluxo OAuth para um provedor
+      description: |
+        Devolve a URL de autorizacao oficial do provedor. O app apenas abre essa URL.
+        O callback e recebido pelo backend; o token nunca transita pelo aplicativo.
+      operationId: startOAuth
+      parameters:
+        - $ref: '#/components/parameters/StepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider]
+              properties:
+                provider: { $ref: '#/components/schemas/Provider' }
+      responses:
+        '200':
+          description: URL de autorizacao
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [authorization_url, state]
+                properties:
+                  authorization_url: { type: string, format: uri }
+                  state: { type: string }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+
+  /connections/oauth/callback:
+    post:
+      tags: [Conexoes]
+      summary: Resgata o `state` do fluxo OAuth e cria a Connection (WP-04, 26/09/2026)
+      description: |
+        `state` de uso unico, amarrado ao tenant que chamou startOAuth -- nunca aceito
+        de outro tenant nem reutilizavel apos o primeiro resgate (sucesso ou falha).
+        `external_account_id`/`display_name` representam a conta selecionada pelo
+        usuario no provedor (simulado nesta etapa; nenhum provider real e contatado).
+
+        SEGURANCA (27/09/2026, achado 4 de auditoria independente): este endpoint
+        NUNCA aceita um token real do provedor no corpo da requisicao -- o TARGET
+        comercial e' a troca de OAuth ser inteiramente server-side (usuario -> Google/
+        Meta -> authorization code -> este callback -> backend troca o code por
+        tokens diretamente com o provedor -> grava no Credential Vault), sem o
+        refresh/access token do tenant jamais trafegar pelo browser. Essa troca real
+        ainda depende de um Client OAuth "Aplicativo da Web" com dominio de callback
+        publicado, que nao existe ainda (EXTERNAL_INFRASTRUCTURE, ver ADR-0013).
+      operationId: oauthCallback
+      parameters:
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state, external_account_id, display_name]
+              properties:
+                state: { type: string }
+                external_account_id: { type: string }
+                display_name: { type: string }
+      responses:
+        '201':
+          description: Connection criada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Connection' }
+        '403':
+          description: state invalido, expirado, ja usado, de outro tenant, ou reautenticacao ausente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /connections/{connectionId}:
+    delete:
+      tags: [Conexoes]
+      summary: Revoga a conexao e o segredo associado
+      operationId: revokeConnection
+      parameters:
+        - $ref: '#/components/parameters/ConnectionId'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204': { description: Revogada }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+
+  /connections/{connectionId}/capabilities:
+    get:
+      tags: [Conexoes]
+      summary: Capacidades comprovadas para esta conta, pais e versao de API
+      description: |
+        Fonte da verdade para a interface. O app so oferece acao com `supported = true`.
+        Capacidade sem `verified_at` recente e tratada como indisponivel.
+      operationId: getCapabilities
+      parameters:
+        - $ref: '#/components/parameters/ConnectionId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Capability' }
+
+  /briefs:
+    post:
+      tags: [Campanhas]
+      summary: Submete briefing e cria campanha em DRAFT
+      operationId: submitBrief
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        description: Conforme campaign-brief.schema.json, sem tenant_id (derivado do token).
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '202':
+          description: Aceito; geracao de estrategia em andamento
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Campaign' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /campaigns:
+    get:
+      tags: [Campanhas]
+      summary: Lista campanhas do tenant
+      operationId: listCampaigns
+      parameters:
+        - name: state
+          in: query
+          schema: { $ref: '#/components/schemas/CampaignState' }
+        - name: cursor
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Campaign' }
+                  next_cursor: { type: [string, 'null'] }
+
+  /campaigns/{campaignId}:
+    get:
+      tags: [Campanhas]
+      summary: Detalhe da campanha, com estado reconciliado
+      operationId: getCampaign
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Campaign' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /campaigns/{campaignId}/plan:
+    get:
+      tags: [Campanhas]
+      summary: Ultima versao do plano proposto
+      description: Conforme campaign-plan.schema.json. Inclui proveniencia da IA e justificativa.
+      operationId: getCampaignPlan
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: object }
+
+  /campaigns/{campaignId}/plan/regenerate:
+    post:
+      tags: [Campanhas]
+      summary: Solicita nova versao do plano com ajustes do usuario
+      operationId: regeneratePlan
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                adjustments: { type: string, maxLength: 2000 }
+      responses:
+        '202': { description: Geracao iniciada }
+        '409': { $ref: '#/components/responses/InvalidState' }
+
+  /campaigns/{campaignId}/validate:
+    post:
+      tags: [Campanhas]
+      summary: Valida plano contra politica, orcamento e capacidades
+      description: |
+        Nao produz efeito externo. Emite `policy_decision_id` quando aprovavel.
+        Este e o unico caminho para obter autorizacao de publicacao.
+      operationId: validateCampaign
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+      responses:
+        '200':
+          description: Resultado da validacao
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyDecision' }
+        '409': { $ref: '#/components/responses/InvalidState' }
+
+  /campaigns/{campaignId}/publish:
+    post:
+      tags: [Campanhas]
+      summary: Publica nas contas autorizadas
+      description: |
+        Exige `policy_decision_id` valido e nao expirado, aprovacao humana registrada e
+        `Idempotency-Key`. Responde 202: publicacao e assincrona e so vira ACTIVE apos
+        reconciliacao com ID externo confirmado por canal.
+      operationId: publishCampaign
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/StepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [policy_decision_id, approval_id]
+              properties:
+                policy_decision_id: { type: string, format: uuid }
+                approval_id: { type: string, format: uuid }
+      responses:
+        '202':
+          description: Publicacao iniciada (Saga aberta)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Campaign' }
+        '403': { $ref: '#/components/responses/ApprovalRequired' }
+        '409': { $ref: '#/components/responses/InvalidState' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /campaigns/{campaignId}/pause:
+    post:
+      tags: [Campanhas]
+      summary: Pausa a campanha em todos os canais
+      operationId: pauseCampaign
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202': { description: Pausa solicitada }
+
+  /campaigns/{campaignId}/resume:
+    post:
+      tags: [Campanhas]
+      summary: Retoma uma campanha pausada (PAUSED -> ACTIVE)
+      description: |
+        Fase 4, item A da missao de reconciliacao/takeover (26/09/2026): o dominio
+        (campaia_core/states.py) ja tinha a transicao PAUSED -> ACTIVE modelada e
+        testada (guarda `_guard_resume`, bloqueia se o kill switch estiver ativo) --
+        so faltava exposicao via API. Exige o mesmo nivel de cautela que publicar
+        (step-up), pois volta a gerar gasto externo real; NAO exige nova aprovacao
+        humana porque a guarda de dominio para esta transicao especifica nao exige
+        uma (diferente de APPROVED -> PUBLISHING, que exige `approval_id`).
+      operationId: resumeCampaign
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/StepUpToken'
+      responses:
+        '202':
+          description: Retomada solicitada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Campaign' }
+        '409': { $ref: '#/components/responses/InvalidState' }
+
+  /campaigns/{campaignId}/budget:
+    patch:
+      tags: [Governanca]
+      summary: Altera orcamento
+      description: |
+        Aumento relevante exige aprovacao humana e step-up. Variacao percentual acima do
+        limite configurado e recusada com 403, nao "ajustada automaticamente".
+      operationId: updateBudget
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/StepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [daily_cap, approval_id]
+              properties:
+                daily_cap: { type: number, exclusiveMinimum: 0 }
+                total_amount: { type: number, exclusiveMinimum: 0 }
+                approval_id: { type: string, format: uuid }
+      responses:
+        '202': { description: Alteracao aceita }
+        '403': { $ref: '#/components/responses/ApprovalRequired' }
+
+  /approvals:
+    get:
+      tags: [Governanca]
+      summary: Aprovacoes pendentes do usuario
+      operationId: listApprovals
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ApprovalRequest' }
+    post:
+      tags: [Governanca]
+      summary: Cria um pedido de aprovacao pendente para uma campanha (WP-05, 26/09/2026)
+      description: |
+        Nao documentado anteriormente (achado, ver api/routes_approvals.py::create_approval):
+        os fluxos gated por aprovacao (publicar, mudar verba, mudar autonomia) exigem uma
+        ApprovalRequest ja registrada, mas nenhum endpoint a criava no contrato -- sem isto,
+        POST /approvals/{id}/decision nao tinha nada para decidir. Este e' um criador
+        minimo: nao produz nenhum efeito de dominio por si so.
+      operationId: createApproval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [campaign_id, kind]
+              properties:
+                campaign_id: { type: string }
+                kind: { type: string, enum: [PUBLISH, BUDGET_CHANGE, AUTONOMY_CHANGE] }
+                amount: { type: [string, 'null'] }
+                requires_dual_approval: { type: boolean, default: false }
+      responses:
+        '201':
+          description: Pedido de aprovacao criado (PENDING)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /approvals/{approvalId}/decision:
+    post:
+      tags: [Governanca]
+      summary: Aprova, rejeita ou pede ajuste
+      description: |
+        Registra ator, momento, versao do plano e justificativa na trilha imutavel.
+        Aprovacao dupla, quando exigida pela politica, so se completa com dois atores distintos.
+      operationId: decideApproval
+      parameters:
+        - name: approvalId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/StepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [APPROVE, REJECT, REQUEST_CHANGES] }
+                reason: { type: string, maxLength: 1000 }
+      responses:
+        '200':
+          description: Decisao registrada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalRequest' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '409':
+          description: Decisao ja registrada ou aprovador nao elegivel
+
+  /autonomy:
+    get:
+      tags: [Governanca]
+      summary: Nivel de autonomia vigente e limites
+      operationId: getAutonomy
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AutonomySettings' }
+    put:
+      tags: [Governanca]
+      summary: Altera nivel de autonomia
+      description: Sempre exige aprovacao humana e step-up, em qualquer nivel atual.
+      operationId: setAutonomy
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/StepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [level, approval_id]
+              properties:
+                level: { type: integer, minimum: 0, maximum: 3 }
+                approval_id: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Alterado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AutonomySettings' }
+        '403': { $ref: '#/components/responses/ApprovalRequired' }
+
+  /kill-switch:
+    post:
+      tags: [Governanca]
+      summary: Aciona parada de emergencia
+      description: |
+        Escopos: CAMPAIGN, ACCOUNT, TENANT, PLATFORM, GLOBAL.
+        E o unico caminho que dispensa fila normal de decisao, porque so REDUZ efeito.
+        Nunca pode ampliar efeito. Ainda assim gera evento e auditoria.
+        `scope=GLOBAL` e' fail-closed (403 PERMISSION_DENIED) para qualquer chamador
+        comum de tenant (27/09/2026, correcao de seguranca Fase C1): nenhuma autoridade
+        de PLATFORM_ADMIN existe ainda neste sistema, e o valor anterior permitia que um
+        tenant qualquer pausasse campanhas de outros tenants so por ter KILL_SWITCH no
+        proprio escopo. Reservado para quando essa autoridade existir de verdade.
+      operationId: activateKillSwitch
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scope, reason]
+              properties:
+                scope: { type: string, enum: [CAMPAIGN, ACCOUNT, TENANT, PLATFORM, GLOBAL] }
+                target_id: { type: [string, 'null'], format: uuid }
+                reason: { type: string, maxLength: 500 }
+      responses:
+        '202':
+          description: Acionado; pausa propagando
+          content:
+            application/json:
+              # Achado da reconciliacao WP-08 (26/09/2026): o corpo real de
+              # `POST /kill-switch` (backend/api/routes_campaigns.py::kill_switch) sempre
+              # devolve este formato -- confirmado por execucao real
+              # (`tests_api/test_smoke_endpoints.py::test_kill_switch_tenant_scope`
+              # ja asserta `affected_campaign_ids`), mas o contrato nunca declarava um
+              # schema de resposta -- aditivo, sem mudanca de comportamento do backend.
+              schema:
+                type: object
+                properties:
+                  scope: { type: string, enum: [CAMPAIGN, ACCOUNT, TENANT, PLATFORM, GLOBAL] }
+                  affected_campaign_ids:
+                    type: array
+                    items: { type: string, format: uuid }
+
+  /campaigns/{campaignId}/insights:
+    get:
+      tags: [Metricas]
+      summary: Metricas reconciliadas da campanha
+      operationId: getInsights
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsightSeries' }
+
+  /audit-events:
+    get:
+      tags: [Governanca]
+      summary: Trilha de auditoria do tenant
+      operationId: listAuditEvents
+      parameters:
+        - name: campaign_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: cursor
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditEvent' }
+                  next_cursor: { type: [string, 'null'] }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token de sessao. O `tenant_id` e derivado dele e nunca aceito do cliente.
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: campaia_session
+      description: |
+        Sessao real Web (ADR-0018/WP-02) -- cookie HttpOnly/Secure/SameSite=Lax, opaco,
+        emitido por POST /auth/session apos login real via Google Identity Platform. O
+        `tenant_id` e derivado da sessao server-side, nunca aceito do cliente. Mutacoes sob
+        este esquema exigem tambem o header X-CSRF-Token (ver parametro CsrfToken) --
+        double-submit cookie, diferente do fluxo bearerAuth (mobile), que nao usa CSRF.
+
+  parameters:
+    CsrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema: { type: string }
+      description: |
+        Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+        login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+        servidor. Ausente/invalido -> 403.
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 16, maxLength: 128 }
+      description: Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original.
+    StepUpToken:
+      name: X-Step-Up-Token
+      in: header
+      required: true
+      schema: { type: string }
+      description: Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao.
+    CampaignId:
+      name: campaignId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ConnectionId:
+      name: connectionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Unauthorized:
+      description: Nao autenticado
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Nao encontrado neste tenant
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ValidationError:
+      description: Payload invalido segundo o schema canonico
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    InvalidState:
+      description: Transicao de estado nao permitida pela maquina de estados
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    StepUpRequired:
+      description: Reautenticacao necessaria
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ApprovalRequired:
+      description: Aprovacao humana ausente, invalida ou expirada
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Provider:
+      type: string
+      enum: [GOOGLE_ADS, META, WHATSAPP]
+
+    Channel:
+      type: string
+      enum: [GOOGLE_ADS, META_FACEBOOK, META_INSTAGRAM, WHATSAPP]
+
+    CampaignState:
+      type: string
+      enum: [DRAFT, STRATEGY_READY, ASSETS_READY, VALIDATED, AWAITING_APPROVAL, APPROVED, PUBLISHING, ACTIVE, OPTIMIZING, PAUSED, COMPLETED, FAILED]
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: |
+            Taxonomia canonica. Codigos de provedor NUNCA vazam para o cliente.
+          enum: [UNAUTHENTICATED, PERMISSION_DENIED, STEP_UP_REQUIRED, APPROVAL_REQUIRED,
+                 VALIDATION_FAILED, INVALID_STATE, CAPABILITY_UNSUPPORTED, BUDGET_LIMIT,
+                 RATE_LIMITED, QUOTA_EXHAUSTED, POLICY_VIOLATION, KILL_SWITCH_ACTIVE,
+                 NOT_FOUND, TRANSIENT, UNKNOWN]
+        message: { type: string, description: Texto compreensivel por usuario nao tecnico. }
+        details: { type: [object, 'null'] }
+        assisted_flow_url:
+          type: [string, 'null']
+          format: uri
+          description: Quando a API do provedor nao permite a acao, aponta o portal oficial. Nunca simular sucesso.
+
+    Me:
+      type: object
+      properties:
+        user_id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        business_unit_id: { type: [string, 'null'], format: uuid }
+        roles: { type: array, items: { type: string } }
+        permissions: { type: array, items: { type: string } }
+        mfa_enabled: { type: boolean }
+
+    SessionUser:
+      type: object
+      description: |
+        Corpo real de POST/GET /auth/session e POST /auth/session/switch
+        (backend/api/models.py::SessionLoginResponse). user_id/tenant_id NAO sao UUID no
+        backend real hoje (ex.: "user-owner-1", "demo-tenant") -- por isso `type: string`
+        simples aqui, sem `format: uuid` (divergencia pre-existente do schema Me, fora do
+        escopo desta correcao pontual).
+      required: [user_id, tenant_id, business_unit_id, roles, csrf_token]
+      properties:
+        user_id: { type: string }
+        tenant_id: { type: string }
+        business_unit_id: { type: [string, 'null'] }
+        roles: { type: array, items: { type: string } }
+        csrf_token:
+          type: string
+          description: Devolver no header X-CSRF-Token em toda mutacao subsequente sob cookieAuth.
+
+    MembershipItem:
+      type: object
+      required: [user_id, tenant_id, business_unit_id, roles, active]
+      properties:
+        user_id: { type: string, description: Identificador do VINCULO -- valor usado em POST /auth/session/switch. }
+        tenant_id: { type: string }
+        business_unit_id: { type: [string, 'null'] }
+        roles: { type: array, items: { type: string } }
+        active: { type: boolean, description: true para exatamente um item -- o vinculo ativo na sessao agora. }
+
+    MembershipsResponse:
+      type: object
+      required: [memberships]
+      properties:
+        memberships:
+          type: array
+          items: { $ref: '#/components/schemas/MembershipItem' }
+
+    TenantOnboardingRequest:
+      type: object
+      required: [id_token, company_name, segment]
+      properties:
+        id_token: { type: string }
+        company_name: { type: string, minLength: 1, maxLength: 160 }
+        document: { type: [string, 'null'], maxLength: 32 }
+        segment: { type: string, minLength: 1, maxLength: 120 }
+        language: { type: string, default: pt-BR, minLength: 2, maxLength: 20 }
+        timezone: { type: string, default: America/Sao_Paulo, maxLength: 80 }
+        entry_mode: { type: string, enum: [TRIAL, PURCHASE], default: TRIAL }
+
+    OrganizationSummary:
+      type: object
+      required: [tenant_id, name, segment, language, timezone, entry_mode, status, created_at]
+      properties:
+        tenant_id: { type: string }
+        name: { type: string }
+        document: { type: [string, 'null'] }
+        segment: { type: string }
+        language: { type: string }
+        timezone: { type: string }
+        entry_mode: { type: string, enum: [TRIAL, PURCHASE] }
+        plan_id:
+          type: [string, 'null']
+          description: Plano atribuido exclusivamente pelo servidor/billing; nunca aceito como entitlement no onboarding publico.
+        status: { type: string, enum: [ACTIVE, INACTIVE] }
+        default_business_unit_id: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+
+    CommercialMembership:
+      type: object
+      required: [id, tenant_id, email, roles, status, created_at, updated_at]
+      properties:
+        id: { type: string }
+        tenant_id: { type: string }
+        email: { type: string, format: email }
+        roles: { type: array, items: { type: string } }
+        business_unit_id: { type: [string, 'null'] }
+        status: { type: string, enum: [ACTIVE, INACTIVE] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        deactivated_at: { type: [string, 'null'], format: date-time }
+
+    TenantOnboardingResponse:
+      type: object
+      required: [session, organization, membership]
+      properties:
+        session: { $ref: '#/components/schemas/SessionUser' }
+        organization: { $ref: '#/components/schemas/OrganizationSummary' }
+        membership: { $ref: '#/components/schemas/CommercialMembership' }
+
+    InvitationCreateRequest:
+      type: object
+      required: [email, roles]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        roles:
+          type: array
+          minItems: 1
+          items: { type: string, enum: [OWNER, ADMIN, FINANCE, APPROVER, MARKETER, VIEWER] }
+        business_unit_id: { type: [string, 'null'] }
+
+    MemberInvitation:
+      type: object
+      required: [id, email, roles, status, created_at, expires_at]
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        roles: { type: array, items: { type: string } }
+        business_unit_id: { type: [string, 'null'] }
+        status: { type: string, enum: [PENDING, ACCEPTED, REVOKED, EXPIRED] }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        accepted_by: { type: [string, 'null'] }
+        accept_token:
+          type: [string, 'null']
+          description: Presente somente na resposta da primeira criacao; nunca persistido em claro.
+
+    InvitationAcceptRequest:
+      type: object
+      required: [id_token, accept_token]
+      properties:
+        id_token: { type: string }
+        accept_token: { type: string, minLength: 16, maxLength: 512 }
+
+    BrandProfileInput:
+      type: object
+      required: [name, tone]
+      properties:
+        name: { type: string, maxLength: 120 }
+        tone: { type: string, maxLength: 200 }
+        colors: { type: array, items: { type: string } }
+        differentiators: { type: array, items: { type: string } }
+        restrictions:
+          type: array
+          items: { type: string }
+          description: Alimenta o Policy Engine deterministico, nao apenas o prompt.
+
+    BrandProfile:
+      allOf:
+        - $ref: '#/components/schemas/BrandProfileInput'
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            created_at: { type: string, format: date-time }
+
+    Connection:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        provider: { $ref: '#/components/schemas/Provider' }
+        external_account_id: { type: string }
+        display_name: { type: string }
+        status: { type: string, enum: [ACTIVE, EXPIRED, REVOKED, NEEDS_REAUTH] }
+        api_version: { type: string }
+        last_synced_at: { type: [string, 'null'], format: date-time }
+
+    Capability:
+      type: object
+      properties:
+        # Achado da reconciliacao WP-09 (26/09/2026): `GET
+        # /connections/{connectionId}/capabilities` sempre devolve estes 3 campos
+        # (backend/api/models.py::CapabilityResponse, confirmado por execucao real de
+        # model_dump_json()), mas o contrato nunca os declarava -- aditivo, sem mudanca
+        # de comportamento do backend, mesma classe dos achados de WP-06/07/08.
+        provider: { type: string }
+        country: { type: string }
+        api_version: { type: string }
+        capability_key: { type: string }
+        supported: { type: boolean }
+        requires_approval: { type: boolean }
+        evidence_url: { type: [string, 'null'], format: uri }
+        # ACHADO 20 (Fase 3 desta reconciliacao, 26/09/2026): nullable -- o backend real
+        # nunca fabrica um "verificado agora" quando nenhuma verificacao de fato ocorreu
+        # para o modo de conexao consultado; None e o valor honesto nesse caso. Aditivo
+        # (so amplia o tipo existente).
+        verified_at: { type: [string, 'null'], format: date-time }
+        notes: { type: [string, 'null'] }
+
+    Campaign:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        state: { $ref: '#/components/schemas/CampaignState' }
+        objective: { type: string }
+        channels:
+          type: array
+          items: { $ref: '#/components/schemas/Channel' }
+        external_resources:
+          type: array
+          description: Vazio ate a reconciliacao confirmar. Estado ACTIVE exige ao menos um ID externo.
+          items:
+            type: object
+            properties:
+              channel: { $ref: '#/components/schemas/Channel' }
+              external_resource_id: { type: string }
+              sync_status: { type: string, enum: [PENDING, CONFIRMED, DIVERGENT] }
+              last_synced_at: { type: [string, 'null'], format: date-time }
+        budget:
+          type: object
+          properties:
+            currency: { type: string }
+            # Achado (reconciliacao PR#6, 26/09/2026, confirmado por execucao real de
+            # Decimal.model_dump_json() nesta sessao): estes 3 campos sao `Decimal` em
+            # api/models.py e o pydantic v2 sempre serializa Decimal como STRING em
+            # model_dump_json(), nunca como number. O contrato dizia `number` desde a
+            # construcao original -- nunca era verdade em runtime. Corrigido para
+            # refletir o CURRENT real, mesmo padrao ja usado em ApprovalRequest.amount.
+            total_amount: { type: string }
+            daily_cap: { type: string }
+            spent_to_date: { type: string }
+        created_at: { type: string, format: date-time }
+
+    PolicyDecision:
+      type: object
+      required: [outcome, requires_human_approval, requires_dual_approval, findings]
+      properties:
+        policy_decision_id: { type: [string, 'null'], format: uuid }
+        outcome: { type: string, enum: [APPROVABLE, BLOCKED, NEEDS_CHANGES] }
+        expires_at: { type: [string, 'null'], format: date-time }
+        requires_human_approval: { type: boolean }
+        requires_dual_approval: { type: boolean }
+        findings:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              severity: { type: string, enum: [INFO, WARNING, BLOCKING] }
+              explanation: { type: string }
+
+    ApprovalRequest:
+      type: object
+      required: [id, campaign_id, kind, requested_by, status, requires_dual_approval, decided_by]
+      properties:
+        id: { type: string, format: uuid }
+        campaign_id: { type: string, format: uuid }
+        reason: { type: string, description: Gatilho que exigiu aprovacao humana. }
+        # Campos reais sempre serializados pelo backend (api/models.py::ApprovalResponse)
+        # que nunca tinham sido documentados aqui (achado, WP-05, 26/09/2026).
+        kind: { type: string, enum: [PUBLISH, BUDGET_CHANGE, AUTONOMY_CHANGE] }
+        requested_by: { type: string, description: user_id de quem propos -- nunca pode decidir a propria proposta (segregacao de funcoes). }
+        amount: { type: [string, 'null'] }
+        plan_version: { type: integer }
+        # APPLIED adicionado na Fase 3 desta reconciliacao (achado 19): confirmado por
+        # execucao real que uma ApprovalRequest APPROVED nunca era marcada como consumida
+        # apos autorizar de fato uma mudanca (budget/autonomy) -- o mesmo approval_id
+        # podia ser reutilizado indefinidamente com uma Idempotency-Key nova. APPLIED e
+        # o novo estado terminal para "ja usada para aplicar a mudanca que autorizava".
+        # Aditivo -- nenhum valor existente do enum foi removido ou renomeado.
+        status: { type: string, enum: [PENDING, APPROVED, REJECTED, CHANGES_REQUESTED, EXPIRED, APPLIED] }
+        requires_dual_approval: { type: boolean }
+        decided_by: { type: array, items: { type: string, format: uuid } }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+
+    AutonomySettings:
+      type: object
+      properties:
+        level: { type: integer, minimum: 0, maximum: 3 }
+        level_label: { type: string, enum: [ASSISTENTE, APROVADO, LIMITADO, OPERACIONAL] }
+        # Achado da reconciliacao WP-07 (26/09/2026): GET /autonomy sempre devolve este
+        # campo de fato (backend/api/models.py::AutonomyResponse, confirmado por execucao
+        # real de model_dump_json()), mas o contrato nunca o declarava -- aditivo, sem
+        # mudanca de comportamento do backend, mesma classe de achado do budget (WP-06).
+        max_level_allowed: { type: integer, minimum: 0, maximum: 3 }
+        always_require_human:
+          type: array
+          description: Gatilhos que exigem humano em QUALQUER nivel.
+          items: { type: string }
+        max_budget_change_pct: { type: number }
+        updated_at: { type: string, format: date-time }
+
+    InsightSeries:
+      type: object
+      properties:
+        campaign_id: { type: string, format: uuid }
+        last_synced_at: { type: [string, 'null'], format: date-time }
+        # WP-11 (achado 15): InsightSeriesResponse.model_dump_json() real sempre inclui
+        # `note` (o backend usa este campo para declarar honestamente, ao cliente, que
+        # ainda nao ha camada de analytics real -- "No analytics layer implemented yet
+        # in campaia_core; this is an honest placeholder, not fabricated data.") --
+        # confirmado por execucao direta nesta sessao. Contrato nunca declarava este
+        # campo -- aditivo, sem mudanca de comportamento do backend.
+        note: { type: string }
+        points:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              channel: { $ref: '#/components/schemas/Channel' }
+              impressions: { type: integer }
+              clicks: { type: integer }
+              spend: { type: number }
+              conversions: { type: integer }
+              cpa: { type: [number, 'null'] }
+
+    AuditEvent:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        occurred_at: { type: string, format: date-time }
+        actor_kind: { type: string, enum: [USER, SYSTEM, AI, EXTERNAL_PROVIDER] }
+        actor_id: { type: [string, 'null'], format: uuid }
+        action: { type: string }
+        target: { type: string }
+        policy_decision_id: { type: [string, 'null'], format: uuid }
+        evidence: { type: [object, 'null'] }
