@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "../../../components/Button";
+import { GoogleIdentityButton } from "../../../components/GoogleIdentityButton";
 import { Card } from "../../../components/Card";
 import { ErrorState } from "../../../components/ErrorState";
 import { Input } from "../../../components/Input";
@@ -10,6 +11,7 @@ import { PageContainer } from "../../../components/PageContainer";
 import { PageHeader } from "../../../components/PageHeader";
 import { Spinner } from "../../../components/Spinner";
 import { ApiClientError } from "../../../lib/api/client";
+import { isGoogleIdentityConfigured } from "../../../lib/auth/google-identity-client";
 import {
   TEST_IDENTITY_OPTIONS,
   isTestIdentityModeEnabled,
@@ -59,6 +61,7 @@ function LoginForm() {
   const [entryMode, setEntryMode] = useState<"TRIAL" | "PURCHASE">("TRIAL");
   const onboardingIdempotencyKey = useRef<string | null>(null);
   const testMode = isTestIdentityModeEnabled();
+  const googleIdentityConfigured = isGoogleIdentityConfigured();
 
   const rawNext = searchParams.get("next");
   const nextPath =
@@ -76,7 +79,7 @@ function LoginForm() {
     );
   }
 
-  async function handleTestSignIn(idToken: string) {
+  async function handleIdentitySignIn(idToken: string) {
     setPending(true);
     setError(null);
     setOnboardingIdToken(null);
@@ -204,7 +207,7 @@ function LoginForm() {
             {TEST_IDENTITY_OPTIONS.map((option) => (
               <Button
                 key={option.id}
-                onClick={() => handleTestSignIn(option.id)}
+                onClick={() => handleIdentitySignIn(option.id)}
                 disabled={pending}
                 data-testid={"test-identity-" + option.id}
               >
@@ -212,10 +215,24 @@ function LoginForm() {
               </Button>
             ))}
           </div>
+        ) : googleIdentityConfigured ? (
+          <div className={styles.googleIdentity}>
+            <p className={styles.testNotice}>
+              Continue com sua Conta Google. O CampaIA usa a identidade apenas para
+              autenticar você; tenant, unidade e permissões continuam controlados pelo
+              próprio CampaIA.
+            </p>
+            <GoogleIdentityButton
+              disabled={pending}
+              onIdToken={handleIdentitySignIn}
+              onError={setError}
+              text="continue_with"
+            />
+          </div>
         ) : (
           <ErrorState
-            title="Login com Google indisponível"
-            description="O Google Identity Platform real ainda não está provisionado neste ambiente. O fluxo comercial está fail-closed até a credencial/infraestrutura externa existir."
+            title="Login com Google não configurado"
+            description="A configuração pública do Google Identity Platform ainda não está disponível neste ambiente. O acesso permanece fail-closed."
           />
         )}
       </Card>
