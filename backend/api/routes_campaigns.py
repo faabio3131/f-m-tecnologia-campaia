@@ -719,15 +719,24 @@ async def kill_switch(request: Request) -> JSONResponse:
                         affected_tenants[record.campaign_id] = record.tenant_id
 
         elif body.scope == "GLOBAL":
-            # Deliberate, documented exception to tenant isolation: GLOBAL kill-switch is
-            # the one operation in this system that must cross every tenant by definition
-            # (achado 13). It still only ever pauses (reduces effect), never widens it, and
-            # every affected campaign is recorded in ITS OWN tenant's audit log below
-            # (achado 17 fix -- see audit loop after this branch).
-            for record in state.campaigns._items.values():
-                _try_pause(record, body.reason, affected)
-                if record.campaign_id in affected:
-                    affected_tenants[record.campaign_id] = record.tenant_id
+            # SECURITY FIX (Fase C1, 27/09/2026 -- auditoria independente): a versao
+            # anterior tratava GLOBAL como "excecao deliberada ao isolamento de tenant",
+            # mas a unica autorizacao verificada era Permission.KILL_SWITCH, concedida a
+            # OWNER/FINANCE/APPROVER *dentro do proprio tenant*. Isso permitia que
+            # QUALQUER tenant pausasse campanhas de QUALQUER outro tenant so por ter
+            # KILL_SWITCH no seu proprio escopo -- confirmado por teste real
+            # (test_kill_switch_global_scope_crosses_tenants, tests_api/test_smoke_endpoints.py)
+            # que provava a falha como se fosse comportamento correto. Nao existe hoje
+            # nenhum conceito de PLATFORM_ADMIN (autoridade de plataforma, distinta da
+            # autoridade comum de tenant) em campaia_core.permissions -- ate essa
+            # autoridade existir de verdade, GLOBAL fica fail-closed: nunca executa,
+            # nunca afeta nenhuma campanha, de nenhum tenant, incluindo o do proprio
+            # chamador.
+            raise ApiError(
+                "PERMISSION_DENIED",
+                "scope=GLOBAL exige autoridade de plataforma (PLATFORM_ADMIN), que ainda "
+                "nao existe neste sistema. Nenhuma campanha foi afetada.",
+            )
 
         # Always record the event in the CALLER's own tenant, even when nothing was
         # affected there directly (e.g. a GLOBAL call from a tenant with no campaigns of

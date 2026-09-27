@@ -228,7 +228,12 @@ class TestSmokeEndpoints(unittest.TestCase):
         # DRAFT campaign is not pausable so it is simply skipped, not an error.
         self.assertEqual(r.json()["affected_campaign_ids"], [])
 
-    def test_kill_switch_global_scope_crosses_tenants(self):
+    def test_kill_switch_global_scope_is_fail_closed_without_platform_admin(self):
+        """SECURITY FIX (Fase C1, 27/09/2026): esta prova era invertida -- provava que
+        OTHER_OWNER (outro tenant) conseguia pausar a campanha de OWNER via scope=GLOBAL,
+        tratando isso como comportamento correto. Nao existe autoridade de PLATFORM_ADMIN
+        neste sistema; ate existir, GLOBAL tem que ser recusado para qualquer chamador
+        comum de tenant, e a campanha do outro tenant tem que continuar intocada."""
         client = make_client()
         from tests_api.test_helpers import OTHER_OWNER, publish_ready_campaign
 
@@ -246,8 +251,13 @@ class TestSmokeEndpoints(unittest.TestCase):
             headers={**OTHER_OWNER, **unique_idem()},
             json={"scope": "GLOBAL", "reason": "global incident"},
         )
-        self.assertEqual(r.status_code, 202, r.text)
-        self.assertIn(camp["id"], r.json()["affected_campaign_ids"])
+        self.assertEqual(r.status_code, 403, r.text)
+        self.assertEqual(r.json()["code"], "PERMISSION_DENIED")
+
+        # A campanha do OWNER (outro tenant) tem que continuar publicada, nunca pausada
+        # por um chamador sem autoridade de plataforma.
+        check = client.get(f"/campaigns/{camp['id']}", headers=OWNER)
+        self.assertEqual(check.json()["state"], "ACTIVE")
 
     def test_insights_is_honest_placeholder(self):
         client = make_client()

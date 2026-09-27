@@ -651,6 +651,11 @@ paths:
         Escopos: CAMPAIGN, ACCOUNT, TENANT, PLATFORM, GLOBAL.
         E o unico caminho que dispensa fila normal de decisao, porque so REDUZ efeito.
         Nunca pode ampliar efeito. Ainda assim gera evento e auditoria.
+        `scope=GLOBAL` e' fail-closed (403 PERMISSION_DENIED) para qualquer chamador
+        comum de tenant (27/09/2026, correcao de seguranca Fase C1): nenhuma autoridade
+        de PLATFORM_ADMIN existe ainda neste sistema, e o valor anterior permitia que um
+        tenant qualquer pausasse campanhas de outros tenants so por ter KILL_SWITCH no
+        proprio escopo. Reservado para quando essa autoridade existir de verdade.
       operationId: activateKillSwitch
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
