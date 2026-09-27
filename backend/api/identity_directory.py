@@ -57,6 +57,7 @@ def seed_dev_identity_directory() -> InMemoryIdentityDirectory:
                 TokenPrincipal(
                     user_id="user-owner-1",
                     tenant_id="demo-tenant",
+                    email="owner@demo-tenant.campaia.test",
                     roles=frozenset({Role.OWNER}),
                     business_unit_id="bu-1",
                 ),
@@ -65,6 +66,7 @@ def seed_dev_identity_directory() -> InMemoryIdentityDirectory:
                 TokenPrincipal(
                     user_id="user-marketer-1",
                     tenant_id="demo-tenant",
+                    email="marketer@demo-tenant.campaia.test",
                     roles=frozenset({Role.MARKETER}),
                     business_unit_id="bu-1",
                 ),
@@ -73,6 +75,7 @@ def seed_dev_identity_directory() -> InMemoryIdentityDirectory:
                 TokenPrincipal(
                     user_id="user-approver-1",
                     tenant_id="demo-tenant",
+                    email="approver@demo-tenant.campaia.test",
                     roles=frozenset({Role.APPROVER}),
                     business_unit_id="bu-1",
                 ),
@@ -81,6 +84,7 @@ def seed_dev_identity_directory() -> InMemoryIdentityDirectory:
                 TokenPrincipal(
                     user_id="user-finance-1",
                     tenant_id="demo-tenant",
+                    email="finance@demo-tenant.campaia.test",
                     roles=frozenset({Role.FINANCE}),
                     business_unit_id="bu-1",
                 ),
@@ -89,6 +93,7 @@ def seed_dev_identity_directory() -> InMemoryIdentityDirectory:
                 TokenPrincipal(
                     user_id="user-viewer-1",
                     tenant_id="demo-tenant",
+                    email="viewer@demo-tenant.campaia.test",
                     roles=frozenset({Role.VIEWER}),
                     business_unit_id="bu-1",
                 ),
@@ -98,6 +103,7 @@ def seed_dev_identity_directory() -> InMemoryIdentityDirectory:
                 TokenPrincipal(
                     user_id="user-owner-2",
                     tenant_id="other-tenant",
+                    email="owner@other-tenant.campaia.test",
                     roles=frozenset({Role.OWNER}),
                     business_unit_id="bu-2",
                 ),
@@ -109,12 +115,14 @@ def seed_dev_identity_directory() -> InMemoryIdentityDirectory:
                 TokenPrincipal(
                     user_id="user-multi-1a",
                     tenant_id="demo-tenant",
+                    email="owner@multi-tenant.campaia.test",
                     roles=frozenset({Role.OWNER}),
                     business_unit_id="bu-1",
                 ),
                 TokenPrincipal(
                     user_id="user-multi-1b",
                     tenant_id="other-tenant",
+                    email="owner@multi-tenant.campaia.test",
                     roles=frozenset({Role.OWNER}),
                     business_unit_id="bu-2",
                 ),

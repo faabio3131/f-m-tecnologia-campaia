@@ -19,7 +19,7 @@ from starlette.responses import JSONResponse, Response
 
 from campaia_core.identity_provider import IdentityError
 
-from .deps import get_state, require_session_record
+from .deps import get_state, require_session_record, session_key_for
 from .errors import ApiError
 from .helpers import parse_body
 from .models import (
@@ -159,11 +159,17 @@ async def switch_membership(request: Request) -> JSONResponse:
     SessionStore.switch_principal) -- so o principal ativo muda. `require_session_record`
     ja valida CSRF (metodo mutante) antes de chegarmos aqui.
 
-    `step_up_at` (campaia_core.permissions.REQUIRES_STEP_UP) e' rastreado por
-    `(tenant_id, user_id)` em AppState -- como cada vinculo tem seu proprio `user_id`, o
-    novo vinculo ativo nunca tem um `step_up_at` recente registrado apos a troca, entao
-    qualquer operacao sensivel exige reautenticacao de novo, sem nenhum codigo adicional
-    aqui (a invalidacao e' inerente ao modelo, nao um efeito colateral escrito a mao).
+    SECURITY FIX (Fase 3, achado 3, 27/09/2026 -- auditoria independente): `step_up_at`
+    (campaia_core.permissions.REQUIRES_STEP_UP) e' chaveado por
+    `(tenant_id, user_id, session_key)` em AppState (Fase C3) -- so isso ja bastava para
+    o step-up de A nao valer para B na primeira troca (user_id diferente). Mas ao voltar
+    de B para A DENTRO da mesma sessao, o par (tenant_id, user_id) de A volta a ser
+    identico ao de antes, e o step-up antigo de A ressuscitava sem reautenticacao nova --
+    contra a regra exigida: QUALQUER troca de vinculo invalida TODO step-up daquela
+    sessao. Por isso esta rota chama explicitamente
+    `state.invalidate_step_up_for_session` a CADA troca bem-sucedida, antes de devolver a
+    resposta -- nao e' mais um efeito colateral implicito do modelo de chaves, e' uma
+    acao deliberada.
     """
     record = require_session_record(request)
     body = await parse_body(request, SwitchMembershipRequest)
@@ -195,6 +201,10 @@ async def switch_membership(request: Request) -> JSONResponse:
         # aqui (janela de corrida real, ainda que estreita) -- fail-closed, nunca finge
         # sucesso.
         raise ApiError("UNAUTHENTICATED", "Sessao invalida ou expirada.")
+
+    # SECURITY FIX (achado 3): toda troca de vinculo invalida TODO step-up desta sessao,
+    # inclusive o do vinculo ao qual ela volta depois (ver docstring acima).
+    state.invalidate_step_up_for_session(session_key_for(request))
 
     state.audit.append(
         tenant_id=updated.principal.tenant_id,

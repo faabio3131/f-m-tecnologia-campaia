@@ -49,25 +49,40 @@ class FakeIdTokenVerifier:
 
 OWNER_TOKEN = "fake-id-token-owner"
 OWNER_IDENTITY = VerifiedIdentity(
-    subject="google-uid-owner-1", email="owner@demo-tenant.campaia.test", email_verified=True
+    subject="google-uid-owner-1",
+    email="owner@demo-tenant.campaia.test",
+    email_verified=True,
+    auth_time=datetime.now(timezone.utc),
 )
 UNVERIFIED_TOKEN = "fake-id-token-unverified"
 UNVERIFIED_IDENTITY = VerifiedIdentity(
-    subject="google-uid-x", email="owner@demo-tenant.campaia.test", email_verified=False
+    subject="google-uid-x",
+    email="owner@demo-tenant.campaia.test",
+    email_verified=False,
+    auth_time=datetime.now(timezone.utc),
 )
 UNKNOWN_EMAIL_TOKEN = "fake-id-token-unknown-email"
 UNKNOWN_EMAIL_IDENTITY = VerifiedIdentity(
-    subject="google-uid-y", email="nao-cadastrado@example.com", email_verified=True
+    subject="google-uid-y",
+    email="nao-cadastrado@example.com",
+    email_verified=True,
+    auth_time=datetime.now(timezone.utc),
 )
 OTHER_TENANT_TOKEN = "fake-id-token-other-owner"
 OTHER_TENANT_IDENTITY = VerifiedIdentity(
-    subject="google-uid-other", email="owner@other-tenant.campaia.test", email_verified=True
+    subject="google-uid-other",
+    email="owner@other-tenant.campaia.test",
+    email_verified=True,
+    auth_time=datetime.now(timezone.utc),
 )
 #: WP-03 (25/09/2026): identidade com DOIS vinculos reais (seed_dev_identity_directory),
 #: usada pelos testes de listagem/troca de tenant/unidade abaixo.
 MULTI_TENANT_TOKEN = "fake-id-token-multi-tenant-owner"
 MULTI_TENANT_IDENTITY = VerifiedIdentity(
-    subject="google-uid-multi", email="owner@multi-tenant.campaia.test", email_verified=True
+    subject="google-uid-multi",
+    email="owner@multi-tenant.campaia.test",
+    email_verified=True,
+    auth_time=datetime.now(timezone.utc),
 )
 
 
@@ -411,7 +426,7 @@ class DevFixtureFailClosedTests(unittest.TestCase):
                 env="production",
                 tokens={
                     "leaked-fixture-token": TokenPrincipal(
-                        user_id="u", tenant_id="t", roles=frozenset({Role.OWNER})
+                        user_id="u", tenant_id="t", email="u@example.com", roles=frozenset({Role.OWNER})
                     )
                 },
             )
@@ -591,9 +606,12 @@ class MembershipsAndSwitchTests(unittest.TestCase):
         self.assertEqual(rejected[0]["target"], "user-owner-2")
 
     def test_switching_tenant_requires_fresh_step_up_for_sensitive_operations(self) -> None:
-        """step_up_at e' rastreado por (tenant_id, user_id) -- como cada vinculo tem seu
-        proprio user_id, o vinculo novo nunca tem step-up recente registrado apos a
-        troca, mesmo que o vinculo ANTERIOR tivesse acabado de se reautenticar."""
+        """step_up_at e' rastreado por (tenant_id, user_id, session_key) -- como cada
+        vinculo tem seu proprio user_id, o vinculo novo nunca tem step-up recente
+        registrado apos a troca, mesmo que o vinculo ANTERIOR tivesse acabado de se
+        reautenticar. Ver tambem
+        test_switching_a_to_b_then_back_to_a_requires_a_fresh_step_up_in_a_too (achado 3):
+        nem o vinculo ANTERIOR mantem seu proprio step-up ao ser retomado depois."""
         client = self._logged_in_multi_tenant_client()
         csrf = client.get("/auth/session").json()["csrf_token"]
 
@@ -623,6 +641,65 @@ class MembershipsAndSwitchTests(unittest.TestCase):
             headers={CSRF_HEADER_NAME: csrf},
         )
         self.assertEqual(r2.status_code, 403, r2.text)
+
+    def test_switching_a_to_b_then_back_to_a_requires_a_fresh_step_up_in_a_too(self) -> None:
+        """SECURITY FIX (achado 3, auditoria independente #3, 27/09/2026): teste REAL de
+        rota/sessao (nao FakeRequest) para o achado que a auditoria apontou -- antes desta
+        correcao, step_up_at ficava chaveado so por (tenant_id, user_id, session_key), e
+        como user-multi-1a (demo-tenant) e' o MESMO vinculo antes e depois da viagem de
+        ida e volta por other-tenant, o step-up feito em A, ANTES de qualquer troca,
+        "ressuscitava" so' por voltar a ela -- mesmo sem nenhuma reautenticacao nova.
+        A regra exigida e' categorica: QUALQUER `POST /auth/session/switch` bem-sucedido
+        invalida TODO step-up daquela sessao (ver AppState.invalidate_step_up_for_session,
+        chamado por api/routes_auth.py::switch_membership)."""
+        client = self._logged_in_multi_tenant_client()
+        csrf = client.get("/auth/session").json()["csrf_token"]
+
+        # Step-up fresco em A (demo-tenant/user-multi-1a), ANTES de qualquer troca.
+        r = client.post(
+            "/connections/oauth/start",
+            json={"provider": "GOOGLE_ADS"},
+            headers=with_step_up({CSRF_HEADER_NAME: csrf}),
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+
+        # A -> B: sem step-up novo em B, a operacao sensivel ja e' recusada (ja coberto
+        # pelo teste acima) -- aqui so' avancamos o estado da sessao para B.
+        switch_to_b = client.post(
+            "/auth/session/switch",
+            json={"user_id": "user-multi-1b"},
+            headers={CSRF_HEADER_NAME: csrf},
+        )
+        self.assertEqual(switch_to_b.status_code, 200, switch_to_b.text)
+
+        # B -> A: de volta ao MESMO vinculo (demo-tenant/user-multi-1a) que tinha um
+        # step-up fresco antes da primeira troca. Sem header de step-up novo, a operacao
+        # sensivel tem que continuar recusada -- o step-up antigo de A nao pode ter
+        # sobrevivido a viagem de ida e volta.
+        switch_back_to_a = client.post(
+            "/auth/session/switch",
+            json={"user_id": "user-multi-1a"},
+            headers={CSRF_HEADER_NAME: csrf},
+        )
+        self.assertEqual(switch_back_to_a.status_code, 200, switch_back_to_a.text)
+        self.assertEqual(switch_back_to_a.json()["tenant_id"], "demo-tenant")
+
+        r2 = client.post(
+            "/connections/oauth/start",
+            json={"provider": "GOOGLE_ADS"},
+            headers={CSRF_HEADER_NAME: csrf},
+        )
+        self.assertEqual(r2.status_code, 403, r2.text)
+        self.assertEqual(r2.json()["code"], "STEP_UP_REQUIRED")
+
+        # Com step-up novo, a operacao volta a funcionar normalmente -- prova que a
+        # recusa acima e' sobre frescor, nao um bug que quebrou o vinculo A permanentemente.
+        r3 = client.post(
+            "/connections/oauth/start",
+            json={"provider": "GOOGLE_ADS"},
+            headers=with_step_up({CSRF_HEADER_NAME: csrf}),
+        )
+        self.assertEqual(r3.status_code, 200, r3.text)
         self.assertEqual(r2.json()["code"], "STEP_UP_REQUIRED")
 
 

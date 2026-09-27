@@ -7,6 +7,9 @@ faria em produção sem projeto Google Cloud real (item 1.6).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import datetime, timezone
+
 from campaia_core.identity_provider import IdentityError, VerifiedIdentity
 
 #: Tokens fixos reconhecidos pelo harness de E2E -- nunca usados fora de testes.
@@ -27,33 +30,44 @@ E2E_TOKEN_MULTI_TENANT_OWNER = "e2e-test-id-token-multi-tenant-owner"
 #: api.identity_directory.seed_dev_identity_directory().
 E2E_TOKEN_TENANT_A_APPROVER = "e2e-test-id-token-tenant-a-approver"
 
-_IDENTITIES: dict[str, VerifiedIdentity] = {
-    E2E_TOKEN_TENANT_A_OWNER: VerifiedIdentity(
+@dataclass(frozen=True, slots=True)
+class _StaticIdentity:
+    """Igual a `VerifiedIdentity`, sem `auth_time` -- este harness gera `auth_time` a
+    cada `verify()` (achado 2, 27/09/2026), nunca uma unica vez na importacao do modulo,
+    para que um E2E de execucao longa nunca veja um `auth_time` artificialmente velho."""
+
+    subject: str
+    email: str
+    email_verified: bool
+
+
+_IDENTITIES: dict[str, _StaticIdentity] = {
+    E2E_TOKEN_TENANT_A_OWNER: _StaticIdentity(
         subject="e2e-google-uid-tenant-a-owner",
         email="owner@demo-tenant.campaia.test",
         email_verified=True,
     ),
-    E2E_TOKEN_TENANT_B_OWNER: VerifiedIdentity(
+    E2E_TOKEN_TENANT_B_OWNER: _StaticIdentity(
         subject="e2e-google-uid-tenant-b-owner",
         email="owner@other-tenant.campaia.test",
         email_verified=True,
     ),
-    E2E_TOKEN_UNVERIFIED_EMAIL: VerifiedIdentity(
+    E2E_TOKEN_UNVERIFIED_EMAIL: _StaticIdentity(
         subject="e2e-google-uid-unverified",
         email="owner@demo-tenant.campaia.test",
         email_verified=False,
     ),
-    E2E_TOKEN_UNKNOWN_EMAIL: VerifiedIdentity(
+    E2E_TOKEN_UNKNOWN_EMAIL: _StaticIdentity(
         subject="e2e-google-uid-unknown",
         email="nao-cadastrado@example.com",
         email_verified=True,
     ),
-    E2E_TOKEN_MULTI_TENANT_OWNER: VerifiedIdentity(
+    E2E_TOKEN_MULTI_TENANT_OWNER: _StaticIdentity(
         subject="e2e-google-uid-multi-tenant-owner",
         email="owner@multi-tenant.campaia.test",
         email_verified=True,
     ),
-    E2E_TOKEN_TENANT_A_APPROVER: VerifiedIdentity(
+    E2E_TOKEN_TENANT_A_APPROVER: _StaticIdentity(
         subject="e2e-google-uid-tenant-a-approver",
         email="approver@demo-tenant.campaia.test",
         email_verified=True,
@@ -70,7 +84,12 @@ class DeterministicTestIdTokenVerifier:
         identity = _IDENTITIES.get(id_token)
         if identity is None:
             raise IdentityError("E2E: id_token nao reconhecido pelo harness de teste.")
-        return identity
+        return VerifiedIdentity(
+            subject=identity.subject,
+            email=identity.email,
+            email_verified=identity.email_verified,
+            auth_time=datetime.now(timezone.utc),
+        )
 
 
 __all__ = [

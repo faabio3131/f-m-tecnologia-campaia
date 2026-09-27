@@ -59,6 +59,15 @@ class TokenPrincipal:
 
     user_id: str
     tenant_id: str
+    #: SECURITY FIX (Fase 3, achado 1, 27/09/2026 -- auditoria independente): e-mail
+    #: verificado desta identidade (o mesmo usado por `state.identity_directory` para
+    #: resolver este vinculo -- ver identity_directory.py). Campo obrigatorio (sem
+    #: default) de proposito: e' contra ELE que `api/deps.py::_is_genuine_step_up`
+    #: correlaciona o ID token real apresentado no header `X-Step-Up-Token`, para provar
+    #: que quem esta' se reautenticando e' de fato o dono desta sessao/vinculo -- nao so
+    #: um token real de QUALQUER usuario. Sem este campo, essa correlacao nao existia
+    #: (achado real: um token valido de outro usuario elevava a sessao de qualquer um).
+    email: str
     roles: frozenset[Role]
     business_unit_id: str | None = None
     mfa_enabled: bool = True
@@ -112,30 +121,35 @@ def _seed_tokens() -> dict[str, TokenPrincipal]:
         "demo-owner-token": TokenPrincipal(
             user_id="user-owner-1",
             tenant_id="demo-tenant",
+            email="owner@demo-tenant.campaia.test",
             roles=frozenset({Role.OWNER}),
             business_unit_id="bu-1",
         ),
         "demo-marketer-token": TokenPrincipal(
             user_id="user-marketer-1",
             tenant_id="demo-tenant",
+            email="marketer@demo-tenant.campaia.test",
             roles=frozenset({Role.MARKETER}),
             business_unit_id="bu-1",
         ),
         "demo-approver-token": TokenPrincipal(
             user_id="user-approver-1",
             tenant_id="demo-tenant",
+            email="approver@demo-tenant.campaia.test",
             roles=frozenset({Role.APPROVER}),
             business_unit_id="bu-1",
         ),
         "demo-finance-token": TokenPrincipal(
             user_id="user-finance-1",
             tenant_id="demo-tenant",
+            email="finance@demo-tenant.campaia.test",
             roles=frozenset({Role.FINANCE}),
             business_unit_id="bu-1",
         ),
         "demo-viewer-token": TokenPrincipal(
             user_id="user-viewer-1",
             tenant_id="demo-tenant",
+            email="viewer@demo-tenant.campaia.test",
             roles=frozenset({Role.VIEWER}),
             business_unit_id="bu-1",
         ),
@@ -143,6 +157,7 @@ def _seed_tokens() -> dict[str, TokenPrincipal]:
         "other-owner-token": TokenPrincipal(
             user_id="user-owner-2",
             tenant_id="other-tenant",
+            email="owner@other-tenant.campaia.test",
             roles=frozenset({Role.OWNER}),
             business_unit_id="bu-2",
         ),
@@ -298,7 +313,7 @@ class AppState:
     # SECURITY FIX (Fase C2/C3, 27/09/2026 -- auditoria independente): chaveado por
     # (tenant_id, user_id, session_key), nao so (tenant_id, user_id) -- um step-up nao
     # pode sobreviver a logout->login (sessao nova) nem a troca de tenant/unidade dentro
-    # da mesma sessao (ver api/deps.py::_current_session_key). Fora de test/dev-local, o
+    # da mesma sessao (ver api/deps.py::session_key_for). Fora de test/dev-local, o
     # header tambem precisa ser um ID token real verificado, nunca "qualquer valor
     # nao-vazio" -- ver api/deps.py::_is_genuine_step_up.
     step_up_at: dict[tuple[str, str, str], datetime] = field(default_factory=dict)
@@ -446,6 +461,25 @@ class AppState:
 
     def last_step_up(self, tenant_id: str, user_id: str, session_key: str) -> datetime | None:
         return self.step_up_at.get((tenant_id, user_id, session_key))
+
+    def invalidate_step_up_for_session(self, session_key: str) -> None:
+        """SECURITY FIX (Fase 3, achado 3, 27/09/2026 -- auditoria independente): chamado
+        por `api/routes_auth.py::switch_membership` a CADA troca de vinculo ativo dentro
+        da mesma sessao. Remove TODO step-up registrado para `session_key`, qualquer que
+        seja o (tenant_id, user_id) sob o qual foi gravado -- nao so o do vinculo que
+        estava ativo antes da troca.
+
+        Achado real: chavear `step_up_at` por (tenant_id, user_id, session_key) ja evita
+        que o step-up de A "vaze" para B na mesma sessao (B tem um user_id diferente, a
+        chave nao bate) -- mas ao voltar de B para A DENTRO da mesma sessao, o par
+        (tenant_id, user_id) de A volta a ser identico ao que foi gravado antes da
+        primeira troca, e o step-up antigo de A "ressuscitava" sem nenhuma reautenticacao
+        nova. A regra exigida e' categorica: QUALQUER troca de tenant/unidade invalida
+        TODO step-up daquela sessao, mesmo o de vinculos aos quais ela volta depois.
+        """
+        stale_keys = [key for key in self.step_up_at if key[2] == session_key]
+        for key in stale_keys:
+            del self.step_up_at[key]
 
     def start_oauth_state(self, state_token: str, *, tenant_id: str, provider: str, now: datetime) -> None:
         self.oauth_pending_states[state_token] = PendingOAuthState(
