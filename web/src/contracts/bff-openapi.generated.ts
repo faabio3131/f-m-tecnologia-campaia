@@ -171,7 +171,11 @@ export interface paths {
          * @description `state` de uso unico, amarrado ao tenant que chamou startOAuth -- nunca aceito
          *     de outro tenant nem reutilizavel apos o primeiro resgate (sucesso ou falha).
          *     `external_account_id`/`display_name` representam a conta selecionada pelo
-         *     usuario no provedor (simulado nesta etapa; nenhum provider real e contatado).
+         *     usuario no provedor. `credential`, quando enviado, e' guardado de verdade no
+         *     cofre (criptografado, por tenant) -- a redirecao automatica para a tela real de
+         *     consentimento do provedor ainda depende de um dominio de callback publicado
+         *     (pendencia registrada, 27/09/2026); sem `credential`, o comportamento e' o
+         *     anterior (Connection so com metadado, `mode=SIMULATOR`, sem segredo).
          */
         post: operations["oauthCallback"];
         delete?: never;
@@ -1102,6 +1106,8 @@ export interface operations {
                     state: string;
                     external_account_id: string;
                     display_name: string;
+                    /** @description Token real do provedor (ex.: refresh_token), quando ja obtido por outro meio. Nunca logado, nunca devolvido em nenhuma resposta. */
+                    credential?: Record<string, never> | null;
                 };
             };
         };

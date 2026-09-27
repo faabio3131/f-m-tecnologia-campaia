@@ -136,6 +136,13 @@ class OAuthCallbackRequest(ApiModel):
     #: hoje).
     external_account_id: str
     display_name: str
+    #: Decisao do Diretor (27/09/2026, SaaS multi-tenant): quando quem chama esta rota ja
+    #: obteve um token real do provedor (hoje, so pelo fluxo manual de sandbox -- o
+    #: redirecionamento automatico para a tela de consentimento real ainda depende de um
+    #: dominio de callback publicado, pendencia registrada), pode envia-lo aqui para ser
+    #: guardado de verdade no cofre, criptografado, por tenant. None (o default) mantem o
+    #: comportamento anterior: Connection so com metadado, `mode=SIMULATOR`, sem segredo.
+    credential: dict | None = None
 
 
 class CapabilityResponse(BaseModel):

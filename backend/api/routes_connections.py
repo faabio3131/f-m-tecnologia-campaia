@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from campaia_core.connectors import ConnectionMode, SecretRef
 from campaia_core.permissions import Permission, Resource, authorize
 
 from .deps import (
@@ -98,6 +99,21 @@ async def oauth_callback(request: Request) -> JSONResponse:
     idem_key = require_idempotency_key(request)
     body = await parse_body(request, OAuthCallbackRequest)
 
+    # Decisao do Diretor (27/09/2026, SaaS multi-tenant): a redecao automatica para a
+    # tela real de consentimento do provedor ainda depende de um dominio de callback
+    # publicado (pendencia registrada, nao simulada como pronta). Enquanto isso, se
+    # `body.credential` vier preenchido (token real obtido por outro meio -- hoje, so o
+    # fluxo manual de sandbox), este endpoint guarda-o de verdade no cofre
+    # (criptografado, por tenant) em vez de descartar; sem `credential`, comportamento
+    # idêntico ao anterior. Este guard fica ANTES do check de replay (achado 24) porque
+    # e' uma validacao de entrada pura -- nao depende de nenhum estado de uso-unico.
+    if body.credential is not None and state.vault_cipher is None:
+        raise ApiError(
+            "VALIDATION_FAILED",
+            "CAMPAIA_VAULT_KEY nao configurada -- o cofre de credenciais nao esta "
+            "disponivel para guardar um token real neste ambiente.",
+        )
+
     # ACHADO 24 (Fase 3, item 6 -- mineracao de testes da PR#6, 26/09/2026, REPRODUZIDO por
     # execucao real nesta sessao): mesma classe de bug de ordenacao ja corrigida no achado
     # 19 (patch_budget/publish_campaign/put_autonomy) -- aqui o recurso de uso-unico e o
@@ -123,11 +139,24 @@ async def oauth_callback(request: Request) -> JSONResponse:
         )
 
     def _do_create():
+        secret_ref = None
+        mode = ConnectionMode.SIMULATOR
+        if body.credential is not None:
+            secret_ref = state.vault.store(
+                fixture.tenant_id,
+                provider=pending.provider,
+                external_account_id=body.external_account_id,
+                payload=body.credential,
+                cipher=state.vault_cipher,
+            ).handle
+            mode = ConnectionMode.TEST
         conn = state.connections.create(
             fixture.tenant_id,
             provider=pending.provider,
             external_account_id=body.external_account_id,
             display_name=body.display_name,
+            secret_ref=secret_ref,
+            mode=mode,
         )
         state.audit.append(
             tenant_id=fixture.tenant_id,
@@ -155,6 +184,8 @@ async def revoke_connection(request: Request) -> Response:
         raise ApiError("NOT_FOUND", "Connection not found.")
 
     def _do_revoke():
+        if conn.secret_ref is not None:
+            state.vault.revoke(fixture.tenant_id, SecretRef(handle=conn.secret_ref))
         state.connections.revoke(fixture.tenant_id, connection_id)
         state.audit.append(
             tenant_id=fixture.tenant_id,

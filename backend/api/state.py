@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     # `from __future__ import annotations` faz toda anotacao de tipo ser string.
     from .identity_directory import IdentityDirectory
     from .session import SessionStore
+    from campaia_core.credential_vault import CredentialCipher
 
 from campaia_core.agents import AGENTS, AgentRunner
 from campaia_core.ai_gateway import AIGateway, AIProvider
@@ -44,6 +45,7 @@ from .repositories import (
     BrandProfileRepository,
     CampaignRepository,
     ConnectionRepository,
+    VaultRepository,
 )
 
 
@@ -194,6 +196,23 @@ def _default_asaas_webhook_receiver() -> AsaasWebhookReceiver:
     return AsaasWebhookReceiver(token_resolver=lambda: os.environ.get("ASAAS_WEBHOOK_TOKEN"))
 
 
+def _default_vault_cipher() -> "CredentialCipher | None":
+    """Decisao do Diretor (27/09/2026, SaaS multi-tenant): sem `CAMPAIA_VAULT_KEY`
+    configurada, o cofre de credenciais fica indisponivel (None) -- nenhuma credencial
+    real de tenant pode ser guardada nesse estado, mas isso nao impede o resto do app de
+    rodar (mesma disciplina de `_default_ai_provider`/`_default_billing_gateway`: nunca
+    crashar a aplicacao inteira por falta de uma integracao externa opcional). A rota que
+    tentar guardar uma credencial real com o cofre indisponivel recebe `VaultKeyMissing`
+    explicito, nunca um None silencioso tratado como sucesso.
+    """
+    from campaia_core.credential_vault import CredentialCipher
+
+    raw_key = os.environ.get("CAMPAIA_VAULT_KEY")
+    if not raw_key:
+        return None
+    return CredentialCipher.from_env_value(raw_key)
+
+
 def _default_ai_provider() -> AIProvider:
     """Never a real provider unless explicitly configured (same "never a real provider by
     default" discipline as `_default_billing_gateway`). If `GEMINI_API_KEY` is set in the
@@ -293,6 +312,11 @@ class AppState:
 
     brand_profiles: BrandProfileRepository = field(default_factory=BrandProfileRepository)
     connections: ConnectionRepository = field(default_factory=ConnectionRepository)
+    #: Cofre real de credenciais de terceiro, por tenant (27/09/2026). `vault_cipher`
+    #: fica None (cofre indisponivel para escrita/leitura real) enquanto
+    #: `CAMPAIA_VAULT_KEY` nao estiver configurada -- ver `_default_vault_cipher`.
+    vault: VaultRepository = field(default_factory=VaultRepository)
+    vault_cipher: "CredentialCipher | None" = field(default_factory=_default_vault_cipher)
     campaigns: CampaignRepository = field(default_factory=CampaignRepository)
     approvals: ApprovalRepository = field(default_factory=ApprovalRepository)
     audit: AuditLog = field(default_factory=AuditLog)
@@ -387,6 +411,7 @@ class AppState:
             # completely unaffected.
             self.brand_profiles = BrandProfileRepository(self.db.table("brand_profiles"))
             self.connections = ConnectionRepository(self.db.table("connections"))
+            self.vault = VaultRepository(self.db.table("credential_vault"))
             self.campaigns = CampaignRepository(self.db.table("campaigns"))
             self.approvals = ApprovalRepository(self.db.table("approvals"))
             self.audit = AuditLog(self.db.table("audit_events"))
