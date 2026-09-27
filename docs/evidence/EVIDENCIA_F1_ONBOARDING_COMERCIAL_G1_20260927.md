@@ -7,6 +7,7 @@
 **Branch:** `reconciliation/campaia-final-takeover`  
 **HEAD funcional auditado:** `9add6f540f2d81e82f4a508db11dffb6dc943232`
 **Base documental consolidada:** `711e164526e741b6ff512af932a1d107dd03ffc4`
+**Commit corretivo de integridade da árvore:** `20223fe59f3ae42e5f1b1caaa3b2fc8215f37b00`
 
 ## 1. CURRENT confirmado
 
