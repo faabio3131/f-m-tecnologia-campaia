@@ -296,6 +296,38 @@ class InvitationAndAccessLifecycleTests(unittest.TestCase):
         self.assertEqual(r.json()["code"], "QUOTA_EXHAUSTED")
         self.assertEqual(r.json()["details"]["max_users"], 1)
 
+    def test_invitation_replay_survives_quota_change_and_never_duplicates(self) -> None:
+        owner_client, owner = self._owner(plan_id="starter")
+        owner_client.app.state.campaia.plan_user_limits = {"starter": 2}
+        key = "f1-invite-replay-000001"
+        first = self._invite(
+            owner_client,
+            owner["session"]["csrf_token"],
+            email=ID_MEMBER.email,
+            roles=["VIEWER"],
+            idem=key,
+        )
+        self.assertEqual(first.status_code, 201, first.text)
+        invitation_id = first.json()["id"]
+        self.assertTrue(first.json()["accept_token"])
+
+        # Owner + pending invite now fill the cap. Exact replay must still return the
+        # original logical invitation instead of being rejected by the later quota state.
+        second = self._invite(
+            owner_client,
+            owner["session"]["csrf_token"],
+            email=ID_MEMBER.email,
+            roles=["VIEWER"],
+            idem=key,
+        )
+        self.assertEqual(second.status_code, 201, second.text)
+        self.assertEqual(second.json()["id"], invitation_id)
+        self.assertIsNone(second.json()["accept_token"])
+        invitations = owner_client.app.state.campaia.organizations.list_invitations_for_tenant(
+            owner["organization"]["tenant_id"]
+        )
+        self.assertEqual(len(invitations), 1)
+
     def test_admin_cannot_invite_owner(self) -> None:
         owner_client, owner = self._owner()
         invite_admin = self._invite(
@@ -451,6 +483,84 @@ class InvitationAndAccessLifecycleTests(unittest.TestCase):
 
 
 class CommercialOnboardingPersistenceTests(unittest.TestCase):
+    def test_deactivated_invited_membership_stays_inactive_after_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = os.path.join(tmp, "campaia-f1-lifecycle.sqlite")
+            owner = make_client(db_path=db_path)
+            created = onboard(
+                owner,
+                TOK_OWNER_A,
+                company="Lifecycle",
+                document="55555555000155",
+                idem="f1-persist-lifecycle-01",
+            )
+            self.assertEqual(created.status_code, 201, created.text)
+            owner_body = created.json()
+
+            invite = owner.post(
+                "/member-invitations",
+                json={"email": ID_MEMBER.email, "roles": ["VIEWER"]},
+                headers=mut_headers(
+                    owner_body["session"]["csrf_token"], "f1-persist-invite-0001"
+                ),
+            )
+            self.assertEqual(invite.status_code, 201, invite.text)
+
+            member = TestClient(owner.app, base_url=ORIGIN)
+            accepted = member.post(
+                "/onboarding/invitations/accept",
+                json={
+                    "id_token": TOK_MEMBER,
+                    "accept_token": invite.json()["accept_token"],
+                },
+                headers={"Origin": ORIGIN, "Idempotency-Key": "f1-persist-accept-0001"},
+            )
+            self.assertEqual(accepted.status_code, 200, accepted.text)
+            membership_id = accepted.json()["membership"]["id"]
+
+            deactivated = owner.post(
+                f"/memberships/{membership_id}/deactivate",
+                headers=mut_headers(
+                    owner_body["session"]["csrf_token"], "f1-persist-deactivate-01"
+                ),
+            )
+            self.assertEqual(deactivated.status_code, 200, deactivated.text)
+            owner.app.state.campaia.db.close()
+
+            restarted = make_client(db_path=db_path)
+            rejected = restarted.post(
+                "/auth/session",
+                json={"id_token": TOK_MEMBER},
+                headers={"Origin": ORIGIN},
+            )
+            self.assertEqual(rejected.status_code, 403, rejected.text)
+
+            owner_login = restarted.post(
+                "/auth/session",
+                json={"id_token": TOK_OWNER_A},
+                headers={"Origin": ORIGIN},
+            )
+            self.assertEqual(owner_login.status_code, 200, owner_login.text)
+            reactivated = restarted.post(
+                f"/memberships/{membership_id}/reactivate",
+                headers=mut_headers(
+                    owner_login.json()["csrf_token"], "f1-persist-reactivate-01"
+                ),
+            )
+            self.assertEqual(reactivated.status_code, 200, reactivated.text)
+            self.assertEqual(reactivated.json()["id"], membership_id)
+            restarted.app.state.campaia.db.close()
+
+            restarted_again = make_client(db_path=db_path)
+            member_login = restarted_again.post(
+                "/auth/session",
+                json={"id_token": TOK_MEMBER},
+                headers={"Origin": ORIGIN},
+            )
+            self.assertEqual(member_login.status_code, 200, member_login.text)
+            self.assertEqual(member_login.json()["user_id"], membership_id)
+            restarted_again.app.state.campaia.db.close()
+
     def test_commercial_identity_survives_sqlite_restart(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = os.path.join(tmp, "campaia-f1.sqlite")

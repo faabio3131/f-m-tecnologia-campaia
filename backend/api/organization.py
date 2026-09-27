@@ -114,6 +114,18 @@ class OrganizationRepository:
             for tenant_id, row_tenant_id, obj in table.all_rows():
                 self._items[tenant_id] = _wrap_loaded(table, tenant_id, row_tenant_id, obj)
 
+    def _persist(self, organization: TenantOrganization) -> None:
+        """Force-persist the aggregate after mutations to objects added after initial wrapping.
+
+        RecordTable's notify wrapper observes mutations of objects present when the aggregate
+        is first wrapped. F1 adds invitations/memberships later; forcing the aggregate write
+        here makes their subsequent status mutations restart-safe without changing the
+        generic persistence machinery for unrelated modules.
+        """
+        if self._table is not None:
+            tenant_id = organization.tenant.tenant_id
+            self._table.put(tenant_id, tenant_id, organization)
+
     def get_organization(self, tenant_id: str) -> TenantOrganization | None:
         return self._items.get(tenant_id)
 
@@ -250,13 +262,17 @@ class OrganizationRepository:
         if organization is None:
             return 0
         count = 0
+        changed = False
         for invitation in organization.invitations.values():
             if invitation.status != "PENDING":
                 continue
             if now >= invitation.expires_at:
                 invitation.status = "EXPIRED"
+                changed = True
                 continue
             count += 1
+        if changed:
+            self._persist(organization)
         return count
 
     def create_invitation(
@@ -296,6 +312,7 @@ class OrganizationRepository:
             expires_at=now + INVITATION_TTL,
         )
         organization.invitations[invitation.invitation_id] = invitation
+        self._persist(organization)
         return invitation, raw_token
 
     def list_invitations_for_tenant(self, tenant_id: str) -> list[InvitationRecord]:
@@ -364,6 +381,7 @@ class OrganizationRepository:
         invitation.status = "ACCEPTED"
         invitation.accepted_by = membership.membership_id
         invitation.accepted_at = now
+        self._persist(organization)
         return membership
 
     def deactivate_membership(
@@ -376,6 +394,9 @@ class OrganizationRepository:
         membership.status = "INACTIVE"
         membership.updated_at = now
         membership.deactivated_at = now
+        organization = self._items.get(tenant_id)
+        if organization is not None:
+            self._persist(organization)
         return membership
 
     def reactivate_membership(
@@ -388,6 +409,9 @@ class OrganizationRepository:
         membership.status = "ACTIVE"
         membership.updated_at = now
         membership.deactivated_at = None
+        organization = self._items.get(tenant_id)
+        if organization is not None:
+            self._persist(organization)
         return membership
 
     def active_owner_count(self, tenant_id: str) -> int:

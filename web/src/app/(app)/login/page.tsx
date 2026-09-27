@@ -23,7 +23,7 @@ function friendlyLoginError(err: unknown): string {
       return "Não foi possível confirmar sua identidade. Tente novamente.";
     }
     if (err.code === "PERMISSION_DENIED") {
-      return "Sua identidade foi confirmada, mas ainda não possui acesso ao CampaIA.";
+      return "Sua conta foi autenticada, mas está sem vínculo com nenhum tenant do CampaIA.";
     }
     return err.message;
   }
@@ -84,6 +84,7 @@ function LoginForm() {
       await login(idToken);
     } catch (err) {
       if (err instanceof ApiClientError && err.code === "PERMISSION_DENIED") {
+        setError(friendlyLoginError(err));
         setOnboardingIdToken(idToken);
         return;
       }
@@ -130,7 +131,7 @@ function LoginForm() {
         description="Identidade via Google; tenant, unidade e permissões são controlados internamente pelo CampaIA."
       />
       <Card className={styles.card}>
-        {error ? <ErrorState title="Não foi possível continuar" description={error} /> : null}
+        {error ? <ErrorState title="Não foi possível entrar" description={error} /> : null}
 
         {onboardingIdToken ? (
           <div className={styles.onboardingForm} data-testid="commercial-onboarding-form">
