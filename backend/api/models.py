@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -48,6 +48,78 @@ class SessionLoginResponse(BaseModel):
     #: Cliente deve devolver este valor no header X-CSRF-Token em toda mutacao
     #: subsequente (double-submit cookie, ver api/session.py).
     csrf_token: str
+
+
+# --------------------------------------------------------------------------- onboarding comercial (F1)
+
+
+class TenantOnboardingRequest(ApiModel):
+    id_token: str = Field(min_length=1)
+    company_name: str = Field(min_length=1, max_length=160)
+    document: str | None = Field(default=None, max_length=32)
+    segment: str = Field(min_length=1, max_length=120)
+    language: str = Field(default="pt-BR", min_length=2, max_length=20)
+    timezone: str = Field(default="America/Sao_Paulo", min_length=1, max_length=80)
+    entry_mode: Literal["TRIAL", "PURCHASE"] = "TRIAL"
+    plan_id: str | None = Field(default=None, max_length=80)
+
+
+class OrganizationResponse(BaseModel):
+    tenant_id: str
+    name: str
+    document: str | None
+    segment: str
+    language: str
+    timezone: str
+    entry_mode: str
+    plan_id: str | None
+    status: str
+    default_business_unit_id: str | None
+    created_at: datetime
+
+
+class MembershipResponse(BaseModel):
+    id: str
+    tenant_id: str
+    email: str
+    roles: list[str]
+    business_unit_id: str | None
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    deactivated_at: datetime | None
+
+
+class TenantOnboardingResponse(BaseModel):
+    session: SessionLoginResponse
+    organization: OrganizationResponse
+    membership: MembershipResponse
+
+
+class InvitationCreateRequest(ApiModel):
+    email: str = Field(min_length=3, max_length=254)
+    roles: list[str] = Field(min_length=1)
+    business_unit_id: str | None = None
+
+
+class InvitationResponse(BaseModel):
+    id: str
+    email: str
+    roles: list[str]
+    business_unit_id: str | None
+    status: str
+    created_at: datetime
+    expires_at: datetime
+    accepted_by: str | None
+    # O token bruto e devolvido SOMENTE na primeira criacao para que o Owner/Admin possa
+    # compartilhar o link. O repositorio guarda apenas SHA-256; replay idempotente devolve
+    # null em vez de persistir este segredo em claro no idempotency store.
+    accept_token: str | None = None
+
+
+class InvitationAcceptRequest(ApiModel):
+    id_token: str = Field(min_length=1)
+    accept_token: str = Field(min_length=16, max_length=512)
 
 
 # --------------------------------------------------------------------------- vinculos multi-tenant (WP-03)

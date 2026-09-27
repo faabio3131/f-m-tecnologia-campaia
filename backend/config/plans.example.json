@@ -6,6 +6,7 @@
     "monthly_price": 1.00,
     "included_credits": 1,
     "extra_credit_unit_price": 1.00,
+    "max_users": 1,
     "currency": "BRL"
   }
 ]

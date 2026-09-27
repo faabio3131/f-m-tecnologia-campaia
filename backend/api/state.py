@@ -39,6 +39,7 @@ from campaia_core.permissions import Principal, Role
 from campaia_core.rate_limit import FixedWindowRateLimiter
 from campaia_core.subscription import Subscription, SubscriptionCharge
 
+from .organization import OrganizationRepository
 from .repositories import (
     ApprovalRepository,
     AuditLog,
@@ -210,14 +211,39 @@ def _default_id_token_verifier() -> IdTokenVerifier:
     return AlwaysRejectIdTokenVerifier()
 
 
-def _default_identity_directory(env: str):
+def _default_identity_directory(env: str, organizations: OrganizationRepository):
     # Import tardio: identity_directory.py importa TokenPrincipal deste modulo -- import
     # no topo do arquivo criaria ciclo (mesmo padrao ja usado para gemini_provider abaixo).
-    from .identity_directory import InMemoryIdentityDirectory, seed_dev_identity_directory
+    from .identity_directory import (
+        CompositeIdentityDirectory,
+        OrganizationIdentityDirectory,
+        seed_dev_identity_directory,
+    )
 
+    commercial = OrganizationIdentityDirectory(organizations)
     if env in DEV_AUTH_FIXTURE_ALLOWED_ENVS:
-        return seed_dev_identity_directory()
-    return InMemoryIdentityDirectory()
+        return CompositeIdentityDirectory(seed_dev_identity_directory(), commercial)
+    return commercial
+
+
+def _default_plan_user_limits() -> dict[str, int]:
+    """Load max_users from the SAME external plan catalog used by billing.
+
+    F1 freezes the mechanism; F5 still owns the real commercial numbers. No catalog
+    configured means no plan cap is active yet. If a catalog IS configured, its normal
+    fail-closed loader validates it and max_users is read from PlanDefinition -- never
+    from a second env var or a product constant.
+    """
+    from campaia_core.plan_catalog import CATALOG_PATH_ENV_VAR, load_plan_catalog
+
+    if not os.environ.get(CATALOG_PATH_ENV_VAR):
+        return {}
+    catalog = load_plan_catalog()
+    return {
+        plan_id: plan.max_users
+        for plan_id, plan in catalog.items()
+        if plan.max_users is not None
+    }
 
 
 def _default_session_store():
@@ -372,6 +398,12 @@ class AppState:
     campaigns: CampaignRepository = field(default_factory=CampaignRepository)
     approvals: ApprovalRepository = field(default_factory=ApprovalRepository)
     audit: AuditLog = field(default_factory=AuditLog)
+    #: F1 commercial onboarding aggregate. Nova FM/FM are never seeded here; both are
+    #: ordinary tenants created by the same product flow when used for homologation.
+    organizations: OrganizationRepository = field(default_factory=OrganizationRepository)
+    #: F1 decision approved 27/09/2026: user caps come from PlanDefinition.max_users in
+    #: the external plan catalog, never hardcoded. Real commercial numbers remain F5.
+    plan_user_limits: dict[str, int] = field(default_factory=_default_plan_user_limits)
 
     #: Tenant-level autonomy settings (GET/PUT /autonomy). Per-campaign AutonomySettings
     #: also exists on CampaignRecord for policy evaluation; this is the tenant default.
@@ -435,9 +467,6 @@ class AppState:
                 f"fixture de auth nunca pode ficar disponivel em preview/staging/produção, "
                 f"mesmo por engano de configuracao."
             )
-        if self.identity_directory is None:
-            self.identity_directory = _default_identity_directory(self.env)
-
         #: Handle to the open SQLite connection when db_path is set, else None. Not a
         #: dataclass field (nothing outside this method needs to construct one) -- kept
         #: only so callers that DO want to close it explicitly (see tests_api's
@@ -467,6 +496,7 @@ class AppState:
             self.campaigns = CampaignRepository(self.db.table("campaigns"))
             self.approvals = ApprovalRepository(self.db.table("approvals"))
             self.audit = AuditLog(self.db.table("audit_events"))
+            self.organizations = OrganizationRepository(self.db.table("organizations"))
             self.idempotency = PersistentIdempotencyStore(self.db.table("idempotency"))
             self.tenant_autonomy = PersistentTenantAutonomy(self.db.table("tenant_autonomy"))
             self.tenant_autonomy_updated_at = PersistentTenantAutonomy(
@@ -484,6 +514,11 @@ class AppState:
             # process-startup fixture/seed data (a hardcoded Capability Matrix and a
             # hardcoded dev bearer-token map), never mutated by any route handler, so
             # there is nothing about them a restart could lose.
+
+        # The identity directory must be created AFTER persistence is selected so the
+        # commercial directory observes the final OrganizationRepository instance.
+        if self.identity_directory is None:
+            self.identity_directory = _default_identity_directory(self.env, self.organizations)
 
         self.ai_gateway.providers.append(self.ai_provider)
         self.agent_runner = AgentRunner(gateway=self.ai_gateway)

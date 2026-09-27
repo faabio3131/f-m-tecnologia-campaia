@@ -30,6 +30,7 @@ class PlanCatalogTests(unittest.TestCase):
             "monthly_price": 199.90,
             "included_credits": 100,
             "extra_credit_unit_price": 1.50,
+            "max_users": 5,
         }
         base.update(overrides)
         return base
@@ -41,6 +42,7 @@ class PlanCatalogTests(unittest.TestCase):
         plan = catalog["essencial"]
         self.assertEqual(plan.monthly_price, Decimal("199.90"))
         self.assertEqual(plan.currency, "BRL")
+        self.assertEqual(plan.max_users, 5)
 
     def test_loads_valid_catalog_from_environment_variable(self) -> None:
         path = self.write_catalog([self.valid_entry()])
@@ -101,6 +103,17 @@ class PlanCatalogTests(unittest.TestCase):
         path = self.write_catalog([self.valid_entry(monthly_price=-10)])
         with self.assertRaises(PlanCatalogError):
             load_plan_catalog(path)
+
+    def test_invalid_max_users_fails_closed(self) -> None:
+        path = self.write_catalog([self.valid_entry(max_users=0)])
+        with self.assertRaises(PlanCatalogError):
+            load_plan_catalog(path)
+
+    def test_max_users_can_remain_unfrozen(self) -> None:
+        entry = self.valid_entry()
+        entry["max_users"] = None
+        path = self.write_catalog([entry])
+        self.assertIsNone(load_plan_catalog(path)["essencial"].max_users)
 
     def test_duplicate_plan_id_fails_closed(self) -> None:
         path = self.write_catalog([self.valid_entry(), self.valid_entry(name="Outro nome")])

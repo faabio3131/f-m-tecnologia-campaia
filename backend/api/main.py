@@ -48,6 +48,15 @@ from .routes_connections import (
 )
 from .routes_health import health
 from .routes_me import get_me
+from .routes_onboarding import (
+    accept_invitation,
+    create_invitation,
+    create_tenant,
+    deactivate_member,
+    list_invitations,
+    list_members,
+    reactivate_member,
+)
 from .state import AppState
 
 
@@ -77,8 +86,19 @@ routes = [
     Route("/auth/session", logout, methods=["DELETE"]),
     Route("/auth/session/switch", switch_membership, methods=["POST"]),
 
+    # F1 commercial onboarding: explicit product action after verified identity. These
+    # public endpoints do NOT autoprovision on login; both enforce same-origin and verify
+    # the Google/OIDC identity before creating/accepting any membership.
+    Route("/onboarding/tenant", create_tenant, methods=["POST"]),
+    Route("/onboarding/invitations/accept", accept_invitation, methods=["POST"]),
+
     Route("/me", get_me, methods=["GET"]),
     Route("/me/memberships", list_memberships, methods=["GET"]),
+    Route("/memberships", list_members, methods=["GET"]),
+    Route("/member-invitations", list_invitations, methods=["GET"]),
+    Route("/member-invitations", create_invitation, methods=["POST"]),
+    Route("/memberships/{membershipId}/deactivate", deactivate_member, methods=["POST"]),
+    Route("/memberships/{membershipId}/reactivate", reactivate_member, methods=["POST"]),
 
     Route("/brand-profiles", list_brand_profiles, methods=["GET"]),
     Route("/brand-profiles", create_brand_profile, methods=["POST"]),

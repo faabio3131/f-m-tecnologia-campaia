@@ -47,6 +47,9 @@ class PlanDefinition:
     monthly_price: Decimal
     included_credits: Decimal
     extra_credit_unit_price: Decimal
+    #: F1 decision approved 27/09/2026: user entitlement is plan configuration,
+    #: never a hardcoded product constant. None means "not commercially frozen yet".
+    max_users: int | None = None
     currency: str = "BRL"
 
     def __post_init__(self) -> None:
@@ -56,6 +59,10 @@ class PlanDefinition:
             raise ValueError("included_credits nao pode ser negativo.")
         if self.extra_credit_unit_price < 0:
             raise ValueError("extra_credit_unit_price nao pode ser negativo.")
+        if self.max_users is not None and (
+            isinstance(self.max_users, bool) or not isinstance(self.max_users, int) or self.max_users < 1
+        ):
+            raise ValueError("max_users deve ser inteiro positivo quando configurado.")
         if self.currency != "BRL":
             raise ValueError("apenas BRL e suportado nesta versao.")
 

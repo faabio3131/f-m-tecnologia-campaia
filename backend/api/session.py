@@ -144,6 +144,7 @@ class SessionStore(Protocol):
     ) -> SessionRecord: ...
     def get(self, session_id: str) -> SessionRecord | None: ...
     def invalidate(self, session_id: str) -> None: ...
+    def invalidate_membership(self, membership_id: str) -> None: ...
     def switch_principal(
         self, session_id: str, principal: TokenPrincipal
     ) -> SessionRecord | None: ...
@@ -183,6 +184,21 @@ class InMemorySessionStore:
 
     def invalidate(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
+
+    def invalidate_membership(self, membership_id: str) -> None:
+        """Immediately revoke every session that captured this membership.
+
+        SessionRecord.available_principals is intentionally a login-time snapshot; when
+        F1 deactivates a membership, every session that could switch into that membership
+        must therefore be destroyed, not merely the session where it is currently active.
+        """
+        stale = [
+            session_id
+            for session_id, record in self._sessions.items()
+            if any(p.user_id == membership_id for p in record.available_principals)
+        ]
+        for session_id in stale:
+            self._sessions.pop(session_id, None)
 
     def switch_principal(
         self, session_id: str, principal: TokenPrincipal

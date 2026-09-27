@@ -25,8 +25,10 @@ from .state import TokenPrincipal
 
 
 class IdentityDirectory(Protocol):
-    def resolve(self, email: str) -> TokenPrincipal | None: ...
-    def resolve_all(self, email: str) -> tuple[TokenPrincipal, ...]: ...
+    def resolve(self, email: str, *, subject: str | None = None) -> TokenPrincipal | None: ...
+    def resolve_all(
+        self, email: str, *, subject: str | None = None
+    ) -> tuple[TokenPrincipal, ...]: ...
 
 
 class InMemoryIdentityDirectory:
@@ -39,12 +41,71 @@ class InMemoryIdentityDirectory:
             dict(entries) if entries is not None else {}
         )
 
-    def resolve(self, email: str) -> TokenPrincipal | None:
+    def resolve(self, email: str, *, subject: str | None = None) -> TokenPrincipal | None:
         memberships = self._entries.get(email)
         return memberships[0] if memberships else None
 
-    def resolve_all(self, email: str) -> tuple[TokenPrincipal, ...]:
+    def resolve_all(
+        self, email: str, *, subject: str | None = None
+    ) -> tuple[TokenPrincipal, ...]:
         return self._entries.get(email, ())
+
+
+
+class OrganizationIdentityDirectory:
+    """Dynamic directory backed by the F1 commercial organization repository.
+
+    Unlike the historical seed, this directory is populated by explicit onboarding or
+    invitation acceptance. A verified Google e-mail by itself NEVER creates access.
+    """
+
+    def __init__(self, organizations) -> None:
+        self._organizations = organizations
+
+    def _to_principal(self, membership) -> TokenPrincipal:
+        return TokenPrincipal(
+            user_id=membership.membership_id,
+            tenant_id=membership.tenant_id,
+            email=membership.email,
+            roles=membership.roles,
+            business_unit_id=membership.business_unit_id,
+        )
+
+    def resolve(self, email: str, *, subject: str | None = None) -> TokenPrincipal | None:
+        all_memberships = self.resolve_all(email, subject=subject)
+        return all_memberships[0] if all_memberships else None
+
+    def resolve_all(
+        self, email: str, *, subject: str | None = None
+    ) -> tuple[TokenPrincipal, ...]:
+        memberships = self._organizations.list_active_memberships_for_identity(
+            email=email, subject=subject
+        )
+        return tuple(self._to_principal(m) for m in memberships)
+
+
+class CompositeIdentityDirectory:
+    """Preserves deterministic dev/test seeds while adding commercial memberships."""
+
+    def __init__(self, *directories: IdentityDirectory) -> None:
+        self._directories = directories
+
+    def resolve(self, email: str, *, subject: str | None = None) -> TokenPrincipal | None:
+        memberships = self.resolve_all(email, subject=subject)
+        return memberships[0] if memberships else None
+
+    def resolve_all(
+        self, email: str, *, subject: str | None = None
+    ) -> tuple[TokenPrincipal, ...]:
+        result: list[TokenPrincipal] = []
+        seen: set[str] = set()
+        for directory in self._directories:
+            for principal in directory.resolve_all(email, subject=subject):
+                if principal.user_id in seen:
+                    continue
+                seen.add(principal.user_id)
+                result.append(principal)
+        return tuple(result)
 
 
 def seed_dev_identity_directory() -> InMemoryIdentityDirectory:
@@ -131,4 +192,10 @@ def seed_dev_identity_directory() -> InMemoryIdentityDirectory:
     )
 
 
-__all__ = ["IdentityDirectory", "InMemoryIdentityDirectory", "seed_dev_identity_directory"]
+__all__ = [
+    "CompositeIdentityDirectory",
+    "IdentityDirectory",
+    "InMemoryIdentityDirectory",
+    "OrganizationIdentityDirectory",
+    "seed_dev_identity_directory",
+]

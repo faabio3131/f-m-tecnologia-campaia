@@ -71,7 +71,7 @@ async def login(request: Request) -> JSONResponse:
             "UNAUTHENTICATED", "O provedor de identidade nao confirma este e-mail como verificado."
         )
 
-    memberships = state.identity_directory.resolve_all(identity.email)
+    memberships = state.identity_directory.resolve_all(identity.email, subject=identity.subject)
     if not memberships:
         # Fail-closed por decisao do Diretor (24/09/2026): identidade do Google provada,
         # mas sem vinculo interno no CampaIA -- NUNCA autoprovisiona tenant/usuario.
