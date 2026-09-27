@@ -430,6 +430,112 @@ class InvitationAndAccessLifecycleTests(unittest.TestCase):
         self.assertEqual(relogin.status_code, 200, relogin.text)
         self.assertEqual(relogin.json()["user_id"], member_id)
 
+    def test_owner_cannot_invite_user_into_another_tenants_business_unit(self) -> None:
+        client_a = make_client()
+        a_resp = onboard(
+            client_a,
+            TOK_OWNER_A,
+            company="Tenant A",
+            document="31111111000131",
+            idem="f1-xtenant-unit-a-0001",
+        )
+        self.assertEqual(a_resp.status_code, 201, a_resp.text)
+        a = a_resp.json()
+
+        client_b = TestClient(client_a.app, base_url=ORIGIN)
+        b_resp = onboard(
+            client_b,
+            TOK_OWNER_B,
+            company="Tenant B",
+            document="32222222000132",
+            idem="f1-xtenant-unit-b-0001",
+        )
+        self.assertEqual(b_resp.status_code, 201, b_resp.text)
+        b = b_resp.json()
+
+        foreign_unit_id = b["organization"]["default_business_unit_id"]
+        r = client_a.post(
+            "/member-invitations",
+            json={
+                "email": ID_MEMBER.email,
+                "roles": ["VIEWER"],
+                "business_unit_id": foreign_unit_id,
+            },
+            headers=mut_headers(
+                a["session"]["csrf_token"], "f1-xtenant-unit-invite-01"
+            ),
+        )
+        self.assertEqual(r.status_code, 404, r.text)
+        self.assertEqual(r.json()["code"], "NOT_FOUND")
+        self.assertEqual(
+            client_a.app.state.campaia.organizations.list_invitations_for_tenant(
+                a["organization"]["tenant_id"]
+            ),
+            [],
+        )
+
+    def test_owner_cannot_deactivate_or_reactivate_membership_from_another_tenant(self) -> None:
+        client_a = make_client()
+        a_resp = onboard(
+            client_a,
+            TOK_OWNER_A,
+            company="Tenant A",
+            document="41111111000141",
+            idem="f1-xtenant-member-a-001",
+        )
+        self.assertEqual(a_resp.status_code, 201, a_resp.text)
+        a = a_resp.json()
+
+        client_b = TestClient(client_a.app, base_url=ORIGIN)
+        b_resp = onboard(
+            client_b,
+            TOK_OWNER_B,
+            company="Tenant B",
+            document="42222222000142",
+            idem="f1-xtenant-member-b-001",
+        )
+        self.assertEqual(b_resp.status_code, 201, b_resp.text)
+        b = b_resp.json()
+
+        invite = self._invite(
+            client_b,
+            b["session"]["csrf_token"],
+            email=ID_MEMBER.email,
+            roles=["VIEWER"],
+            idem="f1-xtenant-member-invite-1",
+        )
+        self.assertEqual(invite.status_code, 201, invite.text)
+
+        member_client = TestClient(client_a.app, base_url=ORIGIN)
+        accepted = self._accept(
+            member_client,
+            TOK_MEMBER,
+            invite.json()["accept_token"],
+            idem="f1-xtenant-member-accept-1",
+        )
+        self.assertEqual(accepted.status_code, 200, accepted.text)
+        foreign_member_id = accepted.json()["membership"]["id"]
+
+        for operation in ("deactivate", "reactivate"):
+            r = client_a.post(
+                f"/memberships/{foreign_member_id}/{operation}",
+                headers=mut_headers(
+                    a["session"]["csrf_token"],
+                    f"f1-xtenant-{operation}-0001",
+                ),
+            )
+            self.assertEqual(r.status_code, 404, r.text)
+            self.assertEqual(r.json()["code"], "NOT_FOUND")
+
+        tenant_b_members = client_b.get("/memberships")
+        self.assertEqual(tenant_b_members.status_code, 200, tenant_b_members.text)
+        foreign_member = next(
+            member
+            for member in tenant_b_members.json()
+            if member["id"] == foreign_member_id
+        )
+        self.assertEqual(foreign_member["status"], "ACTIVE")
+
     def test_multi_company_identity_can_switch_between_commercial_memberships(self) -> None:
         # Tenant A
         client_a = make_client()
