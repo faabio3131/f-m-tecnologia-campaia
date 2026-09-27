@@ -1,3 +1,5 @@
+> **STATUS VIGENTE: SUPERSEDED (27/09/2026) como painel de CURRENT.** O nome histórico do arquivo é preservado para rastreabilidade, mas a PR #31 avançou substancialmente depois desta fotografia. Não usar este painel para inferir HEAD, testes, autenticação, Web ou integrações atuais. CURRENT = GitHub real + Cronograma Mestre F0–F20 + evidência F0 de 27/09/2026.
+
 # CAMPAIA — PAINEL DE EXECUÇÃO
 
 **Atualizado em:** 19/09/2026 (EXECUÇÃO REAL DO WP-01 — Fundação do frontend Web construída em `web/`

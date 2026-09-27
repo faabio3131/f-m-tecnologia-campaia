@@ -1,3 +1,5 @@
+> **STATUS VIGENTE: SUPERSEDED (27/09/2026) como fotografia de CURRENT.** Este arquivo foi produzido no Ponto Zero Web sobre uma branch/HEAD antigos e contém afirmações que já não representam a PR #31 (por exemplo, Web e autenticação então inexistentes). Preservar como evidência histórica/arquitetural; para CURRENT usar a PR #31, `docs/evidence/EVIDENCIA_F0_RECONCILIACAO_SSOT_20260927.md` e a Matriz Mestre de Cobertura.
+
 # CampaIA — Ponto Zero Web · 01. CURRENT confirmado e matriz CURRENT × TARGET
 
 **Status:** DESCOBERTA — baseada em inspeção direta do código, contratos e documentação neste HEAD.

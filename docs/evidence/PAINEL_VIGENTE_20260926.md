@@ -1,3 +1,5 @@
+> **STATUS VIGENTE: SUPERSEDED (27/09/2026) como fonte de CURRENT.** Preservado como evidência datada de 26/09. A retomada oficial passa pela PR #31 e por `docs/evidence/EVIDENCIA_F0_RECONCILIACAO_SSOT_20260927.md`.
+
 # CampaIA — Painel Vigente (26/09/2026)
 
 **Este documento substitui, como retrato do estado real:** a seção "Onde estamos agora"

@@ -1,3 +1,5 @@
+> **STATUS VIGENTE: PARTIAL (27/09/2026).** A visão de produto, independência, Web-first, governança, guardrails e canais permanecem válidos. Estão **SUPERSEDED** por decisões posteriores: (a) redação vertical-específica de público quando conflitar com "qualquer negócio"; (b) menções de UX "mobile" como linha principal; (c) modelo comercial/TBD de §7, substituído pela ADR-0020 (franquia mensal + créditos extras, Asaas); (d) a lista histórica de decisões "pendentes" de §14 quando já fechadas; e (e) o roadmap antigo de §15. Ver `docs/F0_REGISTRO_SUPERSEDED_20260927.md`.
+
 # CampaIA — PRODUCT CHARTER
 **Campanhas inteligentes. Resultados reais.**
 
