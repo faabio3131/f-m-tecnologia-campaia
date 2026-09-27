@@ -96,3 +96,60 @@ corrigir as divergências.
 | Simulador criar falsa sensação de "pronto" | Gate de Integração exige sandbox real; mock não comprova integração (Ordem Mestra, item 14) |
 | Modo BYO expor o cliente a configuração incorreta | Validação de credencial na conexão + capability probe antes de habilitar ações |
 | Cliente esperar publicar em produção antes das aprovações | A interface informa o estado real da conta: SIMULADOR / TESTE / PRODUÇÃO. Nunca simular sucesso |
+
+---
+
+## Adendo (27/09/2026) — Cofre construído; reafirmação e correção de rumo
+
+**Contexto do adendo:** durante a Fase 5-7 do desenvolvimento (integrações reais), o
+trabalho começou a se desviar para configurar credenciais de teste (conta Google Ads
+sandbox do Diretor/Nova FM) como se fossem a arquitetura comercial — variáveis de
+ambiente globais para `GOOGLE_ADS_CUSTOMER_ID`/`GOOGLE_ADS_LOGIN_CUSTOMER_ID`/refresh
+token. O Diretor corrigiu isso explicitamente: *"Eu não posso mexer no código só para
+configurar o cliente... o software tem que ser construído na base multi-tenant,
+configurável."* Esta ADR já previa essa distinção desde 25/08/2026 (tabela "Duas
+camadas de credencial"); o que faltava era o cofre em si.
+
+**Construído em 27/09/2026** (`campaia_core/credential_vault.py`, `api/repositories.py::VaultRepository`):
+
+- `CredentialCipher` — criptografia real (Fernet/AES), chave de `CAMPAIA_VAULT_KEY`,
+  fail-closed sem ela (nunca uma chave padrão).
+- `VaultRepository` — armazenamento por tenant (SQLite quando persistente), isolamento
+  cross-tenant garantido por construção (`resolve()` recusa um `SecretRef` de outro
+  tenant, mesmo com a chave certa).
+- `Connection.secret_ref` — a única coisa que um registro de conexão guarda sobre o
+  segredo; nunca o valor em claro.
+- `oauth_callback`/`revoke_connection` já gravam/revogam no cofre de verdade quando um
+  token real é fornecido.
+
+**Reafirmado, com data e proveniência:**
+
+1. Nenhuma integração comercial do CampaIA pode exigir intervenção manual do
+   desenvolvedor para provisionar um novo tenant. Toda configuração específica do
+   cliente é feita pelo próprio produto, por um usuário autorizado daquele tenant.
+2. Credenciais de **PLATFORM** (Client ID/Secret do app CampaIA perante cada provedor —
+   Google, Meta, WhatsApp) permanecem centralizadas por ambiente, nunca por tenant.
+3. Segredos de **TENANT** (token de cada cliente) ficam exclusivamente no Credential
+   Vault; todo outro objeto de domínio guarda só a `SecretRef` opaca.
+4. Uma integração testada com a conta do Diretor (sandbox Google Ads, 26-27/09/2026) é
+   evidência de engenharia/homologação — nunca a arquitetura de provisionamento dos
+   clientes reais.
+5. **Gateway de pagamento** segue a mesma régua da tabela de credenciais acima, pela
+   pergunta "para quem esse gateway está movimentando dinheiro?": o Asaas usado para
+   cobrar a assinatura do CampaIA (ADR-0020) é **PLATFORM**; um gateway que um tenant
+   conectasse no futuro para cobrar os próprios clientes seria **TENANT**.
+
+**TARGET ainda pendente, registrado como `EXTERNAL_INFRASTRUCTURE` (não fabricado como
+concluído):** a troca real de OAuth server-side — usuário do tenant → CampaIA →
+Google/Meta OAuth Consent Screen → `authorization_code` + `state` → callback do backend
+CampaIA → troca do código por tokens diretamente com o provedor → gravação direta no
+Vault → `Connection` recebe só a `SecretRef` → **o refresh token nunca trafega pelo
+browser**. Depende de um Client OAuth tipo "Aplicativo da Web" com domínio de callback
+publicado, que não existe ainda (a Web da Nova FM não está em produção). O campo
+`credential` aceito hoje por `POST /connections/oauth/callback` é um mecanismo de
+bootstrap/teste explicitamente documentado como tal — nunca o desenho final da API
+pública.
+
+**Status desta ADR:** permanece `PROPOSTA` quanto ao modelo de dois modos
+(PLATFORM/BYO), mas a camada de armazenamento (cofre) que a viabiliza tecnicamente
+passa de `PREVISTA` para `IMPLEMENTADA E TESTADA` nesta data.
