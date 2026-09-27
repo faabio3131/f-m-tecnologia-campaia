@@ -129,6 +129,19 @@ async def create_tenant(request: Request) -> JSONResponse:
             details={"field": "timezone"},
         ) from exc
 
+    # F1/F5 boundary: the public onboarding endpoint may create a TRIAL tenant,
+    # but the browser can never self-assert that a purchase happened. PURCHASE becomes
+    # valid only when F5 supplies a server-verified billing/checkout proof and an
+    # internal entitlement transition. Until then we fail closed instead of recording
+    # commercially false state.
+    if body.entry_mode == "PURCHASE":
+        raise ApiError(
+            "PERMISSION_DENIED",
+            "Onboarding por compra exige confirmacao server-side do billing; "
+            "o cliente nao pode autoafirmar PURCHASE.",
+            details={"entry_mode": "PURCHASE"},
+        )
+
     scope = f"onboarding:{identity.subject}"
     idem_scope_key = f"http:create_tenant:{idem_key}"
     existing = state.idempotency.get(scope, idem_scope_key)

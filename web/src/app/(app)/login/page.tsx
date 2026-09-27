@@ -58,7 +58,6 @@ function LoginForm() {
   const [segment, setSegment] = useState("");
   const [language, setLanguage] = useState("pt-BR");
   const [timezone, setTimezone] = useState("America/Sao_Paulo");
-  const [entryMode, setEntryMode] = useState<"TRIAL" | "PURCHASE">("TRIAL");
   const onboardingIdempotencyKey = useRef<string | null>(null);
   const testMode = isTestIdentityModeEnabled();
   const googleIdentityConfigured = isGoogleIdentityConfigured();
@@ -115,7 +114,7 @@ function LoginForm() {
           segment: segment.trim(),
           language: language.trim() || "pt-BR",
           timezone: timezone.trim() || "America/Sao_Paulo",
-          entry_mode: entryMode,
+          entry_mode: "TRIAL",
         },
         onboardingIdempotencyKey.current,
       );
@@ -171,17 +170,10 @@ function LoginForm() {
               value={timezone}
               onChange={(e) => setTimezone(e.target.value)}
             />
-            <label className={styles.selectLabel}>
-              Entrada comercial
-              <select
-                className={styles.select}
-                value={entryMode}
-                onChange={(e) => setEntryMode(e.target.value as "TRIAL" | "PURCHASE")}
-              >
-                <option value="TRIAL">Teste grátis</option>
-                <option value="PURCHASE">Compra/assinatura</option>
-              </select>
-            </label>
+            <p className={styles.testNotice}>
+              Entrada comercial: <strong>Teste grátis</strong>. Compra/assinatura só é
+              ativada após confirmação server-side do checkout; nunca por seleção no navegador.
+            </p>
             <div className={styles.actions}>
               <Button
                 onClick={handleCreateCompany}

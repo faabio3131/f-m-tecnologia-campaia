@@ -30,7 +30,7 @@ test.describe("F1 onboarding comercial sem tenant pre-seedado", () => {
     await page.getByLabel("Segmento / tipo de negócio").fill("serviços");
     await page.getByLabel("Idioma").fill("pt-BR");
     await page.getByLabel("Fuso horário").fill("America/Sao_Paulo");
-    await page.getByLabel("Entrada comercial").selectOption("TRIAL");
+    await expect(page.getByText(/Entrada comercial:.*Teste grátis/)).toBeVisible();
 
     const onboardingResponsePromise = page.waitForResponse(
       (r) => r.url().endsWith("/onboarding/tenant") && r.request().method() === "POST",

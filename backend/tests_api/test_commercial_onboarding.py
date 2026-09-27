@@ -179,6 +179,24 @@ class CommercialOnboardingTests(unittest.TestCase):
         self.assertEqual(r2.json()["code"], "INVALID_STATE")
         self.assertEqual(len(app.state.campaia.organizations._items), 1)
 
+    def test_client_cannot_self_assert_purchase_without_server_verified_billing(self) -> None:
+        client = make_client()
+        r = client.post(
+            "/onboarding/tenant",
+            json={
+                "id_token": TOK_OWNER_A,
+                "company_name": "Empresa",
+                "document": "98.765.432/0001-10",
+                "segment": "servicos",
+                "timezone": "America/Sao_Paulo",
+                "entry_mode": "PURCHASE",
+            },
+            headers={"Origin": ORIGIN, "Idempotency-Key": "f1-no-fake-purchase-001"},
+        )
+        self.assertEqual(r.status_code, 403, r.text)
+        self.assertEqual(r.json()["code"], "PERMISSION_DENIED")
+        self.assertEqual(len(client.app.state.campaia.organizations._items), 0)
+
     def test_client_cannot_self_assign_a_paid_plan_or_user_entitlement(self) -> None:
         client = make_client()
         r = client.post(
