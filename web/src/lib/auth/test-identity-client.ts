@@ -30,6 +30,14 @@ export const TEST_IDENTITY_OPTIONS: readonly TestIdentityOption[] = [
     id: "e2e-test-id-token-tenant-a-approver",
     label: "Approver — tenant A (demo-tenant)",
   },
+  {
+    id: "e2e-test-id-token-fresh-commercial-owner",
+    label: "Novo Owner — sem tenant (onboarding comercial)",
+  },
+  {
+    id: "e2e-test-id-token-fresh-commercial-member",
+    label: "Novo usuário — sem vínculo (aceite de convite)",
+  },
 ];
 
 export function isTestIdentityModeEnabled(): boolean {

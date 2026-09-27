@@ -32,6 +32,10 @@ const NAV_ITEMS = [
 
 export function AppShell({ user, onLogout, children }: AppShellProps) {
   const pathname = usePathname();
+  const canManageUsers = user.roles.some((role) => role === "OWNER" || role === "ADMIN");
+  const navItems = canManageUsers
+    ? [...NAV_ITEMS, { href: "/settings/users", label: "Usuários" } as const]
+    : NAV_ITEMS;
 
   return (
     <div className={styles.shell}>
@@ -52,7 +56,7 @@ export function AppShell({ user, onLogout, children }: AppShellProps) {
       <div className={styles.body}>
         <nav className={styles.sidebar} aria-label="Navegação principal">
           <ul className={styles.navList}>
-            {NAV_ITEMS.map((item) => {
+            {navItems.map((item) => {
               const active = pathname === item.href;
               return (
                 <li key={item.href}>

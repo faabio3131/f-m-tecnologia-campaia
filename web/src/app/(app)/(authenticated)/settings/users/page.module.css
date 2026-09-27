@@ -1,0 +1,61 @@
+.title {
+  margin: 0 0 var(--campaia-space-3);
+  font-size: var(--campaia-font-size-lg);
+  color: var(--campaia-color-text);
+}
+
+.form {
+  display: grid;
+  gap: var(--campaia-space-3);
+  max-width: 560px;
+}
+
+.selectLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-1);
+  font-size: var(--campaia-font-size-sm);
+}
+
+.select {
+  min-height: 42px;
+  padding: var(--campaia-space-2);
+  border: 1px solid var(--campaia-color-border);
+  border-radius: var(--campaia-radius-sm);
+  background: var(--campaia-color-surface);
+  color: var(--campaia-color-text);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-2);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--campaia-space-3);
+  padding: var(--campaia-space-3) 0;
+  border-bottom: 1px solid var(--campaia-color-border);
+}
+
+.detail,
+.notice {
+  margin: var(--campaia-space-1) 0 0;
+  color: var(--campaia-color-text-muted);
+  font-size: var(--campaia-font-size-sm);
+}
+
+.inviteResult {
+  margin-top: var(--campaia-space-4);
+  padding: var(--campaia-space-3);
+  border: 1px solid var(--campaia-color-border);
+  border-radius: var(--campaia-radius-sm);
+}
+
+.token {
+  overflow-wrap: anywhere;
+  font-family: monospace;
+}

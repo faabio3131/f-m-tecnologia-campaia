@@ -29,6 +29,10 @@ E2E_TOKEN_MULTI_TENANT_OWNER = "e2e-test-id-token-multi-tenant-owner"
 #: "approver@demo-tenant.campaia.test" ja seedado em
 #: api.identity_directory.seed_dev_identity_directory().
 E2E_TOKEN_TENANT_A_APPROVER = "e2e-test-id-token-tenant-a-approver"
+#: F1: identities intentionally absent from the seeded IdentityDirectory. They can only
+#: gain a membership by the explicit commercial onboarding/invitation product flow.
+E2E_TOKEN_FRESH_OWNER = "e2e-test-id-token-fresh-commercial-owner"
+E2E_TOKEN_FRESH_MEMBER = "e2e-test-id-token-fresh-commercial-member"
 
 @dataclass(frozen=True, slots=True)
 class _StaticIdentity:
@@ -72,6 +76,16 @@ _IDENTITIES: dict[str, _StaticIdentity] = {
         email="approver@demo-tenant.campaia.test",
         email_verified=True,
     ),
+    E2E_TOKEN_FRESH_OWNER: _StaticIdentity(
+        subject="e2e-google-uid-fresh-commercial-owner",
+        email="fresh-owner@commercial-e2e.campaia.test",
+        email_verified=True,
+    ),
+    E2E_TOKEN_FRESH_MEMBER: _StaticIdentity(
+        subject="e2e-google-uid-fresh-commercial-member",
+        email="fresh-member@commercial-e2e.campaia.test",
+        email_verified=True,
+    ),
 }
 
 
@@ -100,4 +114,6 @@ __all__ = [
     "E2E_TOKEN_UNKNOWN_EMAIL",
     "E2E_TOKEN_MULTI_TENANT_OWNER",
     "E2E_TOKEN_TENANT_A_APPROVER",
+    "E2E_TOKEN_FRESH_OWNER",
+    "E2E_TOKEN_FRESH_MEMBER",
 ]

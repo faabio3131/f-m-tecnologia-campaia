@@ -18,6 +18,10 @@ import {
 } from "../lib/api/client";
 import type { Me } from "../contracts/types";
 import type { SessionUser } from "../types/session";
+import type {
+  TenantOnboardingInput,
+  TenantOnboardingResponse,
+} from "../types/onboarding";
 
 export type AuthStatus = "bootstrapping" | "authenticated" | "unauthenticated" | "error";
 
@@ -29,6 +33,16 @@ export interface AuthContextValue {
   me: Me | null;
   error: string | null;
   login: (idToken: string) => Promise<void>;
+  onboardTenant: (
+    idToken: string,
+    input: TenantOnboardingInput,
+    idempotencyKey: string,
+  ) => Promise<TenantOnboardingResponse>;
+  acceptInvitation: (
+    idToken: string,
+    acceptToken: string,
+    idempotencyKey: string,
+  ) => Promise<TenantOnboardingResponse>;
   logout: () => Promise<void>;
   /**
    * Troca o vinculo (tenant/unidade) ativo da sessao para outro vinculo real da mesma
@@ -121,6 +135,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus("authenticated");
   }, []);
 
+
+  const establishOnboardingSession = useCallback(async (result: TenantOnboardingResponse) => {
+    setCsrfToken(result.session.csrf_token);
+    setSession(result.session);
+    const meResponse = await api.get<Me>("/me");
+    setMe(meResponse);
+    setStatus("authenticated");
+    return result;
+  }, []);
+
+  const onboardTenant = useCallback(
+    async (
+      idToken: string,
+      input: TenantOnboardingInput,
+      idempotencyKey: string,
+    ): Promise<TenantOnboardingResponse> => {
+      setError(null);
+      const response = await fetch("/api/campaia/onboarding/tenant", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": idempotencyKey,
+        },
+        body: JSON.stringify({ id_token: idToken, ...input }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new ApiClientError(response.status, body);
+      return establishOnboardingSession(body as TenantOnboardingResponse);
+    },
+    [establishOnboardingSession],
+  );
+
+  const acceptInvitation = useCallback(
+    async (
+      idToken: string,
+      acceptToken: string,
+      idempotencyKey: string,
+    ): Promise<TenantOnboardingResponse> => {
+      setError(null);
+      const response = await fetch("/api/campaia/onboarding/invitations/accept", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": idempotencyKey,
+        },
+        body: JSON.stringify({ id_token: idToken, accept_token: acceptToken }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new ApiClientError(response.status, body);
+      return establishOnboardingSession(body as TenantOnboardingResponse);
+    },
+    [establishOnboardingSession],
+  );
+
   const logout = useCallback(async () => {
     try {
       // DELETE /auth/session real (backend/api/routes_auth.py::logout) nao exige
@@ -159,8 +229,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ status, session, me, error, login, logout, switchMembership }),
-    [status, session, me, error, login, logout, switchMembership],
+    () => ({
+      status,
+      session,
+      me,
+      error,
+      login,
+      onboardTenant,
+      acceptInvitation,
+      logout,
+      switchMembership,
+    }),
+    [
+      status,
+      session,
+      me,
+      error,
+      login,
+      onboardTenant,
+      acceptInvitation,
+      logout,
+      switchMembership,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

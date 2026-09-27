@@ -43,6 +43,7 @@ class Permission(StrEnum):
     CONNECTION_MANAGE = "CONNECTION_MANAGE"
     AUTONOMY_CHANGE = "AUTONOMY_CHANGE"
     BRAND_MANAGE = "BRAND_MANAGE"
+    MEMBER_VIEW = "MEMBER_VIEW"
     MEMBER_MANAGE = "MEMBER_MANAGE"
     AI_CONFIG = "AI_CONFIG"
     AUDIT_VIEW = "AUDIT_VIEW"
@@ -76,6 +77,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.APPROVAL_DECIDE,
             Permission.CONNECTION_MANAGE,
             Permission.BRAND_MANAGE,
+            Permission.MEMBER_VIEW,
             Permission.MEMBER_MANAGE,
             Permission.AI_CONFIG,
             Permission.AUDIT_VIEW,

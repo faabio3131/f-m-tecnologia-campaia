@@ -208,6 +208,21 @@ async def create_tenant(request: Request) -> JSONResponse:
     return response
 
 
+def _authorize_member_view(request: Request):
+    fixture = require_auth(request)
+    state = get_state(request)
+    principal = build_domain_principal(request, state, fixture)
+    resource = Resource(
+        tenant_id=fixture.tenant_id, business_unit_id=fixture.business_unit_id
+    )
+    decision = authorize(
+        principal, Permission.MEMBER_VIEW, resource, now=datetime.now(timezone.utc)
+    )
+    if not decision.allowed:
+        raise ApiError(decision.code.value, decision.reason)
+    return fixture, state
+
+
 def _authorize_member_manage(request: Request):
     fixture = require_auth(request)
     state = get_state(request)
@@ -226,7 +241,7 @@ def _authorize_member_manage(request: Request):
 
 
 async def list_members(request: Request) -> JSONResponse:
-    fixture, state = _authorize_member_manage(request)
+    fixture, state = _authorize_member_view(request)
     memberships = state.organizations.list_memberships_for_tenant(fixture.tenant_id)
     return list_response([_serialize_membership(m) for m in memberships])
 
