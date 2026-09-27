@@ -50,8 +50,24 @@ jobs:
         run: npm run typecheck
 
       - name: Contract drift check (bff-openapi.yaml vs. generated types)
+        id: contract_drift
         working-directory: web
         run: npm run contracts:check
+
+      - name: Generate expected contract types on drift
+        if: failure() && steps.contract_drift.outcome == 'failure'
+        working-directory: web
+        run: |
+          npm run contracts:generate
+          cp src/contracts/bff-openapi.generated.ts /tmp/bff-openapi.generated.expected.ts
+
+      - name: Upload expected contract types on drift
+        if: failure() && steps.contract_drift.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: expected-bff-openapi-generated
+          path: /tmp/bff-openapi.generated.expected.ts
+          retention-days: 1
 
       - name: WP-01 security boundary check
         working-directory: web
