@@ -277,6 +277,51 @@ class OAuthCallbackRealCredentialTests(unittest.TestCase):
             os.environ.pop("CAMPAIA_VAULT_KEY", None)
             self._restore_vault_key(old)
 
+    def test_replaying_the_same_idempotency_key_with_credential_returns_the_original_result(self):
+        """Pedido explicito de auditoria independente (27/09/2026): o replay do achado
+        24 (mesma Idempotency-Key, `state` de OAuth ja consumido) tem que continuar
+        funcionando quando `credential` esta presente -- nao pode falhar por o state ja
+        ter sido resgatado, nao pode criar uma segunda Connection, e (Fase C6) nao pode
+        criar um segundo segredo no cofre nem devolver um resultado diferente do
+        original."""
+        old = self._clear_vault_key()
+        os.environ["CAMPAIA_VAULT_KEY"] = CredentialCipher.generate_key()
+        try:
+            client = make_client()
+            state_token = _start_oauth(client, OWNER)
+            headers = {**with_step_up(OWNER), **idem("oauth-callback-replay-credential")}
+            body = {
+                "state": state_token,
+                "external_account_id": "acct-real-1",
+                "display_name": "Conta real",
+                "credential": {"refresh_token": "1//real-token"},
+            }
+
+            first = client.post("/connections/oauth/callback", headers=headers, json=body)
+            self.assertEqual(first.status_code, 201, first.text)
+
+            replay = client.post("/connections/oauth/callback", headers=headers, json=body)
+            self.assertEqual(replay.status_code, 201, replay.text)
+            self.assertEqual(replay.json(), first.json())
+
+            listed = client.get("/connections", headers=OWNER)
+            self.assertEqual(len(listed.json()), 1)
+
+            from campaia_core.connectors import SecretRef
+
+            state = client.app.state.campaia
+            conn = state.connections.get("demo-tenant", first.json()["id"])
+            # So um segredo no cofre para esta conexao -- o replay nao chegou a chamar
+            # `_do_create` de novo (protegido por idempotency.execute), entao
+            # `vault.store` nunca rodou uma segunda vez.
+            resolved = state.vault.resolve(
+                "demo-tenant", SecretRef(handle=conn.secret_ref), cipher=state.vault_cipher
+            )
+            self.assertEqual(resolved, {"refresh_token": "1//real-token"})
+        finally:
+            os.environ.pop("CAMPAIA_VAULT_KEY", None)
+            self._restore_vault_key(old)
+
 
 if __name__ == "__main__":
     unittest.main()
