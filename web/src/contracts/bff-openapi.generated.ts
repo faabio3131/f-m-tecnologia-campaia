@@ -171,11 +171,16 @@ export interface paths {
          * @description `state` de uso unico, amarrado ao tenant que chamou startOAuth -- nunca aceito
          *     de outro tenant nem reutilizavel apos o primeiro resgate (sucesso ou falha).
          *     `external_account_id`/`display_name` representam a conta selecionada pelo
-         *     usuario no provedor. `credential`, quando enviado, e' guardado de verdade no
-         *     cofre (criptografado, por tenant) -- a redirecao automatica para a tela real de
-         *     consentimento do provedor ainda depende de um dominio de callback publicado
-         *     (pendencia registrada, 27/09/2026); sem `credential`, o comportamento e' o
-         *     anterior (Connection so com metadado, `mode=SIMULATOR`, sem segredo).
+         *     usuario no provedor (simulado nesta etapa; nenhum provider real e contatado).
+         *
+         *     SEGURANCA (27/09/2026, achado 4 de auditoria independente): este endpoint
+         *     NUNCA aceita um token real do provedor no corpo da requisicao -- o TARGET
+         *     comercial e' a troca de OAuth ser inteiramente server-side (usuario -> Google/
+         *     Meta -> authorization code -> este callback -> backend troca o code por
+         *     tokens diretamente com o provedor -> grava no Credential Vault), sem o
+         *     refresh/access token do tenant jamais trafegar pelo browser. Essa troca real
+         *     ainda depende de um Client OAuth "Aplicativo da Web" com dominio de callback
+         *     publicado, que nao existe ainda (EXTERNAL_INFRASTRUCTURE, ver ADR-0013).
          */
         post: operations["oauthCallback"];
         delete?: never;
@@ -1111,8 +1116,6 @@ export interface operations {
                     state: string;
                     external_account_id: string;
                     display_name: string;
-                    /** @description Token real do provedor (ex.: refresh_token), quando ja obtido por outro meio. Nunca logado, nunca devolvido em nenhuma resposta. */
-                    credential?: Record<string, never> | null;
                 };
             };
         };

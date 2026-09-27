@@ -136,13 +136,18 @@ class OAuthCallbackRequest(ApiModel):
     #: hoje).
     external_account_id: str
     display_name: str
-    #: Decisao do Diretor (27/09/2026, SaaS multi-tenant): quando quem chama esta rota ja
-    #: obteve um token real do provedor (hoje, so pelo fluxo manual de sandbox -- o
-    #: redirecionamento automatico para a tela de consentimento real ainda depende de um
-    #: dominio de callback publicado, pendencia registrada), pode envia-lo aqui para ser
-    #: guardado de verdade no cofre, criptografado, por tenant. None (o default) mantem o
-    #: comportamento anterior: Connection so com metadado, `mode=SIMULATOR`, sem segredo.
-    credential: dict | None = None
+
+
+#: SECURITY FIX (Fase 3, achado 4, 27/09/2026 -- auditoria independente): o campo
+#: `credential` que este endpoint aceitava foi RETIRADO do contrato publico. O TARGET
+#: comercial nunca deixa um token real do provedor trafegar pelo browser at' este
+#: endpoint -- a troca real de OAuth e' server-side (ver ADR-0013, adendo). O mecanismo
+#: abaixo (`DevAttachCredentialRequest`) e' explicitamente dev/test-only, usado so por
+#: `POST /connections/{connectionId}/dev-attach-credential` (nao documentado no
+#: contrato OpenAPI publico, fail-closed fora de test/dev-local) -- existe so para o
+#: Vault poder ser testado de ponta a ponta sem inventar uma troca de OAuth real.
+class DevAttachCredentialRequest(ApiModel):
+    credential: dict
 
 
 class CapabilityResponse(BaseModel):

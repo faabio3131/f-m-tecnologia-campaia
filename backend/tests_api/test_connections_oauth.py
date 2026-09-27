@@ -165,10 +165,25 @@ class OAuthCallbackTests(unittest.TestCase):
         self.assertEqual(len(listed.json()), 1)
 
 
-class OAuthCallbackRealCredentialTests(unittest.TestCase):
-    """Decisao do Diretor (27/09/2026, SaaS multi-tenant): quando um token real e'
-    enviado no callback, ele tem que ser guardado de verdade no cofre -- nunca
-    descartado, nunca em texto claro em nenhum lugar acessivel pela API."""
+def _create_connection(client, headers=OWNER) -> dict:
+    state_token = _start_oauth(client, headers)
+    r = client.post(
+        "/connections/oauth/callback",
+        headers={**with_step_up(headers), **unique_idem()},
+        json={"state": state_token, "external_account_id": "acct-real-1", "display_name": "Conta real"},
+    )
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+class DevAttachCredentialTests(unittest.TestCase):
+    """SECURITY FIX (Fase 3, achado 4, 27/09/2026 -- auditoria independente): `credential`
+    foi retirado do contrato publico de `oauth_callback` -- o TARGET comercial nunca
+    deixa um token real trafegar pelo browser at' esse endpoint (troca de OAuth
+    server-side, ver ADR-0013). `POST /connections/{id}/dev-attach-credential` e' a
+    rota explicitamente dev/test-only que permite continuar provando o cofre real de
+    ponta a ponta sem essa troca automatica (que depende de infraestrutura externa
+    ainda inexistente)."""
 
     def _clear_vault_key(self) -> str | None:
         return os.environ.pop("CAMPAIA_VAULT_KEY", None)
@@ -177,12 +192,17 @@ class OAuthCallbackRealCredentialTests(unittest.TestCase):
         if old is not None:
             os.environ["CAMPAIA_VAULT_KEY"] = old
 
-    def test_credential_without_vault_key_configured_fails_closed(self):
+    def test_oauth_callback_never_accepts_a_credential_field(self):
+        """O contrato publico deste endpoint nao tem mais o campo `credential` --
+        `OAuthCallbackRequest` (ApiModel, `extra="forbid"`) rejeita explicitamente
+        qualquer campo desconhecido com 422, entao nao ha caminho pelo qual um
+        `credential` enviado a esta rota chegue a ser processado ou guardado no
+        cofre."""
         old = self._clear_vault_key()
+        os.environ["CAMPAIA_VAULT_KEY"] = CredentialCipher.generate_key()
         try:
             client = make_client()
             state_token = _start_oauth(client, OWNER)
-
             r = client.post(
                 "/connections/oauth/callback",
                 headers={**with_step_up(OWNER), **unique_idem()},
@@ -190,12 +210,47 @@ class OAuthCallbackRealCredentialTests(unittest.TestCase):
                     "state": state_token,
                     "external_account_id": "acct-real-1",
                     "display_name": "Conta real",
-                    "credential": {"refresh_token": "1//real-token"},
+                    "credential": {"refresh_token": "1//should-be-ignored"},
                 },
             )
             self.assertEqual(r.status_code, 422, r.text)
-            listed = client.get("/connections", headers=OWNER)
-            self.assertEqual(len(listed.json()), 0)
+            self.assertEqual(r.json()["code"], "VALIDATION_FAILED")
+        finally:
+            os.environ.pop("CAMPAIA_VAULT_KEY", None)
+            self._restore_vault_key(old)
+
+    def test_dev_attach_credential_fails_closed_outside_dev_test_env(self):
+        """A rota dev/test-only se recusa a rodar fora de test/dev-local, mesmo que
+        alguem a chame diretamente -- nunca existe de fato em producao."""
+        old = self._clear_vault_key()
+        os.environ["CAMPAIA_VAULT_KEY"] = CredentialCipher.generate_key()
+        try:
+            client = make_client()
+            conn = _create_connection(client)
+            client.app.state.campaia.env = "production"
+
+            r = client.post(
+                f"/connections/{conn['id']}/dev-attach-credential",
+                headers={**with_step_up(OWNER), **unique_idem()},
+                json={"credential": {"refresh_token": "1//real-token"}},
+            )
+            self.assertEqual(r.status_code, 403, r.text)
+        finally:
+            os.environ.pop("CAMPAIA_VAULT_KEY", None)
+            self._restore_vault_key(old)
+
+    def test_credential_without_vault_key_configured_fails_closed(self):
+        old = self._clear_vault_key()
+        try:
+            client = make_client()
+            conn = _create_connection(client)
+
+            r = client.post(
+                f"/connections/{conn['id']}/dev-attach-credential",
+                headers={**with_step_up(OWNER), **unique_idem()},
+                json={"credential": {"refresh_token": "1//real-token"}},
+            )
+            self.assertEqual(r.status_code, 422, r.text)
         finally:
             self._restore_vault_key(old)
 
@@ -204,19 +259,14 @@ class OAuthCallbackRealCredentialTests(unittest.TestCase):
         os.environ["CAMPAIA_VAULT_KEY"] = CredentialCipher.generate_key()
         try:
             client = make_client()
-            state_token = _start_oauth(client, OWNER)
+            conn = _create_connection(client)
 
             r = client.post(
-                "/connections/oauth/callback",
+                f"/connections/{conn['id']}/dev-attach-credential",
                 headers={**with_step_up(OWNER), **unique_idem()},
-                json={
-                    "state": state_token,
-                    "external_account_id": "acct-real-1",
-                    "display_name": "Conta real",
-                    "credential": {"refresh_token": "1//real-token"},
-                },
+                json={"credential": {"refresh_token": "1//real-token"}},
             )
-            self.assertEqual(r.status_code, 201, r.text)
+            self.assertEqual(r.status_code, 200, r.text)
             body = r.json()
             self.assertNotIn("credential", body)
             self.assertNotIn("secret_ref", body)
@@ -225,12 +275,12 @@ class OAuthCallbackRealCredentialTests(unittest.TestCase):
             from campaia_core.connectors import SecretRef
 
             state = client.app.state.campaia
-            conn = state.connections.get("demo-tenant", body["id"])
-            self.assertIsNotNone(conn.secret_ref)
-            self.assertTrue(conn.secret_ref.startswith("vault://GOOGLE_ADS/"))
+            stored = state.connections.get("demo-tenant", conn["id"])
+            self.assertIsNotNone(stored.secret_ref)
+            self.assertTrue(stored.secret_ref.startswith("vault://GOOGLE_ADS/"))
 
             resolved = state.vault.resolve(
-                "demo-tenant", SecretRef(handle=conn.secret_ref), cipher=state.vault_cipher
+                "demo-tenant", SecretRef(handle=stored.secret_ref), cipher=state.vault_cipher
             )
             self.assertEqual(resolved, {"refresh_token": "1//real-token"})
         finally:
@@ -242,25 +292,19 @@ class OAuthCallbackRealCredentialTests(unittest.TestCase):
         os.environ["CAMPAIA_VAULT_KEY"] = CredentialCipher.generate_key()
         try:
             client = make_client()
-            state_token = _start_oauth(client, OWNER)
-
-            created = client.post(
-                "/connections/oauth/callback",
+            conn = _create_connection(client)
+            client.post(
+                f"/connections/{conn['id']}/dev-attach-credential",
                 headers={**with_step_up(OWNER), **unique_idem()},
-                json={
-                    "state": state_token,
-                    "external_account_id": "acct-real-1",
-                    "display_name": "Conta real",
-                    "credential": {"refresh_token": "1//real-token"},
-                },
-            ).json()
+                json={"credential": {"refresh_token": "1//real-token"}},
+            )
 
             state = client.app.state.campaia
-            conn_before = state.connections.get("demo-tenant", created["id"])
+            conn_before = state.connections.get("demo-tenant", conn["id"])
             secret_ref_handle = conn_before.secret_ref
 
             revoke = client.delete(
-                f"/connections/{created['id']}",
+                f"/connections/{conn['id']}",
                 headers={**with_step_up(OWNER), **unique_idem()},
             )
             self.assertEqual(revoke.status_code, 204, revoke.text)
@@ -277,45 +321,35 @@ class OAuthCallbackRealCredentialTests(unittest.TestCase):
             os.environ.pop("CAMPAIA_VAULT_KEY", None)
             self._restore_vault_key(old)
 
-    def test_replaying_the_same_idempotency_key_with_credential_returns_the_original_result(self):
-        """Pedido explicito de auditoria independente (27/09/2026): o replay do achado
-        24 (mesma Idempotency-Key, `state` de OAuth ja consumido) tem que continuar
-        funcionando quando `credential` esta presente -- nao pode falhar por o state ja
-        ter sido resgatado, nao pode criar uma segunda Connection, e (Fase C6) nao pode
-        criar um segundo segredo no cofre nem devolver um resultado diferente do
+    def test_replaying_the_same_idempotency_key_returns_the_original_result(self):
+        """Mesmo achado 24 do callback (nao regride nesta rota nova): replay da MESMA
+        Idempotency-Key nao cria um segundo segredo, devolve exatamente o resultado
         original."""
         old = self._clear_vault_key()
         os.environ["CAMPAIA_VAULT_KEY"] = CredentialCipher.generate_key()
         try:
             client = make_client()
-            state_token = _start_oauth(client, OWNER)
-            headers = {**with_step_up(OWNER), **idem("oauth-callback-replay-credential")}
-            body = {
-                "state": state_token,
-                "external_account_id": "acct-real-1",
-                "display_name": "Conta real",
-                "credential": {"refresh_token": "1//real-token"},
-            }
+            conn = _create_connection(client)
+            headers = {**with_step_up(OWNER), **idem("attach-credential-replay")}
+            body = {"credential": {"refresh_token": "1//real-token"}}
 
-            first = client.post("/connections/oauth/callback", headers=headers, json=body)
-            self.assertEqual(first.status_code, 201, first.text)
+            first = client.post(
+                f"/connections/{conn['id']}/dev-attach-credential", headers=headers, json=body
+            )
+            self.assertEqual(first.status_code, 200, first.text)
 
-            replay = client.post("/connections/oauth/callback", headers=headers, json=body)
-            self.assertEqual(replay.status_code, 201, replay.text)
+            replay = client.post(
+                f"/connections/{conn['id']}/dev-attach-credential", headers=headers, json=body
+            )
+            self.assertEqual(replay.status_code, 200, replay.text)
             self.assertEqual(replay.json(), first.json())
-
-            listed = client.get("/connections", headers=OWNER)
-            self.assertEqual(len(listed.json()), 1)
 
             from campaia_core.connectors import SecretRef
 
             state = client.app.state.campaia
-            conn = state.connections.get("demo-tenant", first.json()["id"])
-            # So um segredo no cofre para esta conexao -- o replay nao chegou a chamar
-            # `_do_create` de novo (protegido por idempotency.execute), entao
-            # `vault.store` nunca rodou uma segunda vez.
+            stored = state.connections.get("demo-tenant", conn["id"])
             resolved = state.vault.resolve(
-                "demo-tenant", SecretRef(handle=conn.secret_ref), cipher=state.vault_cipher
+                "demo-tenant", SecretRef(handle=stored.secret_ref), cipher=state.vault_cipher
             )
             self.assertEqual(resolved, {"refresh_token": "1//real-token"})
         finally:

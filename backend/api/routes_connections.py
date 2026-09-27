@@ -22,10 +22,12 @@ from .helpers import json_response, list_response, parse_body, serialize_connect
 from .models import (
     CapabilityResponse,
     ConnectionResponse,
+    DevAttachCredentialRequest,
     OAuthCallbackRequest,
     OAuthStartRequest,
     OAuthStartResponse,
 )
+from .state import DEV_AUTH_FIXTURE_ALLOWED_ENVS
 
 
 def _authorize(request: Request, permission: Permission):
@@ -99,21 +101,6 @@ async def oauth_callback(request: Request) -> JSONResponse:
     idem_key = require_idempotency_key(request)
     body = await parse_body(request, OAuthCallbackRequest)
 
-    # Decisao do Diretor (27/09/2026, SaaS multi-tenant): a redecao automatica para a
-    # tela real de consentimento do provedor ainda depende de um dominio de callback
-    # publicado (pendencia registrada, nao simulada como pronta). Enquanto isso, se
-    # `body.credential` vier preenchido (token real obtido por outro meio -- hoje, so o
-    # fluxo manual de sandbox), este endpoint guarda-o de verdade no cofre
-    # (criptografado, por tenant) em vez de descartar; sem `credential`, comportamento
-    # idêntico ao anterior. Este guard fica ANTES do check de replay (achado 24) porque
-    # e' uma validacao de entrada pura -- nao depende de nenhum estado de uso-unico.
-    if body.credential is not None and state.vault_cipher is None:
-        raise ApiError(
-            "VALIDATION_FAILED",
-            "CAMPAIA_VAULT_KEY nao configurada -- o cofre de credenciais nao esta "
-            "disponivel para guardar um token real neste ambiente.",
-        )
-
     # ACHADO 24 (Fase 3, item 6 -- mineracao de testes da PR#6, 26/09/2026, REPRODUZIDO por
     # execucao real nesta sessao): mesma classe de bug de ordenacao ja corrigida no achado
     # 19 (patch_budget/publish_campaign/put_autonomy) -- aqui o recurso de uso-unico e o
@@ -139,24 +126,17 @@ async def oauth_callback(request: Request) -> JSONResponse:
         )
 
     def _do_create():
-        secret_ref = None
-        mode = ConnectionMode.SIMULATOR
-        if body.credential is not None:
-            secret_ref = state.vault.store(
-                fixture.tenant_id,
-                provider=pending.provider,
-                external_account_id=body.external_account_id,
-                payload=body.credential,
-                cipher=state.vault_cipher,
-            ).handle
-            mode = ConnectionMode.TEST
+        # SECURITY FIX (Fase 3, achado 4, 27/09/2026): `credential` foi retirado do
+        # contrato publico deste endpoint -- toda Connection criada aqui nasce so com
+        # metadado (`mode=SIMULATOR`, sem segredo). Anexar um token real, quando ja
+        # obtido por outro meio (hoje, so o fluxo manual de sandbox), e' feito depois,
+        # por `POST /connections/{connectionId}/dev-attach-credential` -- rota
+        # explicitamente dev/test-only, nao documentada no contrato OpenAPI publico.
         conn = state.connections.create(
             fixture.tenant_id,
             provider=pending.provider,
             external_account_id=body.external_account_id,
             display_name=body.display_name,
-            secret_ref=secret_ref,
-            mode=mode,
         )
         state.audit.append(
             tenant_id=fixture.tenant_id,
@@ -171,6 +151,64 @@ async def oauth_callback(request: Request) -> JSONResponse:
         fixture.tenant_id, f"http:oauth_callback:{idem_key}", _do_create
     )
     return JSONResponse(result, status_code=201)
+
+
+async def dev_attach_credential(request: Request) -> JSONResponse:
+    """Anexa uma credencial real ao cofre para uma Connection ja existente.
+
+    SECURITY FIX (Fase 3, achado 4, 27/09/2026 -- auditoria independente): esta rota
+    existe SO para o Vault poder ser testado de ponta a ponta contra o cofre real,
+    sem inventar uma troca de OAuth de verdade (que exige um Client Web com dominio
+    de callback publicado -- pendencia EXTERNAL_INFRASTRUCTURE, ver ADR-0013). Nunca
+    documentada em `contracts/bff-openapi.yaml` (nao faz parte do contrato publico) e
+    fail-closed fora de test/dev-local (mesmo guard de `DEV_AUTH_FIXTURE_ALLOWED_ENVS`
+    do fixture de bearer token) -- em qualquer outro ambiente, esta rota se recusa a
+    rodar, mesmo que alguem a chame diretamente.
+    """
+    fixture, state = _authorize(request, Permission.CONNECTION_MANAGE)
+    if state.env not in DEV_AUTH_FIXTURE_ALLOWED_ENVS:
+        raise ApiError(
+            "PERMISSION_DENIED",
+            "Rota dev/test-only, indisponivel fora de test/dev-local.",
+        )
+    require_step_up(request, fixture)
+    idem_key = require_idempotency_key(request)
+    connection_id = request.path_params["connectionId"]
+    body = await parse_body(request, DevAttachCredentialRequest)
+
+    conn = state.connections.get(fixture.tenant_id, connection_id)
+    if conn is None:
+        raise ApiError("NOT_FOUND", "Connection not found.")
+    if state.vault_cipher is None:
+        raise ApiError(
+            "VALIDATION_FAILED",
+            "CAMPAIA_VAULT_KEY nao configurada -- o cofre de credenciais nao esta "
+            "disponivel para guardar um token real neste ambiente.",
+        )
+
+    def _do_attach():
+        secret_ref = state.vault.store(
+            fixture.tenant_id,
+            provider=conn.provider,
+            external_account_id=conn.external_account_id,
+            payload=body.credential,
+            cipher=state.vault_cipher,
+        ).handle
+        conn.secret_ref = secret_ref
+        conn.mode = ConnectionMode.TEST
+        state.audit.append(
+            tenant_id=fixture.tenant_id,
+            actor=fixture.user_id,
+            action="CONNECTION_CREDENTIAL_ATTACHED_DEV_ONLY",
+            target=conn.connection_id,
+            details={"provider": conn.provider},
+        )
+        return serialize_connection(conn).model_dump(mode="json")
+
+    result, _replay = state.idempotency.execute(
+        fixture.tenant_id, f"http:dev_attach_credential:{idem_key}", _do_attach
+    )
+    return JSONResponse(result, status_code=200)
 
 
 async def revoke_connection(request: Request) -> Response:

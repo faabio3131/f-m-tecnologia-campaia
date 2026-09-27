@@ -40,6 +40,7 @@ from .routes_campaigns import (
 )
 from .routes_connections import (
     connection_capabilities,
+    dev_attach_credential,
     list_connections,
     oauth_callback,
     oauth_start,
@@ -87,6 +88,13 @@ routes = [
     Route("/connections/oauth/callback", oauth_callback, methods=["POST"]),
     Route("/connections/{connectionId}", revoke_connection, methods=["DELETE"]),
     Route("/connections/{connectionId}/capabilities", connection_capabilities, methods=["GET"]),
+    # Fase 3, achado 4 (27/09/2026): dev/test-only, nunca documentada no contrato
+    # OpenAPI publico, fail-closed fora de test/dev-local (ver dev_attach_credential).
+    Route(
+        "/connections/{connectionId}/dev-attach-credential",
+        dev_attach_credential,
+        methods=["POST"],
+    ),
 
     Route("/briefs", create_brief, methods=["POST"]),
 
