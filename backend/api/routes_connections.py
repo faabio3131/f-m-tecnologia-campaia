@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from campaia_core.connectors import ConnectionMode, SecretRef
 from campaia_core.permissions import Permission, Resource, authorize
 
 from .deps import (
@@ -82,14 +83,28 @@ async def oauth_callback(request: Request) -> JSONResponse:
 
     WP-04 (26/09/2026): antes desta rota, `oauth_start` devolvia uma URL e nada mais --
     nenhuma Connection era jamais criada (achado confirmado por leitura do codigo real
-    antes de codificar, nao presumido). Ainda simulado (nenhum provider real e
-    contatado); `external_account_id`/`display_name` vem do cliente (conta que o
-    usuario "selecionaria" no provedor) -- nunca inventados aqui.
+    antes de codificar, nao presumido). `external_account_id`/`display_name` vem do
+    cliente (conta que o usuario "selecionaria" no provedor) -- nunca inventados aqui.
+
+    Decisao do Diretor (27/09/2026, SaaS multi-tenant): a redecao automatica para a tela
+    real de consentimento do provedor ainda depende de um dominio de callback publicado
+    (pendencia registrada, nao simulada como pronta). Enquanto isso, se `body.credential`
+    vier preenchido (token real obtido por outro meio -- hoje, so o fluxo manual de
+    sandbox), este endpoint guarda-o de verdade no cofre (criptografado, por tenant) em
+    vez de descartar; sem `credential`, o comportamento permanece exatamente o de antes
+    (Connection so com metadado, `mode=SIMULATOR`, sem segredo algum).
     """
     fixture, state = _authorize(request, Permission.CONNECTION_MANAGE)
     require_step_up(request, fixture)
     idem_key = require_idempotency_key(request)
     body = await parse_body(request, OAuthCallbackRequest)
+
+    if body.credential is not None and state.vault_cipher is None:
+        raise ApiError(
+            "VALIDATION_FAILED",
+            "CAMPAIA_VAULT_KEY nao configurada -- o cofre de credenciais nao esta "
+            "disponivel para guardar um token real neste ambiente.",
+        )
 
     pending = state.redeem_oauth_state(
         body.state, tenant_id=fixture.tenant_id, now=datetime.now(timezone.utc)
@@ -101,11 +116,24 @@ async def oauth_callback(request: Request) -> JSONResponse:
         )
 
     def _do_create():
+        secret_ref = None
+        mode = ConnectionMode.SIMULATOR
+        if body.credential is not None:
+            secret_ref = state.vault.store(
+                fixture.tenant_id,
+                provider=pending.provider,
+                external_account_id=body.external_account_id,
+                payload=body.credential,
+                cipher=state.vault_cipher,
+            ).handle
+            mode = ConnectionMode.TEST
         conn = state.connections.create(
             fixture.tenant_id,
             provider=pending.provider,
             external_account_id=body.external_account_id,
             display_name=body.display_name,
+            secret_ref=secret_ref,
+            mode=mode,
         )
         state.audit.append(
             tenant_id=fixture.tenant_id,
@@ -133,6 +161,8 @@ async def revoke_connection(request: Request) -> Response:
         raise ApiError("NOT_FOUND", "Connection not found.")
 
     def _do_revoke():
+        if conn.secret_ref is not None:
+            state.vault.revoke(fixture.tenant_id, SecretRef(handle=conn.secret_ref))
         state.connections.revoke(fixture.tenant_id, connection_id)
         state.audit.append(
             tenant_id=fixture.tenant_id,

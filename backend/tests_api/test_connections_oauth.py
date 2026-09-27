@@ -9,7 +9,10 @@ desconhecido, de outro tenant, ou reutilizado).
 
 from __future__ import annotations
 
+import os
 import unittest
+
+from campaia_core.credential_vault import CredentialCipher
 
 from tests_api.test_helpers import OTHER_OWNER, OWNER, make_client, unique_idem, with_step_up
 
@@ -136,6 +139,119 @@ class OAuthCallbackTests(unittest.TestCase):
             json={"state": state_token, "external_account_id": "acct-1", "display_name": "X"},
         )
         self.assertEqual(r.status_code, 422, r.text)
+
+
+class OAuthCallbackRealCredentialTests(unittest.TestCase):
+    """Decisao do Diretor (27/09/2026, SaaS multi-tenant): quando um token real e'
+    enviado no callback, ele tem que ser guardado de verdade no cofre -- nunca
+    descartado, nunca em texto claro em nenhum lugar acessivel pela API."""
+
+    def _clear_vault_key(self) -> str | None:
+        return os.environ.pop("CAMPAIA_VAULT_KEY", None)
+
+    def _restore_vault_key(self, old: str | None) -> None:
+        if old is not None:
+            os.environ["CAMPAIA_VAULT_KEY"] = old
+
+    def test_credential_without_vault_key_configured_fails_closed(self):
+        old = self._clear_vault_key()
+        try:
+            client = make_client()
+            state_token = _start_oauth(client, OWNER)
+
+            r = client.post(
+                "/connections/oauth/callback",
+                headers={**with_step_up(OWNER), **unique_idem()},
+                json={
+                    "state": state_token,
+                    "external_account_id": "acct-real-1",
+                    "display_name": "Conta real",
+                    "credential": {"refresh_token": "1//real-token"},
+                },
+            )
+            self.assertEqual(r.status_code, 422, r.text)
+            listed = client.get("/connections", headers=OWNER)
+            self.assertEqual(len(listed.json()), 0)
+        finally:
+            self._restore_vault_key(old)
+
+    def test_credential_is_stored_encrypted_and_never_returned_by_the_api(self):
+        old = self._clear_vault_key()
+        os.environ["CAMPAIA_VAULT_KEY"] = CredentialCipher.generate_key()
+        try:
+            client = make_client()
+            state_token = _start_oauth(client, OWNER)
+
+            r = client.post(
+                "/connections/oauth/callback",
+                headers={**with_step_up(OWNER), **unique_idem()},
+                json={
+                    "state": state_token,
+                    "external_account_id": "acct-real-1",
+                    "display_name": "Conta real",
+                    "credential": {"refresh_token": "1//real-token"},
+                },
+            )
+            self.assertEqual(r.status_code, 201, r.text)
+            body = r.json()
+            self.assertNotIn("credential", body)
+            self.assertNotIn("secret_ref", body)
+            self.assertNotIn("1//real-token", r.text)
+
+            from campaia_core.connectors import SecretRef
+
+            state = client.app.state.campaia
+            conn = state.connections.get("demo-tenant", body["id"])
+            self.assertIsNotNone(conn.secret_ref)
+            self.assertTrue(conn.secret_ref.startswith("vault://GOOGLE_ADS/"))
+
+            resolved = state.vault.resolve(
+                "demo-tenant", SecretRef(handle=conn.secret_ref), cipher=state.vault_cipher
+            )
+            self.assertEqual(resolved, {"refresh_token": "1//real-token"})
+        finally:
+            os.environ.pop("CAMPAIA_VAULT_KEY", None)
+            self._restore_vault_key(old)
+
+    def test_revoking_a_real_connection_also_revokes_the_vault_secret(self):
+        old = self._clear_vault_key()
+        os.environ["CAMPAIA_VAULT_KEY"] = CredentialCipher.generate_key()
+        try:
+            client = make_client()
+            state_token = _start_oauth(client, OWNER)
+
+            created = client.post(
+                "/connections/oauth/callback",
+                headers={**with_step_up(OWNER), **unique_idem()},
+                json={
+                    "state": state_token,
+                    "external_account_id": "acct-real-1",
+                    "display_name": "Conta real",
+                    "credential": {"refresh_token": "1//real-token"},
+                },
+            ).json()
+
+            state = client.app.state.campaia
+            conn_before = state.connections.get("demo-tenant", created["id"])
+            secret_ref_handle = conn_before.secret_ref
+
+            revoke = client.delete(
+                f"/connections/{created['id']}",
+                headers={**with_step_up(OWNER), **unique_idem()},
+            )
+            self.assertEqual(revoke.status_code, 204, revoke.text)
+
+            from campaia_core.connectors import SecretRef
+
+            with self.assertRaises(KeyError):
+                state.vault.resolve(
+                    conn_before.tenant_id,
+                    SecretRef(handle=secret_ref_handle),
+                    cipher=state.vault_cipher,
+                )
+        finally:
+            os.environ.pop("CAMPAIA_VAULT_KEY", None)
+            self._restore_vault_key(old)
 
 
 if __name__ == "__main__":

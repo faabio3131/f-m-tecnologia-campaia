@@ -21,7 +21,8 @@ from typing import TYPE_CHECKING, Any
 
 from campaia_core.autonomy import AutonomySettings
 from campaia_core.budget import BudgetEngine, BudgetLimits
-from campaia_core.connectors import ConnectionMode
+from campaia_core.connectors import ConnectionMode, SecretRef
+from campaia_core.credential_vault import CredentialCipher
 from campaia_core.policy import PolicyDecision
 from campaia_core.states import Campaign
 
@@ -130,6 +131,11 @@ class Connection:
     api_version: str = "sim-1"
     last_synced_at: datetime = field(default_factory=now_utc)
     mode: ConnectionMode = ConnectionMode.SIMULATOR
+    # Decisao do Diretor (27/09/2026, SaaS multi-tenant): a credencial real do tenant
+    # nunca fica em variavel de ambiente nem em campo em claro aqui -- so a referencia
+    # opaca ao cofre (ver VaultRepository abaixo). None enquanto a conexao for so
+    # metadado simulado (nenhum token real foi obtido ainda para ela).
+    secret_ref: str | None = None
 
 
 class ConnectionRepository:
@@ -161,6 +167,87 @@ class ConnectionRepository:
             return None
         conn.status = "REVOKED"
         return conn
+
+
+# --------------------------------------------------------------------------- credential vault
+
+
+@dataclass
+class _VaultRow:
+    """Uma linha do cofre: ciphertext opaco, nunca o segredo em claro.
+
+    `tenant_id` fica na linha (nao so implicito pela tabela) porque `resolve()` compara
+    explicitamente contra o tenant do chamador antes de decifrar -- um handle vazado ou
+    adivinhado de outro tenant nunca decifra, mesmo que o SQLite guarde tudo num so
+    arquivo (isolamento e por logica, nao por arquivo separado).
+    """
+
+    secret_id: str
+    tenant_id: str
+    provider: str
+    external_account_id: str
+    ciphertext: str
+
+
+class VaultAccessDenied(Exception):
+    """A `SecretRef` existe, mas pertence a outro tenant. Nunca decifra nesse caso --
+    cross-tenant access e STOP condition (Ordem Mestra, secao de multi-tenancy)."""
+
+
+class VaultRepository:
+    """Armazenamento (SQLite quando persistente, dict em memoria em ambiente efemero)
+    das linhas cifradas do cofre. A cifragem em si vive em `credential_vault.py`; este
+    repositorio so guarda/recupera o ciphertext ja pronto, e aplica o guard de tenant.
+    """
+
+    def __init__(self, table: "RecordTable | None" = None) -> None:
+        self._table = table
+        self._items: dict[str, _VaultRow] = {}
+        if table is not None:
+            for id_, tenant_id, obj in table.all_rows():
+                self._items[id_] = obj
+
+    def store(
+        self,
+        tenant_id: str,
+        *,
+        provider: str,
+        external_account_id: str,
+        payload: dict,
+        cipher: CredentialCipher,
+    ) -> SecretRef:
+        secret_id = new_id("sec")
+        row = _VaultRow(
+            secret_id=secret_id,
+            tenant_id=tenant_id,
+            provider=provider,
+            external_account_id=external_account_id,
+            ciphertext=cipher.encrypt_payload(payload),
+        )
+        if self._table is not None:
+            self._table.put(secret_id, tenant_id, row)
+        self._items[secret_id] = row
+        return SecretRef(handle=f"vault://{provider}/{secret_id}")
+
+    def resolve(self, tenant_id: str, secret_ref: SecretRef, *, cipher: CredentialCipher) -> dict:
+        secret_id = secret_ref.handle.rsplit("/", 1)[-1]
+        row = self._items.get(secret_id)
+        if row is None:
+            raise KeyError("Credencial nao encontrada no cofre.")
+        if row.tenant_id != tenant_id:
+            raise VaultAccessDenied(
+                "SecretRef pertence a outro tenant. Acesso recusado."
+            )
+        return cipher.decrypt_payload(row.ciphertext)
+
+    def revoke(self, tenant_id: str, secret_ref: SecretRef) -> None:
+        secret_id = secret_ref.handle.rsplit("/", 1)[-1]
+        row = self._items.get(secret_id)
+        if row is None or row.tenant_id != tenant_id:
+            return
+        del self._items[secret_id]
+        if self._table is not None:
+            self._table.put(secret_id, tenant_id, None)
 
 
 # --------------------------------------------------------------------------- campaigns
