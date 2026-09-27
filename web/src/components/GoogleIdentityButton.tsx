@@ -2,8 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  GoogleIdentityError,
+  IdentityPlatformExchangeError,
   exchangeGoogleCredentialForIdentityPlatformToken,
+} from "../lib/api/identity-platform";
+import {
+  GoogleIdentityError,
   getGoogleIdentityConfig,
   loadGoogleIdentityServices,
 } from "../lib/auth/google-identity-client";
@@ -16,7 +19,12 @@ interface GoogleIdentityButtonProps {
 }
 
 function friendlyGoogleError(error: unknown): string {
-  if (error instanceof GoogleIdentityError) return error.message;
+  if (
+    error instanceof GoogleIdentityError ||
+    error instanceof IdentityPlatformExchangeError
+  ) {
+    return error.message;
+  }
   return "Não foi possível concluir a autenticação com o Google.";
 }
 
@@ -32,6 +40,8 @@ export function GoogleIdentityButton({
   const disabledRef = useRef(disabled);
   const [setupError, setSetupError] = useState<string | null>(null);
   const config = getGoogleIdentityConfig();
+  const clientId = config?.clientId ?? null;
+  const identityPlatformPublicApi = config?.identityPlatformPublicApi ?? null;
 
   useEffect(() => {
     onIdTokenRef.current = onIdToken;
@@ -46,7 +56,7 @@ export function GoogleIdentityButton({
   }, [disabled]);
 
   useEffect(() => {
-    if (!config) return;
+    if (!clientId || !identityPlatformPublicApi) return;
     const container = containerRef.current;
     if (!container) return;
 
@@ -58,17 +68,23 @@ export function GoogleIdentityButton({
         if (!active) return;
 
         api.initialize({
-          client_id: config.clientId,
+          client_id: clientId,
           auto_select: false,
           callback: (response) => {
             if (!active || disabledRef.current) return;
             void (async () => {
               try {
                 const googleCredential = response.credential?.trim() ?? "";
+                if (!googleCredential) {
+                  throw new GoogleIdentityError(
+                    "MISSING_GOOGLE_CREDENTIAL",
+                    "O Google não retornou uma credencial de identidade válida.",
+                  );
+                }
                 const idToken =
                   await exchangeGoogleCredentialForIdentityPlatformToken(
                     googleCredential,
-                    { firebaseApiKey: config.firebaseApiKey },
+                    { publicApi: identityPlatformPublicApi },
                   );
                 if (active) await onIdTokenRef.current(idToken);
               } catch (error) {
@@ -103,9 +119,9 @@ export function GoogleIdentityButton({
       active = false;
       container.replaceChildren();
     };
-  }, [config?.clientId, config?.firebaseApiKey, text]);
+  }, [clientId, identityPlatformPublicApi, text]);
 
-  if (!config) return null;
+  if (!clientId || !identityPlatformPublicApi) return null;
 
   return (
     <div>

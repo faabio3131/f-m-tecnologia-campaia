@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  GoogleIdentityError,
+  IdentityPlatformExchangeError,
   exchangeGoogleCredentialForIdentityPlatformToken,
+} from "@/lib/api/identity-platform";
+import {
   getGoogleIdentityConfig,
   isGoogleIdentityConfigured,
 } from "@/lib/auth/google-identity-client";
@@ -19,7 +21,7 @@ describe("Google Identity Platform Web client", () => {
 
   it("fails closed when either public browser setting is missing", () => {
     vi.stubEnv("NEXT_PUBLIC_GOOGLE_IDENTITY_CLIENT_ID", "");
-    vi.stubEnv("NEXT_PUBLIC_FIREBASE_API_KEY", "");
+    vi.stubEnv("NEXT_PUBLIC_IDENTITY_PLATFORM_PUBLIC_API", "");
     expect(getGoogleIdentityConfig()).toBeNull();
     expect(isGoogleIdentityConfigured()).toBe(false);
 
@@ -29,11 +31,11 @@ describe("Google Identity Platform Web client", () => {
 
   it("exposes only the public client configuration when both values exist", () => {
     vi.stubEnv("NEXT_PUBLIC_GOOGLE_IDENTITY_CLIENT_ID", " client.apps.googleusercontent.com ");
-    vi.stubEnv("NEXT_PUBLIC_FIREBASE_API_KEY", " public-web-api-key ");
+    vi.stubEnv("NEXT_PUBLIC_IDENTITY_PLATFORM_PUBLIC_API", " public-web-api ");
 
     expect(getGoogleIdentityConfig()).toEqual({
       clientId: "client.apps.googleusercontent.com",
-      firebaseApiKey: "public-web-api-key",
+      identityPlatformPublicApi: "public-web-api",
     });
     expect(isGoogleIdentityConfigured()).toBe(true);
   });
@@ -49,7 +51,7 @@ describe("Google Identity Platform Web client", () => {
     const result = await exchangeGoogleCredentialForIdentityPlatformToken(
       "google-id-token",
       {
-        firebaseApiKey: "public-web-api-key",
+        publicApi: "public-web-api",
         requestUri: "https://app.campaia.test",
       },
     );
@@ -58,7 +60,7 @@ describe("Google Identity Platform Web client", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toBe(
-      "https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=public-web-api-key",
+      "https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=public-web-api",
     );
     expect(init?.method).toBe("POST");
     const body = JSON.parse(String(init?.body));
@@ -79,12 +81,10 @@ describe("Google Identity Platform Web client", () => {
 
     await expect(
       exchangeGoogleCredentialForIdentityPlatformToken("google-id-token", {
-        firebaseApiKey: "public-web-api-key",
+        publicApi: "public-web-api",
         requestUri: "https://app.campaia.test",
       }),
-    ).rejects.toMatchObject<Partial<GoogleIdentityError>>({
-      code: "IDENTITY_PLATFORM_EXCHANGE_FAILED",
-    });
+    ).rejects.toBeInstanceOf(IdentityPlatformExchangeError);
   });
 
   it("maps an Identity Platform rejection to a fail-closed authentication error", async () => {
@@ -97,11 +97,9 @@ describe("Google Identity Platform Web client", () => {
 
     await expect(
       exchangeGoogleCredentialForIdentityPlatformToken("google-id-token", {
-        firebaseApiKey: "public-web-api-key",
+        publicApi: "public-web-api",
         requestUri: "https://app.campaia.test",
       }),
-    ).rejects.toMatchObject<Partial<GoogleIdentityError>>({
-      code: "IDENTITY_PLATFORM_EXCHANGE_FAILED",
-    });
+    ).rejects.toBeInstanceOf(IdentityPlatformExchangeError);
   });
 });

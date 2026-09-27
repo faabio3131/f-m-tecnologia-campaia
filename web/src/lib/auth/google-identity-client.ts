@@ -1,28 +1,26 @@
 /**
- * Google Identity Platform client for the commercial Web flow.
+ * Google Identity Services client for the commercial Web flow.
  *
  * Production flow:
  * 1. Google Identity Services returns a Google OAuth ID token to the browser.
- * 2. The browser exchanges it through Identity Platform's official signInWithIdp
- *    endpoint for an Identity Platform/Firebase ID token.
+ * 2. src/lib/api/identity-platform.ts exchanges it through Identity Platform's official
+ *    signInWithIdp endpoint for an Identity Platform/Firebase ID token.
  * 3. Only that short-lived ID token is passed to the CampaIA BFF, which creates the
- *    server-side CampaIA session. No refresh token is persisted in localStorage/sessionStorage.
+ *    server-side CampaIA session. No refresh token is persisted in browser storage.
  *
- * NEXT_PUBLIC_GOOGLE_IDENTITY_CLIENT_ID and NEXT_PUBLIC_FIREBASE_API_KEY are public
- * browser configuration, not tenant secrets. Real secrets/privileged credentials remain
- * server-side; deployment must restrict the Web API key and authorized origins in Google.
+ * NEXT_PUBLIC_GOOGLE_IDENTITY_CLIENT_ID and NEXT_PUBLIC_IDENTITY_PLATFORM_PUBLIC_API
+ * are public browser configuration, not tenant secrets. Real secrets/privileged
+ * credentials remain server-side.
  */
 
 export interface GoogleIdentityConfig {
   clientId: string;
-  firebaseApiKey: string;
+  identityPlatformPublicApi: string;
 }
 
 export type GoogleIdentityErrorCode =
-  | "NOT_CONFIGURED"
   | "SCRIPT_LOAD_FAILED"
-  | "MISSING_GOOGLE_CREDENTIAL"
-  | "IDENTITY_PLATFORM_EXCHANGE_FAILED";
+  | "MISSING_GOOGLE_CREDENTIAL";
 
 export class GoogleIdentityError extends Error {
   constructor(
@@ -75,9 +73,10 @@ let googleScriptPromise: Promise<GoogleAccountsIdApi> | null = null;
 
 export function getGoogleIdentityConfig(): GoogleIdentityConfig | null {
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_IDENTITY_CLIENT_ID?.trim() ?? "";
-  const firebaseApiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.trim() ?? "";
-  if (!clientId || !firebaseApiKey) return null;
-  return { clientId, firebaseApiKey };
+  const identityPlatformPublicApi =
+    process.env.NEXT_PUBLIC_IDENTITY_PLATFORM_PUBLIC_API?.trim() ?? "";
+  if (!clientId || !identityPlatformPublicApi) return null;
+  return { clientId, identityPlatformPublicApi };
 }
 
 export function isGoogleIdentityConfigured(): boolean {
@@ -147,64 +146,4 @@ export function loadGoogleIdentityServices(): Promise<GoogleAccountsIdApi> {
   });
 
   return googleScriptPromise;
-}
-
-interface IdentityPlatformResponse {
-  idToken?: string;
-  error?: {
-    message?: string;
-  };
-}
-
-export async function exchangeGoogleCredentialForIdentityPlatformToken(
-  googleIdToken: string,
-  options: { firebaseApiKey: string; requestUri?: string },
-): Promise<string> {
-  const credential = googleIdToken.trim();
-  if (!credential) {
-    throw new GoogleIdentityError(
-      "MISSING_GOOGLE_CREDENTIAL",
-      "O Google não retornou uma credencial de identidade válida.",
-    );
-  }
-
-  const requestUri =
-    options.requestUri?.trim() ??
-    (typeof window !== "undefined" ? window.location.origin : "");
-  if (!requestUri) {
-    throw new GoogleIdentityError(
-      "IDENTITY_PLATFORM_EXCHANGE_FAILED",
-      "Não foi possível determinar a origem da aplicação para autenticação.",
-    );
-  }
-
-  const response = await fetch(
-    `https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${encodeURIComponent(
-      options.firebaseApiKey,
-    )}`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        postBody: new URLSearchParams({
-          id_token: credential,
-          providerId: "google.com",
-        }).toString(),
-        requestUri,
-        returnIdpCredential: true,
-        returnSecureToken: true,
-      }),
-    },
-  );
-
-  const body = (await response.json().catch(() => null)) as IdentityPlatformResponse | null;
-  const idToken = body?.idToken?.trim();
-  if (!response.ok || !idToken) {
-    throw new GoogleIdentityError(
-      "IDENTITY_PLATFORM_EXCHANGE_FAILED",
-      "O Google Identity Platform não conseguiu concluir a autenticação.",
-    );
-  }
-
-  return idToken;
 }
