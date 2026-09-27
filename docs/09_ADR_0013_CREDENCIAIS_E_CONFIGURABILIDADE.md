@@ -145,11 +145,51 @@ Google/Meta OAuth Consent Screen → `authorization_code` + `state` → callback
 CampaIA → troca do código por tokens diretamente com o provedor → gravação direta no
 Vault → `Connection` recebe só a `SecretRef` → **o refresh token nunca trafega pelo
 browser**. Depende de um Client OAuth tipo "Aplicativo da Web" com domínio de callback
-publicado, que não existe ainda (a Web da Nova FM não está em produção). O campo
-`credential` aceito hoje por `POST /connections/oauth/callback` é um mecanismo de
-bootstrap/teste explicitamente documentado como tal — nunca o desenho final da API
-pública.
+publicado, que não existe ainda (a Web da Nova FM não está em produção).
 
 **Status desta ADR:** permanece `PROPOSTA` quanto ao modelo de dois modos
 (PLATFORM/BYO), mas a camada de armazenamento (cofre) que a viabiliza tecnicamente
 passa de `PREVISTA` para `IMPLEMENTADA E TESTADA` nesta data.
+
+---
+
+## Adendo (27/09/2026, parte 2) — correção: campo `credential` retirado do contrato público; arquitetura-alvo Google Ads
+
+**Correção sobre o adendo anterior (mesma data, acima):** a frase *"o campo `credential`
+aceito hoje por `POST /connections/oauth/callback` é um mecanismo de bootstrap/teste"*
+ficou **desatualizada horas depois de escrita**, pela Auditoria Independente #3
+(27/09/2026, achado 4): esse campo foi **retirado por completo** do contrato público
+(`contracts/bff-openapi.yaml`) — `OAuthCallbackRequest` agora rejeita com 422
+(`extra_forbidden`) qualquer tentativa de envio. A testabilidade do Vault foi preservada
+por uma rota dev/test-only, deliberadamente fora do contrato público:
+`POST /connections/{connectionId}/dev-attach-credential` (fail-closed fora de
+test/dev-local). Este parágrafo substitui a descrição anterior — **CURRENT real, não
+histórico**, confirmado por leitura de `backend/api/models.py` e
+`backend/api/routes_connections.py` nesta data.
+
+**Arquitetura-alvo para o canal Google Ads especificamente** (detalhada em
+`docs/evidence/EVIDENCIA_GOOGLE_ADS_ARQUITETURA_OAUTH_MULTITENANT_20260927.md`, que este
+parágrafo resume e que prevalece em caso de divergência futura):
+
+1. **OAuth Client tipo "Web Application"** e a **Redirect URI oficial do CampaIA** são
+   credenciais **PLATFORM** (mesma linha de raciocínio da tabela acima) — distintas do
+   OAuth Desktop Client já existente, que fica reservado exclusivamente a teste/uso
+   manual, nunca a fluxo comercial (um Desktop Client não suporta redirect server-side
+   com domínio de callback).
+2. **Multi-tenant real, sem MCC obrigatório:** cada tenant autoriza a própria conta
+   Google Ads via OAuth. Uma conta gerenciadora (MCC) da própria Nova FM, quando
+   existir, serve só para homologação/administração interna — nunca um vínculo que todo
+   cliente precise ter.
+3. **Customer ID por conexão, nunca por variável de ambiente global** — reafirma a
+   correção já registrada no adendo anterior (`GOOGLE_ADS_CUSTOMER_ID`/
+   `GOOGLE_ADS_LOGIN_CUSTOMER_ID` como env var global foi um desvio já corrigido pelo
+   Diretor; confirmado por grep real em 27/09/2026 que esses env vars não existem no
+   código).
+4. **Developer token reclassificado, não removido como exigência:** continua sendo um
+   header obrigatório de toda chamada à Google Ads API (credencial **PLATFORM**), mas
+   não é — e nunca foi, segundo esta ADR desde 25/08/2026 — o mecanismo completo de
+   autenticação por tenant. Quem autentica cada cliente é o fluxo OAuth (itens 1-2).
+
+**Nada dos itens 1-4 foi implementado nesta tarefa** (puramente documental). Nenhum
+OAuth Client Web foi criado (ação de Google Cloud Console, fora do alcance de Claude).
+Nenhum adaptador Google Ads real foi iniciado.

@@ -75,3 +75,38 @@ Seguindo a ordem de canais já aprovada (D-04/ADR-0007: Google → Meta → conj
 | WhatsApp em produção real (número comercial real) | Depende da etapa Meta estar madura (restrição técnica de ADR-0007) e de CNPJ/LGPD resolvidos (D-09) |
 
 **Nenhum destes itens foi executado nesta sessão** — são ações que exigem acesso direto do Diretor (ou de quem ele designar) a contas comerciais reais, fora do alcance de Claude.
+
+---
+
+## Adendo (27/09/2026) — correção: developer token não é a arquitetura de autenticação, é uma credencial entre várias
+
+**Contexto do adendo:** a Seção 1 acima (escrita em 27/08/2026, antes de qualquer
+engenharia de credenciais existir) descreve a obtenção do developer token como se fosse,
+por si só, o suficiente para autenticar o CampaIA contra o Google Ads em nome de cada
+cliente. Isso nunca foi preciso, e ficou explicitamente corrigido em 27/09/2026 (ver
+Adendo, parte 2, de `09_ADR_0013_CREDENCIAIS_E_CONFIGURABILIDADE.md`, e o detalhamento
+completo em `docs/evidence/EVIDENCIA_GOOGLE_ADS_ARQUITETURA_OAUTH_MULTITENANT_20260927.md`).
+
+**O texto original da Seção 1 acima permanece intacto** (histórico do que foi de fato
+executado em 27-28/08/2026 — conta de gerenciador criada, developer token obtido em
+nível "Test Account Access", ver `docs/evidence/DIRETOR_MARCO_GOOGLE_ADS_MANAGER_CRIADO_20260827.md`).
+Este adendo só corrige o ENQUADRAMENTO, não os fatos já registrados.
+
+**Correção:**
+
+1. O developer token é uma credencial **PLATFORM** entre várias — ao lado do OAuth
+   Client tipo "Web Application" e do Redirect URI oficial do CampaIA (ambos ainda por
+   criar/configurar, ver ADR-0013). Ele prova à Google qual aplicativo está chamando a
+   API; não autentica nenhum cliente específico.
+2. Quem autentica CADA cliente do CampaIA é um fluxo OAuth por tenant (multi-user) —
+   cada tenant autoriza a própria conta Google Ads. A conta gerenciadora (MCC) da Nova
+   FM Tecnologia serve só para homologação/administração interna, **nunca** um vínculo
+   MCC obrigatório para o cliente comum.
+3. O OAuth Client tipo "Desktop" (existente, usado até aqui para testes manuais)
+   permanece reservado a esse uso — nunca a credencial OAuth comercial, que exige um
+   Client tipo "Web Application" com domínio de callback publicado.
+4. Customer IDs de cada conexão são resolvidos dinamicamente por tenant (via
+   `Connection`/Credential Vault), nunca fixados em variável de ambiente global.
+
+**Nada disto foi implementado nesta tarefa** — correção puramente documental. Nenhum
+adaptador Google Ads real foi iniciado; nenhuma credencial real foi criada.
