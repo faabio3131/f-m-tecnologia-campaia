@@ -322,9 +322,14 @@ async def publish_campaign(request: Request) -> JSONResponse:
     # SAME Idempotency-Key would be wrongly rejected as "approval already used". A
     # genuinely NEW attempt (different Idempotency-Key) reusing the same approval_id still
     # falls through to the checks below and is correctly rejected.
+    # SECURITY FIX (Fase C6, 27/09/2026 -- auditoria independente): o replay tinha que
+    # devolver `existing.result` (a resposta ORIGINAL desta chamada), nunca uma
+    # re-serializacao do estado atual -- se outra mutacao legitima (outra
+    # Idempotency-Key) tivesse alterado a campanha entre a chamada original e este
+    # replay, a resposta refletiria esse estado novo, nao o resultado original.
     existing = state.idempotency.get(fixture.tenant_id, f"http:publish:{idem_key}")
     if existing is not None:
-        return json_response(serialize_campaign(record), status_code=202)
+        return JSONResponse(existing.result, status_code=202)
 
     decision = record.last_policy_decision
     if decision is None or decision.policy_decision_id != body.policy_decision_id:
@@ -400,54 +405,64 @@ async def publish_campaign(request: Request) -> JSONResponse:
             )
         except (CampaiaError, ConnectorError) as exc:
             raise from_domain_error(exc)
-        return outcome
+
+        # ACHADO 19: consome a aprovacao usada para publicar -- defesa em profundidade
+        # (publicar ja e protegido naturalmente pela maquina de estados da campanha,
+        # que nao volta a APPROVED sozinha, mas marcar a aprovacao como usada mantem a
+        # mesma semantica de PUBLISH/BUDGET_CHANGE/AUTONOMY_CHANGE e evita depender so
+        # de um efeito colateral). Fase C6 (27/09/2026): TUDO que constroi a resposta
+        # final agora vive DENTRO deste fecho -- so roda para uma Idempotency-Key
+        # genuinamente nova (o curto-circuito de replay no topo desta funcao ja
+        # retornou antes de chegar aqui para uma repeticao) -- e e' este valor,
+        # capturado no momento da mutacao, que fica cacheado para replay exato.
+        approval.status = "APPLIED"
+
+        now = datetime.now(timezone.utc)
+        for step in outcome.steps:
+            if step.external_resource_id:
+                # sync_status: CONFIRMED once the channel is in outcome.confirmed_channels,
+                # else PENDING. There is no per-channel DIVERGENT detection anywhere in the
+                # domain layer yet, so DIVERGENT is never produced here (documented gap).
+                sync_status = "CONFIRMED" if step.channel in outcome.confirmed_channels else "PENDING"
+                record.external_resources[step.channel] = ExternalResourceState(
+                    channel=step.channel,
+                    external_resource_id=step.external_resource_id,
+                    sync_status=sync_status,
+                    # No per-channel reconciliation timestamp exists in the domain layer --
+                    # reusing the moment this channel's resource id was recorded as its own
+                    # last_synced_at (documented simplification, see repositories.CampaignRecord).
+                    last_synced_at=now,
+                )
+        if outcome.confirmed_channels:
+            record.last_synced_at = now
+
+        state.audit.append(
+            tenant_id=fixture.tenant_id,
+            actor=fixture.user_id,
+            action="CAMPAIGN_PUBLISH",
+            target=record.campaign_id,
+            policy_decision_id=decision.policy_decision_id,
+            details={
+                "saga_id": outcome.saga_id,
+                "confirmed": outcome.confirmed_channels,
+                "failed": outcome.failed_channels,
+            },
+        )
+        return serialize_campaign(record).model_dump(mode="json")
 
     # Idempotency at the HTTP boundary: repeating the same Idempotency-Key returns the
-    # original saga outcome instead of re-running the saga (which itself is also
-    # idempotent per-channel via campaia_core.infra.IdempotencyStore).
+    # original result instead of re-running the saga (which itself is also idempotent
+    # per-channel via campaia_core.infra.IdempotencyStore).
     try:
-        outcome, _replay = state.idempotency.execute(fixture.tenant_id, f"http:publish:{idem_key}", _do_publish)
+        result, _replay = state.idempotency.execute(
+            fixture.tenant_id, f"http:publish:{idem_key}", _do_publish
+        )
     except ApiError:
         raise
     except (CampaiaError, ConnectorError) as exc:
         raise from_domain_error(exc)
 
-    # ACHADO 19: consome a aprovacao usada para publicar -- defesa em profundidade
-    # (publicar ja e protegido naturalmente pela maquina de estados da campanha, que nao
-    # volta a APPROVED sozinha, mas marcar a aprovacao como usada mantem a mesma semantica
-    # de PUBLISH/BUDGET_CHANGE/AUTONOMY_CHANGE e evita depender so de um efeito colateral).
-    # So roda para uma Idempotency-Key genuinamente nova -- ver o curto-circuito de replay
-    # no topo desta funcao.
-    approval.status = "APPLIED"
-
-    now = datetime.now(timezone.utc)
-    for step in outcome.steps:
-        if step.external_resource_id:
-            # sync_status: CONFIRMED once the channel is in outcome.confirmed_channels,
-            # else PENDING. There is no per-channel DIVERGENT detection anywhere in the
-            # domain layer yet, so DIVERGENT is never produced here (documented gap).
-            sync_status = "CONFIRMED" if step.channel in outcome.confirmed_channels else "PENDING"
-            record.external_resources[step.channel] = ExternalResourceState(
-                channel=step.channel,
-                external_resource_id=step.external_resource_id,
-                sync_status=sync_status,
-                # No per-channel reconciliation timestamp exists in the domain layer --
-                # reusing the moment this channel's resource id was recorded as its own
-                # last_synced_at (documented simplification, see repositories.CampaignRecord).
-                last_synced_at=now,
-            )
-    if outcome.confirmed_channels:
-        record.last_synced_at = now
-
-    state.audit.append(
-        tenant_id=fixture.tenant_id,
-        actor=fixture.user_id,
-        action="CAMPAIGN_PUBLISH",
-        target=record.campaign_id,
-        policy_decision_id=decision.policy_decision_id,
-        details={"saga_id": outcome.saga_id, "confirmed": outcome.confirmed_channels, "failed": outcome.failed_channels},
-    )
-    return json_response(serialize_campaign(record), status_code=202)
+    return JSONResponse(result, status_code=202)
 
 
 # --------------------------------------------------------------------------- pause
@@ -604,9 +619,14 @@ async def patch_budget(request: Request) -> JSONResponse:
     # abaixo -- senao um replay legitimo da MESMA Idempotency-Key seria incorretamente
     # rejeitado como "aprovacao ja usada". Uma tentativa NOVA (Idempotency-Key diferente)
     # reaproveitando o mesmo approval_id continua caindo nas checagens abaixo normalmente.
+    # SECURITY FIX (Fase C6, 27/09/2026 -- auditoria independente): o replay devolvia
+    # `serialize_campaign(record)` no ESTADO ATUAL, nunca o resultado original desta
+    # chamada -- se outra mudanca legitima (outra Idempotency-Key) tivesse alterado a
+    # campanha entre a chamada original e este replay, a resposta do replay refletiria
+    # esse estado novo, nao a resposta original que o cliente recebeu na primeira vez.
     existing = state.idempotency.get(fixture.tenant_id, f"http:patch_budget:{idem_key}")
     if existing is not None:
-        return json_response(serialize_campaign(record), status_code=202)
+        return JSONResponse(existing.result, status_code=202)
 
     approval = state.approvals.get(fixture.tenant_id, body.approval_id)
     if approval is None or approval.campaign_id != record.campaign_id or approval.kind != "BUDGET_CHANGE":
@@ -634,15 +654,20 @@ async def patch_budget(request: Request) -> JSONResponse:
             target=record.campaign_id,
             details={"new_daily_cap": str(body.new_daily_cap), "change_pct": str(change_pct)},
         )
-        return True
+        # ACHADO 19: consome a aprovacao aqui, DENTRO do fecho protegido por
+        # `idempotency.execute()` -- so roda para uma Idempotency-Key genuinamente nova
+        # (o curto-circuito de replay acima ja retornou antes de chegar aqui para uma
+        # repeticao). A resposta final tambem e' construida aqui (Fase C6): e' este
+        # valor, capturado no momento da mutacao, que fica cacheado para replay exato --
+        # nunca uma re-serializacao do estado atual no momento do replay.
+        approval.status = "APPLIED"
+        return serialize_campaign(record).model_dump(mode="json")
 
-    state.idempotency.execute(fixture.tenant_id, f"http:patch_budget:{idem_key}", _do_patch)
-    # ACHADO 19: consome a aprovacao -- ela autorizou exatamente esta mudanca, nunca uma
-    # segunda mudanca independente. So roda para uma Idempotency-Key genuinamente nova (o
-    # curto-circuito de replay acima ja retornou antes de chegar aqui para uma repeticao).
-    approval.status = "APPLIED"
+    result, _replay = state.idempotency.execute(
+        fixture.tenant_id, f"http:patch_budget:{idem_key}", _do_patch
+    )
     # Contract: 202 Accepted (achado 4).
-    return json_response(serialize_campaign(record), status_code=202)
+    return JSONResponse(result, status_code=202)
 
 
 # --------------------------------------------------------------------------- kill switch

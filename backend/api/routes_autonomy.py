@@ -82,14 +82,12 @@ async def put_autonomy(request: Request) -> JSONResponse:
     # incorretamente rejeitado como "aprovacao ja usada". Uma tentativa NOVA
     # (Idempotency-Key diferente) reaproveitando o mesmo approval_id continua caindo nas
     # checagens abaixo normalmente.
+    # SECURITY FIX (Fase C6, 27/09/2026 -- auditoria independente): mesma correcao de
+    # patch_budget -- o replay tinha que devolver `existing.result` (a resposta
+    # ORIGINAL desta chamada), nunca uma re-serializacao do estado atual.
     existing = state.idempotency.get(fixture.tenant_id, f"http:put_autonomy:{idem_key}")
     if existing is not None:
-        return json_response(
-            _serialize(
-                state.tenant_autonomy.get(fixture.tenant_id, AutonomySettings()),
-                updated_at=state.tenant_autonomy_updated_at.get(fixture.tenant_id, datetime.now(timezone.utc)),
-            )
-        )
+        return JSONResponse(existing.result)
 
     # Contract requires approval_id for /autonomy PUT (achado 12): exactly like publish
     # and patch_budget, the level change must reference an already-APPROVED
@@ -128,17 +126,13 @@ async def put_autonomy(request: Request) -> JSONResponse:
             target=fixture.tenant_id,
             details={"new_level": int(requested_level), "approval_id": body.approval_id},
         )
-        return True
+        # ACHADO 19: consome a aprovacao aqui, DENTRO do fecho -- so roda para uma
+        # Idempotency-Key genuinamente nova. Resposta final tambem construida aqui
+        # (Fase C6): e' este valor que fica cacheado para replay exato.
+        approval.status = "APPLIED"
+        return _serialize(updated, updated_at=now).model_dump(mode="json")
 
-    state.idempotency.execute(fixture.tenant_id, f"http:put_autonomy:{idem_key}", _do_update)
-    # ACHADO 19: consome a aprovacao -- ela autorizou exatamente esta mudanca de nivel,
-    # nunca uma segunda mudanca independente. So roda para uma Idempotency-Key
-    # genuinamente nova (o curto-circuito de replay acima ja retornou antes de chegar
-    # aqui para uma repeticao).
-    approval.status = "APPLIED"
-    return json_response(
-        _serialize(
-            state.tenant_autonomy[fixture.tenant_id],
-            updated_at=state.tenant_autonomy_updated_at[fixture.tenant_id],
-        )
+    result, _replay = state.idempotency.execute(
+        fixture.tenant_id, f"http:put_autonomy:{idem_key}", _do_update
     )
+    return JSONResponse(result)

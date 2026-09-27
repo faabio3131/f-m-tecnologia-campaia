@@ -96,9 +96,12 @@ async def decide_approval(request: Request) -> JSONResponse:
     # (another ApprovalRequest) that this handler never mutates itself. Found by
     # independent verification after the P-14 fix pass; documented in
     # EVIDENCIA_P14_20260828.md as achado 16.
+    # SECURITY FIX (Fase C6, 27/09/2026 -- auditoria independente): o replay tinha que
+    # devolver `existing.result` (a resposta ORIGINAL desta chamada), nunca uma
+    # re-serializacao do estado atual -- mesma correcao de patch_budget/put_autonomy.
     existing = state.idempotency.get(fixture.tenant_id, f"http:decide_approval:{idem_key}")
     if existing is not None:
-        return json_response(serialize_approval(approval))
+        return JSONResponse(existing.result)
 
     resource = Resource(
         tenant_id=fixture.tenant_id,
@@ -146,7 +149,11 @@ async def decide_approval(request: Request) -> JSONResponse:
             target=approval.approval_id,
             details={"reason": body.reason} if body.reason else None,
         )
-        return True
+        # Fase C6: resposta final construida aqui, dentro do fecho, para ficar cacheada
+        # exatamente como foi -- nunca re-serializada no momento de um replay futuro.
+        return serialize_approval(approval).model_dump(mode="json")
 
-    state.idempotency.execute(fixture.tenant_id, f"http:decide_approval:{idem_key}", _do_decide)
-    return json_response(serialize_approval(approval))
+    result, _replay = state.idempotency.execute(
+        fixture.tenant_id, f"http:decide_approval:{idem_key}", _do_decide
+    )
+    return JSONResponse(result)
