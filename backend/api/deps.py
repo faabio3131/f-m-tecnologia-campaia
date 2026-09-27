@@ -12,11 +12,12 @@ from datetime import datetime, timedelta, timezone
 
 from starlette.requests import Request
 
+from campaia_core.identity_provider import IdentityError
 from campaia_core.permissions import Principal
 
 from .errors import ApiError
 from .session import CSRF_HEADER_NAME, SESSION_COOKIE_NAME, SessionRecord
-from .state import AppState, TokenPrincipal
+from .state import DEV_AUTH_FIXTURE_ALLOWED_ENVS, AppState, TokenPrincipal
 
 MIN_IDEMPOTENCY_KEY_LEN = 16
 MAX_IDEMPOTENCY_KEY_LEN = 128
@@ -103,23 +104,72 @@ def require_auth(request: Request) -> TokenPrincipal:
     return _require_auth_via_dev_fixture(request, state)
 
 
+def _current_session_key(request: Request) -> str:
+    """Identificador da sessao/credencial corrente, para amarrar o step-up a ELA (Fase
+    C3, 27/09/2026 -- auditoria independente) em vez de so `(tenant_id, user_id)`.
+
+    Achado real: chaveado so por (tenant_id, user_id), um step-up sobrevivia
+    indevidamente a logout->login (sessao nova, mesmo usuario) e a troca de
+    tenant/unidade dentro da MESMA sessao -- nada nesse par muda nesses casos. Sessao
+    real (cookie) usa o `session_id` do cookie; o fixture de bearer token (dev/teste,
+    sem conceito de sessao) usa o proprio token como substituto -- muda a cada
+    login/token diferente, mesma propriedade de nao sobreviver a uma nova "sessao".
+    """
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if session_id is not None:
+        return f"session:{session_id}"
+    header = request.headers.get("authorization", "")
+    if header.startswith("Bearer "):
+        return f"bearer:{header[len('Bearer '):].strip()}"
+    return "no-session"
+
+
 def note_step_up_header(request: Request, fixture: TokenPrincipal) -> None:
-    """If X-Step-Up-Token is present, record "stepped up now" into AppState.
+    """If X-Step-Up-Token is present and represents a genuine step-up, record "stepped
+    up now" into AppState, keyed by (tenant_id, user_id, session_key) -- ver
+    `_current_session_key` (Fase C3) e `_is_genuine_step_up` (Fase C2).
 
     Must run BEFORE any campaia_core.permissions.authorize() call on this request, since
     authorize() reads Principal.step_up_at to decide STEP_UP_REQUIRED itself (see
     permissions.py REQUIRES_STEP_UP / STEP_UP_MAX_AGE). If this ran after authorize(), the
     very first request with a valid header would still be rejected because the domain
-    check would see step_up_at=None. This function never rejects -- it only records;
-    rejection for a *missing* header on a sensitive endpoint is the domain's own
-    STEP_UP_REQUIRED coming out of authorize(), so the sandbox's "any non-empty value is
-    valid" rule and the real STEP_UP_MAX_AGE recency window are both genuinely enforced by
-    campaia_core, not re-implemented here.
+    check would see step_up_at=None. This function never rejects -- it only records.
+    """
+    state = get_state(request)
+    if _is_genuine_step_up(request, state):
+        session_key = _current_session_key(request)
+        state.record_step_up(
+            fixture.tenant_id, fixture.user_id, session_key, at=datetime.now(timezone.utc)
+        )
+
+
+def _is_genuine_step_up(request: Request, state: AppState) -> bool:
+    """SECURITY FIX (Fase C2, 27/09/2026 -- auditoria independente): a versao anterior
+    aceitava QUALQUER valor nao-vazio de `X-Step-Up-Token` como reautenticacao valida,
+    em qualquer ambiente -- isso nunca foi uma verificacao real, so uma conveniencia de
+    sandbox documentada como tal. Fora de test/dev-local, isso significava que
+    'reautenticacao recente' nao provava nada de verdade.
+
+    Correcao: a conveniencia de "qualquer valor nao-vazio" continua existindo, mas
+    SOMENTE em test/dev-local (mesmo guard de `DEV_AUTH_FIXTURE_ALLOWED_ENVS` usado para
+    o fixture de bearer token). Em qualquer outro ambiente, o header tem que ser um ID
+    token real, verificado pelo `state.id_token_verifier` ja usado para login (WP-02) --
+    hoje isso e' `AlwaysRejectIdTokenVerifier` por padrao (nenhum projeto Firebase real
+    configurado), entao o resultado pratico e' fail-closed em produção ate' um
+    verificador real existir, exatamente como pede a Ordem Mestra. Correlacionar a
+    identidade do token com o usuario da sessao (nao so validar que o token e' real) e'
+    hardening adicional registrado como pendencia -- nao implementado aqui.
     """
     value = request.headers.get("x-step-up-token", "").strip()
-    if value:
-        state = get_state(request)
-        state.record_step_up(fixture.tenant_id, fixture.user_id, at=datetime.now(timezone.utc))
+    if not value:
+        return False
+    if state.env in DEV_AUTH_FIXTURE_ALLOWED_ENVS:
+        return True
+    try:
+        state.id_token_verifier.verify(value)
+    except IdentityError:
+        return False
+    return True
 
 
 def require_step_up(request: Request, fixture: TokenPrincipal) -> None:
@@ -128,9 +178,12 @@ def require_step_up(request: Request, fixture: TokenPrincipal) -> None:
     REQUIRES_STEP_UP -- e.g. OAuth start has no dedicated Permission of its own beyond
     CONNECTION_MANAGE, which IS covered, so this mostly acts as a defence-in-depth
     re-check). Must be called AFTER note_step_up_header/authorize.
+
+    Reusa `_is_genuine_step_up` (Fase C2) -- mesmo criterio real/fixture do resto do
+    fluxo de step-up, nunca "qualquer valor nao-vazio" fora de test/dev-local.
     """
-    value = request.headers.get("x-step-up-token", "").strip()
-    if not value:
+    state = get_state(request)
+    if not _is_genuine_step_up(request, state):
         raise ApiError(
             "STEP_UP_REQUIRED",
             "This operation requires a recent step-up re-authentication "
@@ -156,13 +209,20 @@ def require_idempotency_key(request: Request) -> str:
     return key
 
 
-def build_domain_principal(state: AppState, fixture: TokenPrincipal) -> Principal:
+def build_domain_principal(
+    request: Request, state: AppState, fixture: TokenPrincipal
+) -> Principal:
     """Build the real campaia_core.permissions.Principal, including step_up_at.
 
     This makes the RBAC/ABAC checks in permissions.authorize (MFA, step-up recency,
     value ceilings) genuinely load-bearing rather than re-implemented at the HTTP layer.
+
+    `request` (Fase C3, 27/09/2026): o step-up e' lido pela MESMA chave de sessao com
+    que foi gravado (`_current_session_key`) -- nunca so por (tenant_id, user_id), que
+    sobreviveria indevidamente a um logout->login ou troca de tenant na mesma sessao.
     """
-    step_up_at = state.last_step_up(fixture.tenant_id, fixture.user_id)
+    session_key = _current_session_key(request)
+    step_up_at = state.last_step_up(fixture.tenant_id, fixture.user_id, session_key)
     return fixture.to_domain_principal(step_up_at=step_up_at)
 
 

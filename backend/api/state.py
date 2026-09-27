@@ -295,11 +295,13 @@ class AppState:
     #: __post_init__); populado por fora disso em qualquer outro ambiente faz a
     #: inicializacao recusar (RuntimeError), nunca so ignorar silenciosamente.
     tokens: dict[str, TokenPrincipal] = field(default_factory=dict)
-    # Step-up tokens are accepted at face value in this sandbox (no real re-auth flow) --
-    # we still track a per-(tenant,user) "recent step-up" timestamp so that
-    # campaia_core.permissions.authorize's STEP_UP_MAX_AGE window is honoured for real
-    # rather than just checking header presence and ignoring the domain's own guard.
-    step_up_at: dict[tuple[str, str], datetime] = field(default_factory=dict)
+    # SECURITY FIX (Fase C2/C3, 27/09/2026 -- auditoria independente): chaveado por
+    # (tenant_id, user_id, session_key), nao so (tenant_id, user_id) -- um step-up nao
+    # pode sobreviver a logout->login (sessao nova) nem a troca de tenant/unidade dentro
+    # da mesma sessao (ver api/deps.py::_current_session_key). Fora de test/dev-local, o
+    # header tambem precisa ser um ID token real verificado, nunca "qualquer valor
+    # nao-vazio" -- ver api/deps.py::_is_genuine_step_up.
+    step_up_at: dict[tuple[str, str, str], datetime] = field(default_factory=dict)
 
     idempotency: IdempotencyStore = field(default_factory=IdempotencyStore)
     capabilities: CapabilityRegistry = field(default_factory=_seed_capabilities)
@@ -437,11 +439,13 @@ class AppState:
         self.agent_runner = AgentRunner(gateway=self.ai_gateway)
         self.agent_runner.register_schemas()
 
-    def record_step_up(self, tenant_id: str, user_id: str, *, at: datetime) -> None:
-        self.step_up_at[(tenant_id, user_id)] = at
+    def record_step_up(
+        self, tenant_id: str, user_id: str, session_key: str, *, at: datetime
+    ) -> None:
+        self.step_up_at[(tenant_id, user_id, session_key)] = at
 
-    def last_step_up(self, tenant_id: str, user_id: str) -> datetime | None:
-        return self.step_up_at.get((tenant_id, user_id))
+    def last_step_up(self, tenant_id: str, user_id: str, session_key: str) -> datetime | None:
+        return self.step_up_at.get((tenant_id, user_id, session_key))
 
     def start_oauth_state(self, state_token: str, *, tenant_id: str, provider: str, now: datetime) -> None:
         self.oauth_pending_states[state_token] = PendingOAuthState(
