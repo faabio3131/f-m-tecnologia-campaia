@@ -740,7 +740,6 @@ export interface components {
              * @enum {string}
              */
             entry_mode: "TRIAL" | "PURCHASE";
-            plan_id?: string | null;
         };
         OrganizationSummary: {
             tenant_id: string;
@@ -751,6 +750,7 @@ export interface components {
             timezone: string;
             /** @enum {string} */
             entry_mode: "TRIAL" | "PURCHASE";
+            /** @description Plano atribuido exclusivamente pelo servidor/billing; nunca aceito como entitlement no onboarding publico. */
             plan_id?: string | null;
             /** @enum {string} */
             status: "ACTIVE" | "INACTIVE";
