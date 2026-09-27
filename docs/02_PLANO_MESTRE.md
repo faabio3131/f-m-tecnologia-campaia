@@ -1,3 +1,5 @@
+> **STATUS VIGENTE: SUPERSEDED (27/09/2026).** Plano 0.1 de 25/08/2026 preservado como histórico. O enquadramento mobile, decisões em aberto e fases deste arquivo não governam a execução atual. A fonte mestra é o Cronograma F0–F20/G0–G20 de 27/09/2026, reconciliado em docs/CAMPAIA_CONTROLE_MESTRE_EXECUCAO_20260927.md.
+
 # CAMPAIA — PLANO MESTRE DE IMPLEMENTAÇÃO
 
 **Versão:** 0.1 (PROPOSTA — não aprovada)

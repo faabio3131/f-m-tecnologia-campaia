@@ -1,7 +1,7 @@
 # CampaIA — CONTROLE MESTRE DE EXECUÇÃO F0–F20
 
 **Data-base:** 27/09/2026  
-**Status:** PARTIAL — F0 em fechamento; não implica merge, deploy ou produção.  
+**Status:** DONE_VERIFIED — Gate G0 fechado em 27/09/2026 após reconciliação documental e CI real verde; não implica merge, deploy ou produção.  
 **Repositório canônico:** faabio3131/f-m-tecnologia-campaia  
 **Linha de trabalho:** PR #31, branch reconciliation/campaia-final-takeover  
 **Fonte mestra:** “CAMPAIA - CRONOGRAMA MESTRE DE EXECUCAO TOTAL ATE PRONTO COMERCIAL”, v1.0, 27/09/2026.
@@ -32,7 +32,7 @@ F0 → F1/F2 → F3/F4 → F5 → F6/F7 → F8/F9 → F10 → F11 → F12–F14 
 
 | Fase | Gate | Escopo principal | Estado base |
 |---|---|---|---|
-| F0 | G0 | CURRENT + SSOT + cobertura + superseded | PARTIAL |
+| F0 | G0 | CURRENT + SSOT + cobertura + superseded | DONE_VERIFIED |
 | F1 | G1 | Trial/onboarding/tenant/unidade/usuários | TARGET |
 | F2 | G2 | Multi-tenancy/RBAC/step-up/isolamento | PARTIAL |
 | F3 | G3 | Atomicidade/idempotência/concorrência | PRODUCTION_GATE |
@@ -71,3 +71,8 @@ Compra/trial → tenant → usuários/unidades → Google/Meta/WhatsApp → Bran
 ## 6. Retomada
 
 Toda retomada relevante deve registrar CURRENT, Fase/Gate, DONE_VERIFIED preservado, blockers, WP exato e evidências. A matriz canônica está em docs/CAMPAIA_MATRIZ_MESTRE_COBERTURA_20260927.md.
+
+
+## 7. Certificação G0
+
+O commit de reconciliação ff1d6d95ec8f5ecdab807cb46e56fce0328d7d08 foi submetido ao CI real da PR #31. Resultado: backend run 117 = success; frontend run 55 = success; os dois jobs frontend (“lint/typecheck/contracts/security/unit+component/build/E2E smoke” e “real session protocol E2E cross-tenant”) = success. Não restou contradição ativa identificada capaz de induzir arquitetura errada. Pendências de console/credenciais Google permanecem classificadas como EXTERNAL_INFRASTRUCTURE/EXTERNAL_CREDENTIAL e pertencem aos gates F8/F9/F19, não são tratadas como fato confirmado.

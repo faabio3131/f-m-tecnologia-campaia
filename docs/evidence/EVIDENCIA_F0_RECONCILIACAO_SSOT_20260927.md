@@ -1,7 +1,7 @@
 # EVIDÊNCIA — F0 / WP-F00-01 — Reconciliação CURRENT e SSOT
 
 **Data:** 27/09/2026  
-**Status:** PARTIAL — reconciliação documental interna executada; aguarda CI do commit e checkpoint final da PR para G0.  
+**Status:** DONE_VERIFIED — reconciliação documental interna certificada com CI real verde; Gate G0 fechado.  
 **Repo:** faabio3131/f-m-tecnologia-campaia  
 **PR:** #31 — reconciliation/campaia-final-takeover → main
 
@@ -59,3 +59,16 @@ Sem F1+, sem credenciais, sem GCP, sem merge, sem deploy, sem produção e sem m
 ## Aceite e rollback
 
 Aceite: arquivos no novo HEAD + CI do repositório novamente verde. Rollback: revert do commit documental; não houve migração nem efeito externo.
+
+
+## Certificação pós-alteração
+
+Commit certificado: ff1d6d95ec8f5ecdab807cb46e56fce0328d7d08.
+
+- CAMPAIA Backend Tests — run 117: success.
+- CAMPAIA Frontend Tests — run 55: success.
+- Job “Run unit + API test suites”: success.
+- Job “Lint, typecheck, contract/security boundaries, unit+component tests, build, E2E smoke”: success.
+- Job “Real session protocol E2E (backend real + frontend real, cross-tenant obrigatorio)”: success.
+
+**Gate G0: DONE_VERIFIED.** Não há contradição ativa identificada entre CURRENT, cronograma F0–F20 e fontes normativas capaz de orientar uma implementação para arquitetura errada. Itens Google Cloud/Ads não verificáveis nesta sessão continuam explicitamente EXTERNAL_INFRASTRUCTURE / EXTERNAL_CREDENTIAL para os gates próprios.

@@ -1,3 +1,5 @@
+> **STATUS VIGENTE: SUPERSEDED (27/09/2026) como roadmap/CURRENT.** Este roadmap do Ponto Zero Web preserva decisões e evidências históricas, mas frases como “WP-02 em diante não iniciado” já são falsas no HEAD da PR #31. Não usar sua sequência WP-01–WP-05 como plano atual; prevalece o Cronograma Mestre F0–F20/G0–G20 e a Matriz Mestre de Cobertura de 27/09/2026.
+
 # CampaIA — Ponto Zero Web · 06. Roadmap e Work Packages
 
 **Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019) — **WP-01 implementado e validado** (19/09/2026, ver `docs/web/08_CERTIFICACAO_WP01_FUNDACAO_WEB.md`). WP-02 em diante permanecem não iniciados.

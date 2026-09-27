@@ -5,9 +5,11 @@
 
 | Fonte | Status | Uso |
 |---|---|---|
+| docs/02_PLANO_MESTRE.md | SUPERSEDED | histórico |
 | docs/19_CRONOGRAMA_MESTRE_FINALIZACAO.md | SUPERSEDED | histórico |
 | “3 prompts” do cronograma antigo | SUPERSEDED | histórico |
 | docs/web/01_CURRENT_E_MATRIZ_CURRENT_TARGET.md | SUPERSEDED como CURRENT | arquitetura histórica |
+| docs/web/06_ROADMAP_WORK_PACKAGES.md | SUPERSEDED como roadmap/CURRENT | evidência histórica do Ponto Zero Web |
 | backend/01_PAINEL_EXECUCAO_v17_VIGENTE.md | SUPERSEDED | histórico |
 | backend/01_PAINEL_EXECUCAO_v18_VIGENTE.md | SUPERSEDED | histórico |
 | backend/01_PAINEL_EXECUCAO_v19_VIGENTE.md | SUPERSEDED | histórico |

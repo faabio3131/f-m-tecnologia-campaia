@@ -1,7 +1,7 @@
 # CampaIA — MATRIZ MESTRE DE COBERTURA
 
 **Data:** 27/09/2026  
-**Status:** PARTIAL — criada no WP-F00-01; implementação continua regida por CURRENT + Cronograma Mestre.
+**Status:** DONE_VERIFIED quanto à cobertura documental — a matriz cobre F1–F10, NFRs, superfícies Web e jornada comercial; os estados funcionais continuam sujeitos ao DoD de cada WP.
 
 ## 1. Work Packages
 
