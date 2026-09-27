@@ -113,7 +113,6 @@ function LoginForm() {
           language: language.trim() || "pt-BR",
           timezone: timezone.trim() || "America/Sao_Paulo",
           entry_mode: entryMode,
-          plan_id: null,
         },
         onboardingIdempotencyKey.current,
       );

@@ -1108,7 +1108,6 @@ components:
         language: { type: string, default: pt-BR, minLength: 2, maxLength: 20 }
         timezone: { type: string, default: America/Sao_Paulo, maxLength: 80 }
         entry_mode: { type: string, enum: [TRIAL, PURCHASE], default: TRIAL }
-        plan_id: { type: [string, 'null'], maxLength: 80 }
 
     OrganizationSummary:
       type: object
@@ -1121,7 +1120,9 @@ components:
         language: { type: string }
         timezone: { type: string }
         entry_mode: { type: string, enum: [TRIAL, PURCHASE] }
-        plan_id: { type: [string, 'null'] }
+        plan_id:
+          type: [string, 'null']
+          description: Plano atribuido exclusivamente pelo servidor/billing; nunca aceito como entitlement no onboarding publico.
         status: { type: string, enum: [ACTIVE, INACTIVE] }
         default_business_unit_id: { type: [string, 'null'] }
         created_at: { type: string, format: date-time }

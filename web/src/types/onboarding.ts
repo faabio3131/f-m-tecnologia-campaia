@@ -33,7 +33,6 @@ export interface TenantOnboardingInput {
   language: string;
   timezone: string;
   entry_mode: "TRIAL" | "PURCHASE";
-  plan_id?: string | null;
 }
 
 export interface TenantOnboardingResponse {

@@ -73,7 +73,6 @@ def onboard(
     *,
     company: str = "Empresa Nova",
     document: str | None = "12.345.678/0001-95",
-    plan_id: str | None = None,
     idem: str = "f1-onboard-0000000001",
 ):
     payload = {
@@ -84,7 +83,6 @@ def onboard(
         "language": "pt-BR",
         "timezone": "America/Sao_Paulo",
         "entry_mode": "TRIAL",
-        "plan_id": plan_id,
     }
     return client.post(
         "/onboarding/tenant",
@@ -181,6 +179,22 @@ class CommercialOnboardingTests(unittest.TestCase):
         self.assertEqual(r2.json()["code"], "INVALID_STATE")
         self.assertEqual(len(app.state.campaia.organizations._items), 1)
 
+    def test_client_cannot_self_assign_a_paid_plan_or_user_entitlement(self) -> None:
+        client = make_client()
+        r = client.post(
+            "/onboarding/tenant",
+            json={
+                "id_token": TOK_OWNER_A,
+                "company_name": "Empresa",
+                "segment": "servicos",
+                "timezone": "America/Sao_Paulo",
+                "plan_id": "escala",
+            },
+            headers={"Origin": ORIGIN, "Idempotency-Key": "f1-no-client-plan-0001"},
+        )
+        self.assertEqual(r.status_code, 422, r.text)
+        self.assertEqual(len(client.app.state.campaia.organizations._items), 0)
+
     def test_invalid_timezone_is_rejected_before_any_tenant_is_created(self) -> None:
         client = make_client()
         r = client.post(
@@ -200,8 +214,14 @@ class CommercialOnboardingTests(unittest.TestCase):
 class InvitationAndAccessLifecycleTests(unittest.TestCase):
     def _owner(self, *, plan_id: str | None = None):
         client = make_client()
-        r = onboard(client, TOK_OWNER_A, plan_id=plan_id)
+        r = onboard(client, TOK_OWNER_A)
         self.assertEqual(r.status_code, 201, r.text)
+        if plan_id is not None:
+            tenant_id = r.json()["organization"]["tenant_id"]
+            organization = client.app.state.campaia.organizations.get_organization(tenant_id)
+            self.assertIsNotNone(organization)
+            organization.tenant.plan_id = plan_id
+            client.app.state.campaia.organizations._persist(organization)
         return client, r.json()
 
     def _invite(

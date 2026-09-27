@@ -61,7 +61,6 @@ class TenantOnboardingRequest(ApiModel):
     language: str = Field(default="pt-BR", min_length=2, max_length=20)
     timezone: str = Field(default="America/Sao_Paulo", min_length=1, max_length=80)
     entry_mode: Literal["TRIAL", "PURCHASE"] = "TRIAL"
-    plan_id: str | None = Field(default=None, max_length=80)
 
 
 class OrganizationResponse(BaseModel):

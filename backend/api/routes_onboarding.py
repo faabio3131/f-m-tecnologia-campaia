@@ -150,7 +150,9 @@ async def create_tenant(request: Request) -> JSONResponse:
                 language=body.language,
                 timezone_name=body.timezone,
                 entry_mode=body.entry_mode,
-                plan_id=body.plan_id,
+                # F1 security boundary: plan/entitlement is never selected by the browser.
+                # F5 billing will attach a server-verified plan after trial/purchase proof.
+                plan_id=None,
                 identity_subject=identity.subject,
                 email=identity.email,
             )
