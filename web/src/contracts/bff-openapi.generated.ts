@@ -98,6 +98,119 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/onboarding/tenant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cria explicitamente um novo tenant comercial para uma identidade verificada
+         * @description Nao e login e nunca e autoprovisionamento por e-mail. O backend verifica o id_token,
+         *     normaliza/valida a empresa, cria o tenant + unidade Principal + primeiro Owner como
+         *     um unico agregado no runtime atual e emite sessao server-side. Documento/CNPJ, quando
+         *     informado, e unico entre tenants; duplicata exige recuperacao/reativacao, nao novo tenant.
+         */
+        post: operations["createCommercialTenant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/onboarding/invitations/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Aceita convite vinculando identidade verificada ao tenant/unidade convidados */
+        post: operations["acceptCommercialInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/memberships": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lista usuarios/vinculos do tenant atual para Owner/Admin */
+        get: operations["listCommercialMembers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/member-invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lista convites do tenant atual */
+        get: operations["listMemberInvitations"];
+        put?: never;
+        /**
+         * Cria convite de usuario no tenant/unidade atuais
+         * @description Owner/Admin podem convidar. Admin nao pode criar Owner. O token bruto de aceite e
+         *     devolvido somente nesta primeira criacao; o servidor persiste apenas seu hash.
+         */
+        post: operations["createMemberInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/memberships/{membershipId}/deactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Desativa acesso sem apagar historico e revoga sessoes associadas */
+        post: operations["deactivateCommercialMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/memberships/{membershipId}/reactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reativa o mesmo vinculo preservando identidade e historico */
+        post: operations["reactivateCommercialMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/brand-profiles": {
         parameters: {
             query?: never;
@@ -613,6 +726,85 @@ export interface components {
         MembershipsResponse: {
             memberships: components["schemas"]["MembershipItem"][];
         };
+        TenantOnboardingRequest: {
+            id_token: string;
+            company_name: string;
+            document?: string | null;
+            segment: string;
+            /** @default pt-BR */
+            language: string;
+            /** @default America/Sao_Paulo */
+            timezone: string;
+            /**
+             * @default TRIAL
+             * @enum {string}
+             */
+            entry_mode: "TRIAL" | "PURCHASE";
+            plan_id?: string | null;
+        };
+        OrganizationSummary: {
+            tenant_id: string;
+            name: string;
+            document?: string | null;
+            segment: string;
+            language: string;
+            timezone: string;
+            /** @enum {string} */
+            entry_mode: "TRIAL" | "PURCHASE";
+            plan_id?: string | null;
+            /** @enum {string} */
+            status: "ACTIVE" | "INACTIVE";
+            default_business_unit_id?: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        CommercialMembership: {
+            id: string;
+            tenant_id: string;
+            /** Format: email */
+            email: string;
+            roles: string[];
+            business_unit_id?: string | null;
+            /** @enum {string} */
+            status: "ACTIVE" | "INACTIVE";
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            deactivated_at?: string | null;
+        };
+        TenantOnboardingResponse: {
+            session: components["schemas"]["SessionUser"];
+            organization: components["schemas"]["OrganizationSummary"];
+            membership: components["schemas"]["CommercialMembership"];
+        };
+        InvitationCreateRequest: {
+            /** Format: email */
+            email: string;
+            roles: ("OWNER" | "ADMIN" | "FINANCE" | "APPROVER" | "MARKETER" | "VIEWER")[];
+            business_unit_id?: string | null;
+        };
+        MemberInvitation: {
+            id: string;
+            /** Format: email */
+            email: string;
+            roles: string[];
+            business_unit_id?: string | null;
+            /** @enum {string} */
+            status: "PENDING" | "ACCEPTED" | "REVOKED" | "EXPIRED";
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            accepted_by?: string | null;
+            /** @description Presente somente na resposta da primeira criacao; nunca persistido em claro. */
+            accept_token?: string | null;
+        };
+        InvitationAcceptRequest: {
+            id_token: string;
+            accept_token: string;
+        };
         BrandProfileInput: {
             name: string;
             tone: string;
@@ -994,6 +1186,301 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    createCommercialTenant: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenantOnboardingRequest"];
+            };
+        };
+        responses: {
+            /** @description Tenant criado e sessao emitida */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantOnboardingResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Origem/identidade nao autorizada */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Documento ja associado a outro tenant ou estado incompativel */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    acceptCommercialInvitation: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationAcceptRequest"];
+            };
+        };
+        responses: {
+            /** @description Convite aceito e sessao emitida */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantOnboardingResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Identidade nao corresponde ao e-mail do convite */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Convite invalido, expirado ou ja utilizado */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    listCommercialMembers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommercialMembership"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Usuario sem MEMBER_VIEW */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listMemberInvitations: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao. */
+                "X-Step-Up-Token": components["parameters"]["StepUpToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberInvitation"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["StepUpRequired"];
+        };
+    };
+    createMemberInvitation: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+                 *     login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+                 *     servidor. Ausente/invalido -> 403.
+                 */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao. */
+                "X-Step-Up-Token": components["parameters"]["StepUpToken"];
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Convite criado */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberInvitation"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["StepUpRequired"];
+            /** @description Usuario ja ativo ou convite pendente */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
+            /** @description Limite de usuarios do plano atingido */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deactivateCommercialMember: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+                 *     login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+                 *     servidor. Ausente/invalido -> 403.
+                 */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao. */
+                "X-Step-Up-Token": components["parameters"]["StepUpToken"];
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                membershipId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Usuario desativado */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommercialMembership"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["StepUpRequired"];
+            404: components["responses"]["NotFound"];
+            /** @description Auto-desativacao/ultimo Owner ou estado invalido */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reactivateCommercialMember: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+                 *     login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+                 *     servidor. Ausente/invalido -> 403.
+                 */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao. */
+                "X-Step-Up-Token": components["parameters"]["StepUpToken"];
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                membershipId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Usuario reativado */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommercialMembership"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["StepUpRequired"];
+            404: components["responses"]["NotFound"];
+            /** @description Limite de usuarios do plano atingido */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     listBrandProfiles: {
