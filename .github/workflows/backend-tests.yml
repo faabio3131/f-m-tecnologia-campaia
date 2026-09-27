@@ -25,6 +25,16 @@ jobs:
         working-directory: backend
         run: pip install -r requirements.txt
 
+      - name: Dependency vulnerability audit (pip-audit)
+        working-directory: backend
+        run: |
+          pip install pip-audit
+          # Fase D (27/09/2026, auditoria independente): gate real de CI, nao so
+          # documentacao local. Falha o build se houver vulnerabilidade conhecida nas
+          # dependencias de producao -- ver docs/evidence para justificativa caso uma
+          # excecao pontual precise ser registrada no futuro (nenhuma hoje).
+          python3 -m pip_audit -r requirements.txt
+
       - name: Run core unit tests (backend/tests)
         working-directory: backend
         run: python3 -m unittest discover -s tests -v

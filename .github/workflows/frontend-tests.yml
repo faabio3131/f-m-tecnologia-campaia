@@ -30,6 +30,17 @@ jobs:
         working-directory: web
         run: npm ci
 
+      - name: Dependency vulnerability audit (npm audit)
+        working-directory: web
+        run: |
+          # Fase D (27/09/2026, auditoria independente): gate real de CI, nao so
+          # documentacao local. Politica explicita: falha em high/critical -- moderate/
+          # low ficam visiveis no log mas nao bloqueiam (mesmo padrao de tolerancia
+          # usado por muitos projetos Node, dado o volume de advisories informativos no
+          # ecossistema npm). Nenhuma vulnerabilidade conhecida hoje (0 encontradas,
+          # `npm audit` limpo em 27/09/2026).
+          npm audit --audit-level=high
+
       - name: Lint
         working-directory: web
         run: npm run lint
