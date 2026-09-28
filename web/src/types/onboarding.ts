@@ -52,3 +52,11 @@ export interface MemberInvitation {
   accepted_by: string | null;
   accept_token: string | null;
 }
+
+
+export interface BusinessUnit {
+  id: string;
+  name: string;
+  status: "ACTIVE" | "INACTIVE" | string;
+  created_at: string;
+}

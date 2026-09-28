@@ -1,0 +1,16 @@
+.title {
+  margin: 0 0 var(--campaia-space-2);
+  font-size: var(--campaia-font-size-lg);
+  color: var(--campaia-color-text);
+}
+
+.description,
+.status {
+  margin: 0 0 var(--campaia-space-3);
+  color: var(--campaia-color-text-muted);
+  max-width: 720px;
+}
+
+.status {
+  margin-top: var(--campaia-space-2);
+}

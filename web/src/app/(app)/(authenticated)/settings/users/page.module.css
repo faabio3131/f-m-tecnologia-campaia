@@ -29,7 +29,12 @@
 .list {
   display: flex;
   flex-direction: column;
-  gap: var(--campaia-space-2);
+  gap: var(--campaia-space-3);
+}
+
+.memberCard {
+  padding: var(--campaia-space-3) 0;
+  border-bottom: 1px solid var(--campaia-color-border);
 }
 
 .row {
@@ -37,8 +42,27 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--campaia-space-3);
-  padding: var(--campaia-space-3) 0;
-  border-bottom: 1px solid var(--campaia-color-border);
+}
+
+.accessEditor {
+  display: grid;
+  gap: var(--campaia-space-3);
+  margin-top: var(--campaia-space-3);
+  padding-top: var(--campaia-space-3);
+  border-top: 1px solid var(--campaia-color-border);
+}
+
+.roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--campaia-space-2) var(--campaia-space-3);
+}
+
+.roleOption {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--campaia-space-1);
+  font-size: var(--campaia-font-size-sm);
 }
 
 .detail,

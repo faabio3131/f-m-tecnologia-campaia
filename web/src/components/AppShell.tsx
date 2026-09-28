@@ -34,7 +34,11 @@ export function AppShell({ user, onLogout, children }: AppShellProps) {
   const pathname = usePathname();
   const canManageUsers = user.roles.some((role) => role === "OWNER" || role === "ADMIN");
   const navItems = canManageUsers
-    ? [...NAV_ITEMS, { href: "/settings/users", label: "Usuários" } as const]
+    ? [
+        ...NAV_ITEMS,
+        { href: "/settings/organization", label: "Organização" } as const,
+        { href: "/settings/users", label: "Usuários" } as const,
+      ]
     : NAV_ITEMS;
 
   return (

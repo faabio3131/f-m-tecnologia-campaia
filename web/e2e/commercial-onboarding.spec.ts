@@ -48,11 +48,24 @@ test.describe("F1 onboarding comercial sem tenant pre-seedado", () => {
     await expect(page).toHaveURL(/\/dashboard/);
     await expect(page.getByText(onboarding.organization.tenant_id).first()).toBeVisible();
 
+    // F2 organization administration: create a second unit entirely through the product.
+    await page.goto("/settings/organization");
+    await expect(page.getByRole("heading", { name: "Organização" })).toBeVisible();
+    await page.getByLabel("Nome da unidade").fill("Comercial E2E");
+    const unitResponsePromise = page.waitForResponse(
+      (r) => r.url().endsWith("/business-units") && r.request().method() === "POST",
+    );
+    await page.getByTestId("create-business-unit").click();
+    const unitResponse = await unitResponsePromise;
+    expect(unitResponse.status()).toBe(201);
+    const commercialUnit = await unitResponse.json();
+
     // Owner/Admin surface: create a real invitation. The raw token is returned only once;
     // no membership is inserted manually by the test.
     await page.goto("/settings/users");
     await expect(page.getByRole("heading", { name: "Usuários" })).toBeVisible();
     await page.getByLabel("E-mail").fill("fresh-member@commercial-e2e.campaia.test");
+    await page.getByLabel("Unidade de negócio").first().selectOption(commercialUnit.id);
 
     const invitationResponsePromise = page.waitForResponse(
       (r) => r.url().endsWith("/member-invitations") && r.request().method() === "POST",
@@ -81,6 +94,7 @@ test.describe("F1 onboarding comercial sem tenant pre-seedado", () => {
     expect(accepted.organization.tenant_id).toBe(onboarding.organization.tenant_id);
     expect(accepted.membership.status).toBe("ACTIVE");
     expect(accepted.membership.roles).toEqual(["VIEWER"]);
+    expect(accepted.membership.business_unit_id).toBe(commercialUnit.id);
     await expect(memberPage).toHaveURL(/\/dashboard/);
 
     // The owner now sees the accepted membership through the tenant-scoped API.
@@ -90,6 +104,32 @@ test.describe("F1 onboarding comercial sem tenant pre-seedado", () => {
     ).toBeVisible();
 
     const memberId = accepted.membership.id;
+
+    // F2 role administration is a real mutation. It revokes the member's stale session,
+    // because roles/unit are captured into the server-side session at login.
+    await page.getByTestId("role-" + memberId + "-MARKETER").check();
+    await page.getByTestId("role-" + memberId + "-VIEWER").uncheck();
+    const accessResponsePromise = page.waitForResponse(
+      (r) =>
+        r.url().endsWith("/memberships/" + memberId) &&
+        r.request().method() === "PATCH",
+    );
+    await page.getByTestId("save-access-" + memberId).click();
+    const accessResponse = await accessResponsePromise;
+    expect(accessResponse.status()).toBe(200);
+    expect((await accessResponse.json()).roles).toEqual(["MARKETER"]);
+
+    await memberPage.reload();
+    await expect(memberPage).toHaveURL(/\/login/);
+    const roleReloginResponse = memberPage.waitForResponse(
+      (r) => r.url().endsWith("/auth/session") && r.request().method() === "POST",
+    );
+    await memberPage.getByTestId(FRESH_MEMBER).click();
+    const roleRelogin = await roleReloginResponse;
+    expect(roleRelogin.status()).toBe(200);
+    expect((await roleRelogin.json()).roles).toEqual(["MARKETER"]);
+    await expect(memberPage).toHaveURL(/\/dashboard/);
+
     const deactivateResponsePromise = page.waitForResponse(
       (r) =>
         r.url().endsWith("/memberships/" + memberId + "/deactivate") &&
