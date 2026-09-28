@@ -124,7 +124,9 @@ test.describe("F1 onboarding comercial sem tenant pre-seedado", () => {
     const roleReloginResponse = memberPage.waitForResponse(
       (r) => r.url().endsWith("/auth/session") && r.request().method() === "POST",
     );
-    await memberPage.getByTestId(FRESH_MEMBER).click();
+    await memberPage
+      .getByTestId("test-identity-e2e-test-id-token-fresh-commercial-member")
+      .click();
     const roleRelogin = await roleReloginResponse;
     expect(roleRelogin.status()).toBe(200);
     expect((await roleRelogin.json()).roles).toEqual(["MARKETER"]);
