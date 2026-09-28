@@ -363,6 +363,182 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /memberships/{membershipId}:
+    patch:
+      tags: [Conta]
+      summary: Atualiza papeis e unidade de um vinculo ativo do tenant atual
+      description: |
+        Owner/Admin podem alterar papeis e unidade. Somente Owner pode administrar ou
+        conceder OWNER. O ultimo Owner ativo nao pode perder OWNER. Mudanca de autoridade
+        revoga imediatamente as sessoes do vinculo alterado; tenant_id nunca vem do cliente.
+      operationId: updateCommercialMemberAccess
+      security: [cookieAuth: []]
+      parameters:
+        - name: membershipId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MembershipAccessUpdateRequest' }
+      responses:
+        '200':
+          description: Acesso atualizado e sessoes antigas do vinculo revogadas
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommercialMembership' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Ultimo Owner ativo nao pode perder OWNER
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /business-units:
+    get:
+      tags: [Conta]
+      summary: Lista unidades de negocio do tenant atual
+      operationId: listBusinessUnits
+      security: [cookieAuth: []]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BusinessUnit' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Usuario sem MEMBER_VIEW
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    post:
+      tags: [Conta]
+      summary: Cria unidade de negocio no tenant atual
+      operationId: createBusinessUnit
+      security: [cookieAuth: []]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BusinessUnitCreateRequest' }
+      responses:
+        '201':
+          description: Unidade criada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BusinessUnit' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '409':
+          description: Ja existe uma unidade com este nome
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /business-units/{businessUnitId}:
+    patch:
+      tags: [Conta]
+      summary: Renomeia unidade de negocio do tenant atual
+      operationId: renameBusinessUnit
+      security: [cookieAuth: []]
+      parameters:
+        - name: businessUnitId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BusinessUnitRenameRequest' }
+      responses:
+        '200':
+          description: Unidade renomeada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BusinessUnit' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Ja existe uma unidade com este nome
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /business-units/{businessUnitId}/deactivate:
+    post:
+      tags: [Conta]
+      summary: Desativa unidade vazia preservando historico
+      operationId: deactivateBusinessUnit
+      security: [cookieAuth: []]
+      parameters:
+        - name: businessUnitId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Unidade desativada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BusinessUnit' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Unidade possui membros ativos ou e a ultima unidade ativa
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /business-units/{businessUnitId}/reactivate:
+    post:
+      tags: [Conta]
+      summary: Reativa unidade preservando identidade e historico
+      operationId: reactivateBusinessUnit
+      security: [cookieAuth: []]
+      parameters:
+        - name: businessUnitId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Unidade reativada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BusinessUnit' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /brand-profiles:
     get:
       tags: [Marca]
@@ -1182,6 +1358,40 @@ components:
       properties:
         id_token: { type: string }
         accept_token: { type: string, minLength: 16, maxLength: 512 }
+
+    MembershipAccessUpdateRequest:
+      type: object
+      required: [roles, business_unit_id]
+      additionalProperties: false
+      properties:
+        roles:
+          type: array
+          minItems: 1
+          items: { type: string, enum: [OWNER, ADMIN, FINANCE, APPROVER, MARKETER, VIEWER] }
+        business_unit_id: { type: string }
+
+    BusinessUnit:
+      type: object
+      required: [id, name, status, created_at]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        status: { type: string, enum: [ACTIVE, INACTIVE] }
+        created_at: { type: string, format: date-time }
+
+    BusinessUnitCreateRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+
+    BusinessUnitRenameRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
 
     BrandProfileInput:
       type: object
