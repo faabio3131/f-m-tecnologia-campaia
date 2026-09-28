@@ -110,9 +110,15 @@ class OrganizationRepository:
     def __init__(self, table: "RecordTable | None" = None) -> None:
         self._table = table
         self._items: dict[str, TenantOrganization] = {}
-        if table is not None:
-            for tenant_id, row_tenant_id, obj in table.all_rows():
-                self._items[tenant_id] = _wrap_loaded(table, tenant_id, row_tenant_id, obj)
+    def _all_organizations(self) -> list[TenantOrganization]:
+        if self._table is None:
+            return list(self._items.values())
+        result: list[TenantOrganization] = []
+        for tenant_id, row_tenant_id, obj in self._table.all_rows():
+            wrapped = _wrap_loaded(self._table, tenant_id, row_tenant_id, obj)
+            self._items[tenant_id] = wrapped
+            result.append(wrapped)
+        return result
 
     def _persist(self, organization: TenantOrganization) -> None:
         """Force-persist the aggregate after mutations to objects added after initial wrapping.
@@ -127,13 +133,20 @@ class OrganizationRepository:
             self._table.put(tenant_id, tenant_id, organization)
 
     def get_organization(self, tenant_id: str) -> TenantOrganization | None:
-        return self._items.get(tenant_id)
+        if self._table is None:
+            return self._items.get(tenant_id)
+        obj = self._table.get(tenant_id)
+        if obj is None:
+            return None
+        wrapped = _wrap_loaded(self._table, tenant_id, tenant_id, obj)
+        self._items[tenant_id] = wrapped
+        return wrapped
 
     def find_by_document(self, document: str | None) -> TenantOrganization | None:
         normalized = normalize_document(document)
         if normalized is None:
             return None
-        for organization in self._items.values():
+        for organization in self._all_organizations():
             if organization.tenant.document_normalized == normalized:
                 return organization
         return None
@@ -197,7 +210,7 @@ class OrganizationRepository:
     ) -> list[MembershipRecord]:
         normalized_email = normalize_email(email)
         result: list[MembershipRecord] = []
-        for organization in self._items.values():
+        for organization in self._all_organizations():
             if organization.tenant.status != "ACTIVE":
                 continue
             for membership in organization.memberships.values():
@@ -209,7 +222,7 @@ class OrganizationRepository:
         return result
 
     def list_memberships_for_tenant(self, tenant_id: str) -> list[MembershipRecord]:
-        organization = self._items.get(tenant_id)
+        organization = self.get_organization(tenant_id)
         if organization is None:
             return []
         return list(organization.memberships.values())
@@ -325,7 +338,7 @@ class OrganizationRepository:
         self, raw_token: str
     ) -> tuple[TenantOrganization, InvitationRecord] | None:
         digest = _invite_digest(raw_token)
-        for organization in self._items.values():
+        for organization in self._all_organizations():
             for invitation in organization.invitations.values():
                 if secrets.compare_digest(invitation.token_digest, digest):
                     return organization, invitation

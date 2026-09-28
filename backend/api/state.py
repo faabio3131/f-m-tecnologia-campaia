@@ -475,6 +475,8 @@ class AppState:
         #: best-effort close when this AppState (and everything holding its repositories)
         #: is garbage collected.
         self.db = None
+        self._persistent_step_up_store = None
+        self._persistent_oauth_state_store = None
         if self.db_path is not None:
             from .db import (
                 Database,
@@ -482,6 +484,8 @@ class AppState:
                 PersistentSeenEventStore,
                 PersistentTenantAutonomy,
             )
+            from .persistent_state import PersistentOAuthStateStore, PersistentStepUpStore
+            from .session import PersistentSessionStore
 
             self.db = Database(self.db_path)
             # Every field replaced below is a plain in-memory default_factory value at
@@ -498,6 +502,13 @@ class AppState:
             self.audit = AuditLog(self.db.table("audit_events"))
             self.organizations = OrganizationRepository(self.db.table("organizations"))
             self.idempotency = PersistentIdempotencyStore(self.db.table("idempotency"))
+            self.sessions = PersistentSessionStore(self.db.table("sessions"))
+            self._persistent_step_up_store = PersistentStepUpStore(
+                self.db.table("step_up_states")
+            )
+            self._persistent_oauth_state_store = PersistentOAuthStateStore(
+                self.db.table("oauth_pending_states")
+            )
             self.tenant_autonomy = PersistentTenantAutonomy(self.db.table("tenant_autonomy"))
             self.tenant_autonomy_updated_at = PersistentTenantAutonomy(
                 self.db.table("tenant_autonomy_updated_at")
@@ -527,9 +538,16 @@ class AppState:
     def record_step_up(
         self, tenant_id: str, user_id: str, session_key: str, *, at: datetime
     ) -> None:
+        if self._persistent_step_up_store is not None:
+            self._persistent_step_up_store.put(
+                tenant_id, user_id, session_key, at=at
+            )
+            return
         self.step_up_at[(tenant_id, user_id, session_key)] = at
 
     def last_step_up(self, tenant_id: str, user_id: str, session_key: str) -> datetime | None:
+        if self._persistent_step_up_store is not None:
+            return self._persistent_step_up_store.get(tenant_id, user_id, session_key)
         return self.step_up_at.get((tenant_id, user_id, session_key))
 
     def invalidate_step_up_for_session(self, session_key: str) -> None:
@@ -547,6 +565,9 @@ class AppState:
         nova. A regra exigida e' categorica: QUALQUER troca de tenant/unidade invalida
         TODO step-up daquela sessao, mesmo o de vinculos aos quais ela volta depois.
         """
+        if self._persistent_step_up_store is not None:
+            self._persistent_step_up_store.invalidate_session(session_key)
+            return
         stale_keys = [key for key in self.step_up_at if key[2] == session_key]
         for key in stale_keys:
             del self.step_up_at[key]
@@ -562,7 +583,7 @@ class AppState:
         session_key: str,
         step_up_verified_at: datetime | None,
     ) -> None:
-        self.oauth_pending_states[state_token] = PendingOAuthState(
+        pending = PendingOAuthState(
             tenant_id=tenant_id,
             provider=provider,
             created_at=now,
@@ -570,6 +591,10 @@ class AppState:
             session_key=session_key,
             step_up_verified_at=step_up_verified_at,
         )
+        if self._persistent_oauth_state_store is not None:
+            self._persistent_oauth_state_store.put(state_token, tenant_id, pending)
+            return
+        self.oauth_pending_states[state_token] = pending
 
     def redeem_oauth_state(
         self, state_token: str, *, tenant_id: str, now: datetime
@@ -577,6 +602,13 @@ class AppState:
         """Resgate de UNICO uso: sempre remove o registro, mesmo quando a validacao
         falha (nunca deixa um `state` invalido/expirado/de outro tenant disponivel para
         uma segunda tentativa -- fail-closed, sem replay)."""
+        if self._persistent_oauth_state_store is not None:
+            return self._persistent_oauth_state_store.redeem(
+                state_token,
+                tenant_id=tenant_id,
+                now=now,
+                ttl=OAUTH_PENDING_STATE_TTL,
+            )
         pending = self.oauth_pending_states.pop(state_token, None)
         if pending is None:
             return None

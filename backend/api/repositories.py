@@ -74,6 +74,40 @@ def _wrap_loaded(table: "RecordTable | None", id_: str, tenant_id: str, obj: Any
     return wrapped
 
 
+def _live_get(
+    table: "RecordTable | None",
+    items: dict[str, Any],
+    id_: str,
+    tenant_id: str,
+):
+    if table is None:
+        item = items.get(id_)
+        if item is None or getattr(item, "tenant_id", None) != tenant_id:
+            return None
+        return item
+    obj = table.get(id_)
+    if obj is None or getattr(obj, "tenant_id", None) != tenant_id:
+        return None
+    wrapped = _wrap_loaded(table, id_, tenant_id, obj)
+    items[id_] = wrapped
+    return wrapped
+
+
+def _live_list(
+    table: "RecordTable | None",
+    items: dict[str, Any],
+    tenant_id: str,
+) -> list[Any]:
+    if table is None:
+        return [item for item in items.values() if getattr(item, "tenant_id", None) == tenant_id]
+    result = []
+    for id_, row_tenant_id, obj in table.rows_for_tenant(tenant_id):
+        wrapped = _wrap_loaded(table, id_, row_tenant_id, obj)
+        items[id_] = wrapped
+        result.append(wrapped)
+    return result
+
+
 # --------------------------------------------------------------------------- brand profiles
 
 
@@ -93,12 +127,9 @@ class BrandProfileRepository:
     def __init__(self, table: "RecordTable | None" = None) -> None:
         self._table = table
         self._items: dict[str, BrandProfile] = {}
-        if table is not None:
-            for id_, tenant_id, obj in table.all_rows():
-                self._items[id_] = _wrap_loaded(table, id_, tenant_id, obj)
 
     def list_for_tenant(self, tenant_id: str) -> list[BrandProfile]:
-        return [p for p in self._items.values() if p.tenant_id == tenant_id]
+        return _live_list(self._table, self._items, tenant_id)
 
     def create(self, tenant_id: str, **fields: Any) -> BrandProfile:
         profile = BrandProfile(
@@ -109,10 +140,7 @@ class BrandProfileRepository:
         return profile
 
     def get(self, tenant_id: str, brand_profile_id: str) -> BrandProfile | None:
-        item = self._items.get(brand_profile_id)
-        if item is None or item.tenant_id != tenant_id:
-            return None
-        return item
+        return _live_get(self._table, self._items, brand_profile_id, tenant_id)
 
 
 # --------------------------------------------------------------------------- connections
@@ -142,18 +170,12 @@ class ConnectionRepository:
     def __init__(self, table: "RecordTable | None" = None) -> None:
         self._table = table
         self._items: dict[str, Connection] = {}
-        if table is not None:
-            for id_, tenant_id, obj in table.all_rows():
-                self._items[id_] = _wrap_loaded(table, id_, tenant_id, obj)
 
     def list_for_tenant(self, tenant_id: str) -> list[Connection]:
-        return [c for c in self._items.values() if c.tenant_id == tenant_id]
+        return _live_list(self._table, self._items, tenant_id)
 
     def get(self, tenant_id: str, connection_id: str) -> Connection | None:
-        item = self._items.get(connection_id)
-        if item is None or item.tenant_id != tenant_id:
-            return None
-        return item
+        return _live_get(self._table, self._items, connection_id, tenant_id)
 
     def create(self, tenant_id: str, **fields: Any) -> Connection:
         conn = Connection(connection_id=new_id("conn"), tenant_id=tenant_id, **fields)
@@ -231,7 +253,7 @@ class VaultRepository:
 
     def resolve(self, tenant_id: str, secret_ref: SecretRef, *, cipher: CredentialCipher) -> dict:
         secret_id = secret_ref.handle.rsplit("/", 1)[-1]
-        row = self._items.get(secret_id)
+        row = self._table.get(secret_id) if self._table is not None else self._items.get(secret_id)
         if row is None:
             raise KeyError("Credencial nao encontrada no cofre.")
         if row.tenant_id != tenant_id:
@@ -242,12 +264,12 @@ class VaultRepository:
 
     def revoke(self, tenant_id: str, secret_ref: SecretRef) -> None:
         secret_id = secret_ref.handle.rsplit("/", 1)[-1]
-        row = self._items.get(secret_id)
+        row = self._table.get(secret_id) if self._table is not None else self._items.get(secret_id)
         if row is None or row.tenant_id != tenant_id:
             return
-        del self._items[secret_id]
+        self._items.pop(secret_id, None)
         if self._table is not None:
-            self._table.put(secret_id, tenant_id, None)
+            self._table.delete(secret_id)
 
 
 # --------------------------------------------------------------------------- campaigns
@@ -304,18 +326,12 @@ class CampaignRepository:
     def __init__(self, table: "RecordTable | None" = None) -> None:
         self._table = table
         self._items: dict[str, CampaignRecord] = {}
-        if table is not None:
-            for id_, tenant_id, obj in table.all_rows():
-                self._items[id_] = _wrap_loaded(table, id_, tenant_id, obj)
 
     def list_for_tenant(self, tenant_id: str) -> list[CampaignRecord]:
-        return [c for c in self._items.values() if c.tenant_id == tenant_id]
+        return _live_list(self._table, self._items, tenant_id)
 
     def get(self, tenant_id: str, campaign_id: str) -> CampaignRecord | None:
-        item = self._items.get(campaign_id)
-        if item is None or item.tenant_id != tenant_id:
-            return None
-        return item
+        return _live_get(self._table, self._items, campaign_id, tenant_id)
 
     def create(self, tenant_id: str, *, brief: dict, business_unit_id: str | None,
                 created_by: str | None) -> CampaignRecord:
@@ -391,18 +407,12 @@ class ApprovalRepository:
     def __init__(self, table: "RecordTable | None" = None) -> None:
         self._table = table
         self._items: dict[str, ApprovalRequest] = {}
-        if table is not None:
-            for id_, tenant_id, obj in table.all_rows():
-                self._items[id_] = _wrap_loaded(table, id_, tenant_id, obj)
 
     def list_for_tenant(self, tenant_id: str) -> list[ApprovalRequest]:
-        return [a for a in self._items.values() if a.tenant_id == tenant_id]
+        return _live_list(self._table, self._items, tenant_id)
 
     def get(self, tenant_id: str, approval_id: str) -> ApprovalRequest | None:
-        item = self._items.get(approval_id)
-        if item is None or item.tenant_id != tenant_id:
-            return None
-        return item
+        return _live_get(self._table, self._items, approval_id, tenant_id)
 
     def create(self, tenant_id: str, **fields: Any) -> ApprovalRequest:
         approval = ApprovalRequest(approval_id=new_id("appr"), tenant_id=tenant_id, **fields)
@@ -438,7 +448,7 @@ class AuditLog:
         # Audit events are append-only -- never mutated in place after creation by any
         # route handler -- so loaded rows are used exactly as decoded, with no
         # notify-wrapping needed (there is nothing for a wrapper to ever notice change).
-        self._items: list[AuditEvent] = [obj for _id, _tenant_id, obj in table.all_rows()] if table is not None else []
+        self._items: list[AuditEvent] = []
 
     def append(
         self,
@@ -467,4 +477,6 @@ class AuditLog:
         return event
 
     def list_for_tenant(self, tenant_id: str) -> list[AuditEvent]:
+        if self._table is not None:
+            return [obj for _id, _tenant_id, obj in self._table.rows_for_tenant(tenant_id)]
         return [e for e in self._items if e.tenant_id == tenant_id]

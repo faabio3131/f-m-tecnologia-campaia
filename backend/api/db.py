@@ -117,6 +117,7 @@ from __future__ import annotations
 
 import dataclasses
 import enum
+from contextlib import contextmanager
 import importlib
 import json
 import sqlite3
@@ -362,24 +363,32 @@ def wrap_for_notify(obj: Any, on_change: Callable[[], None]) -> Any:
 
 
 class RecordTable:
-    """One ``(id, tenant_id, data)`` SQLite table storing one JSON blob per record.
+    """Generic tenant-scoped record table used by the current runtime.
 
-    ``put`` executes and commits in the same call -- callers never batch writes, so a record
-    that has been ``put`` is durable on disk before the method returns, before any HTTP
-    response claiming success can be sent.
+    F3 adds a real transaction boundary: writes commit immediately only when no outer
+    transaction is active. PersistentIdempotencyStore opens an outer transaction around
+    reservation + domain mutation + audit + result storage, so a failure rolls the entire
+    unit back instead of leaving half-applied rows.
     """
 
-    def __init__(self, conn: sqlite3.Connection, lock: threading.Lock, name: str) -> None:
-        self._conn = conn
-        self._lock = lock
+    def __init__(self, database: "Database", name: str) -> None:
+        self._database = database
+        self._conn = database._conn
+        self._lock = database._lock
         self._name = name
         with self._lock:
             self._conn.execute(
                 f'CREATE TABLE IF NOT EXISTS "{name}" ('
                 "id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, data TEXT NOT NULL)"
             )
-            self._conn.execute(f'CREATE INDEX IF NOT EXISTS "{name}_tenant_idx" ON "{name}" (tenant_id)')
-            self._conn.commit()
+            self._conn.execute(
+                f'CREATE INDEX IF NOT EXISTS "{name}_tenant_idx" ON "{name}" (tenant_id)'
+            )
+            if not self._database.in_transaction:
+                self._conn.commit()
+
+    def transaction(self):
+        return self._database.transaction()
 
     def put(self, id_: str, tenant_id: str, obj: Any) -> None:
         payload = json.dumps(encode(obj))
@@ -389,14 +398,32 @@ class RecordTable:
                 "ON CONFLICT(id) DO UPDATE SET tenant_id = excluded.tenant_id, data = excluded.data",
                 (id_, tenant_id, payload),
             )
-            self._conn.commit()
+            if not self._database.in_transaction:
+                self._conn.commit()
+
+    def delete(self, id_: str) -> None:
+        with self._lock:
+            self._conn.execute(f'DELETE FROM "{self._name}" WHERE id = ?', (id_,))
+            if not self._database.in_transaction:
+                self._conn.commit()
 
     def get(self, id_: str) -> Any | None:
         with self._lock:
-            row = self._conn.execute(f'SELECT data FROM "{self._name}" WHERE id = ?', (id_,)).fetchone()
+            row = self._conn.execute(
+                f'SELECT data FROM "{self._name}" WHERE id = ?', (id_,)
+            ).fetchone()
         if row is None:
             return None
         return decode(json.loads(row[0]))
+
+    def rows_for_tenant(self, tenant_id: str) -> list[tuple[str, str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                f'SELECT id, tenant_id, data FROM "{self._name}" '
+                "WHERE tenant_id = ? ORDER BY rowid",
+                (tenant_id,),
+            ).fetchall()
+        return [(r[0], r[1], decode(json.loads(r[2]))) for r in rows]
 
     def all_rows(self) -> list[tuple[str, str, Any]]:
         with self._lock:
@@ -407,29 +434,52 @@ class RecordTable:
 
 
 class Database:
-    """One SQLite file backing every ``RecordTable`` (and hence every repository) an
-    ``AppState`` needs. ``check_same_thread=False`` plus an internal lock let this single
-    connection be shared safely by every table/repository constructed from it within one
-    process, since Starlette's TestClient (and the sandbox's synchronous route handlers) may
-    call in from a thread other than the one that opened the connection.
+    """SQLite compatibility runtime with an explicit transactional unit-of-work.
+
+    SQLite remains a development/test compatibility backend. F3's production adapter is
+    PostgreSQL, but keeping identical transaction semantics here lets the full application
+    suite prove rollback/replay behavior without weakening the existing fast test path.
     """
 
     def __init__(self, path: str) -> None:
         self._conn = sqlite3.connect(path, check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
+        self._local = threading.local()
+
+    @property
+    def in_transaction(self) -> bool:
+        return getattr(self._local, "transaction_depth", 0) > 0
+
+    @contextmanager
+    def transaction(self):
+        """Serialize an outer unit and commit/rollback atomically.
+
+        Nested calls share the same DB transaction. BEGIN IMMEDIATE prevents two SQLite
+        writers from both passing a get-before-put idempotency check concurrently.
+        """
+        with self._lock:
+            depth = getattr(self._local, "transaction_depth", 0)
+            outer = depth == 0
+            if outer:
+                self._conn.execute("BEGIN IMMEDIATE")
+            self._local.transaction_depth = depth + 1
+            try:
+                yield
+            except Exception:
+                if outer:
+                    self._conn.rollback()
+                raise
+            else:
+                if outer:
+                    self._conn.commit()
+            finally:
+                self._local.transaction_depth = depth
 
     def table(self, name: str) -> RecordTable:
-        return RecordTable(self._conn, self._lock, name)
+        return RecordTable(self, name)
 
     def ping(self) -> bool:
-        """ACHADO 23 (Fase 3, item 5 -- Health/Observability, 26/09/2026): checagem real de
-        vivacidade para `GET /health` -- executa uma query trivial de verdade em vez de
-        apenas checar se o objeto de conexao existe, conforme
-        docs/nova-fm/02-PADROES-DE-CONSTRUCAO-NOVA-FM.md linha 960 ("Evitar health check que
-        retorna sucesso mesmo quando dependencia critica esta indisponivel"). Nunca levanta
-        excecao -- devolve False em qualquer falha, para que o chamador reporte um 503
-        honesto em vez de derrubar o proprio endpoint de health."""
         try:
             with self._lock:
                 self._conn.execute("SELECT 1").fetchone()
@@ -443,39 +493,42 @@ class Database:
         except Exception:
             pass
 
-    def __del__(self) -> None:  # pragma: no cover - best-effort cleanup on GC/tear-down
+    def __del__(self) -> None:  # pragma: no cover
         self.close()
 
 
 class PersistentTenantAutonomy:
-    """``dict[str, AutonomySettings]``-shaped store, SQLite-backed via one singleton row.
+    """Live tenant-keyed persistent mapping.
 
-    ``AutonomySettings`` is a frozen dataclass that is always *replaced* wholesale by
-    ``PUT /autonomy`` (never mutated field-by-field), and the number of tenants in this BFF is
-    small, so persisting the whole mapping as one JSON blob on every write is simpler than a
-    row-per-tenant table and is still committed immediately on every ``[key] = value``.
+    F3 removes the process-local preload cache. Each get observes the backing store, which
+    is required when two replicas share one database. A legacy "all" blob is still read as
+    fallback so development SQLite files created by the previous runtime remain readable.
     """
 
     def __init__(self, table: RecordTable) -> None:
         self._table = table
-        row = table.get("all")
-        preload = row if row is not None else {}
-        self._data = wrap_for_notify(dict(preload), self._persist)
-
-    def _persist(self) -> None:
-        self._table.put("all", "all", dict(self._data))
 
     def get(self, key: str, default=None):
-        return self._data.get(key, default)
+        row = self._table.get(key)
+        if row is not None:
+            return row
+        legacy = self._table.get("all")
+        if isinstance(legacy, dict):
+            return legacy.get(key, default)
+        return default
 
     def __getitem__(self, key: str):
-        return self._data[key]
+        value = self.get(key)
+        if value is None:
+            raise KeyError(key)
+        return value
 
     def __setitem__(self, key: str, value) -> None:
-        self._data[key] = value
+        self._table.put(key, key, value)
 
     def __contains__(self, key: str) -> bool:
-        return key in self._data
+        sentinel = object()
+        return self.get(key, sentinel) is not sentinel
 
 
 class PersistentIdempotencyStore:
@@ -519,22 +572,26 @@ class PersistentIdempotencyStore:
     def execute(self, tenant_id: str, idempotency_key: str, operation):
         from datetime import timezone
 
-        existing = self.get(tenant_id, idempotency_key)
-        if existing is not None:
-            return existing.result, True
+        # F3: one DB unit-of-work covers the idempotency reservation check, every
+        # RecordTable mutation performed by operation(), audit writes and result storage.
+        # A raised exception rolls back all durable effects.
+        with self._table.transaction():
+            existing = self.get(tenant_id, idempotency_key)
+            if existing is not None:
+                return existing.result, True
 
-        result = operation()
-        self._table.put(
-            self._composite_id(tenant_id, idempotency_key),
-            tenant_id,
-            {
-                "tenant_id": tenant_id,
-                "idempotency_key": idempotency_key,
-                "result": result,
-                "stored_at": datetime.now(timezone.utc),
-            },
-        )
-        return result, False
+            result = operation()
+            self._table.put(
+                self._composite_id(tenant_id, idempotency_key),
+                tenant_id,
+                {
+                    "tenant_id": tenant_id,
+                    "idempotency_key": idempotency_key,
+                    "result": result,
+                    "stored_at": datetime.now(timezone.utc),
+                },
+            )
+            return result, False
 
 
 class PersistentSeenEventStore:
@@ -562,12 +619,21 @@ class PersistentSeenEventStore:
 
     def mark_if_new(self, provider: str, event_id: str) -> bool:
         key = self._composite_id(provider, event_id)
-        if self._table.get(key) is not None:
-            return False
-        self._table.put(
-            key, provider, {"provider": provider, "event_id": event_id, "seen_at": datetime.now(timezone.utc)}
-        )
-        return True
+        # F3: atomic get+put. Concurrent deliveries on separate SQLite connections are
+        # serialized by BEGIN IMMEDIATE; PostgreSQL uses the same store contract.
+        with self._table.transaction():
+            if self._table.get(key) is not None:
+                return False
+            self._table.put(
+                key,
+                provider,
+                {
+                    "provider": provider,
+                    "event_id": event_id,
+                    "seen_at": datetime.now(timezone.utc),
+                },
+            )
+            return True
 
     def contains(self, provider: str, event_id: str) -> bool:
         return self._table.get(self._composite_id(provider, event_id)) is not None

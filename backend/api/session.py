@@ -19,10 +19,13 @@ import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 from urllib.parse import urlsplit
 
 from .state import TokenPrincipal
+
+if TYPE_CHECKING:
+    from .db import RecordTable
 
 SESSION_COOKIE_NAME = "campaia_session"
 CSRF_HEADER_NAME = "x-csrf-token"
@@ -226,6 +229,68 @@ class InMemorySessionStore:
         return updated
 
 
+class PersistentSessionStore:
+    """Database-backed server session store shared by all application replicas."""
+
+    def __init__(self, table: "RecordTable", *, ttl: timedelta | None = None) -> None:
+        self._table = table
+        self._ttl = ttl if ttl is not None else _session_ttl()
+
+    def create(
+        self,
+        principal: TokenPrincipal,
+        *,
+        now: datetime,
+        available_principals: tuple[TokenPrincipal, ...] = (),
+        subject: str | None = None,
+    ) -> SessionRecord:
+        record = SessionRecord(
+            session_id=secrets.token_urlsafe(32),
+            csrf_secret=secrets.token_urlsafe(32),
+            principal=principal,
+            created_at=now,
+            expires_at=now + self._ttl,
+            available_principals=available_principals or (principal,),
+            subject=subject,
+        )
+        self._table.put(record.session_id, principal.tenant_id, record)
+        return record
+
+    def get(self, session_id: str) -> SessionRecord | None:
+        return self._table.get(session_id)
+
+    def invalidate(self, session_id: str) -> None:
+        self._table.delete(session_id)
+
+    def invalidate_membership(self, membership_id: str) -> None:
+        with self._table.transaction():
+            for session_id, _tenant_id, record in self._table.all_rows():
+                if any(
+                    principal.user_id == membership_id
+                    for principal in record.available_principals
+                ):
+                    self._table.delete(session_id)
+
+    def switch_principal(
+        self, session_id: str, principal: TokenPrincipal
+    ) -> SessionRecord | None:
+        with self._table.transaction():
+            current = self._table.get(session_id)
+            if current is None:
+                return None
+            updated = SessionRecord(
+                session_id=current.session_id,
+                csrf_secret=current.csrf_secret,
+                principal=principal,
+                created_at=current.created_at,
+                expires_at=current.expires_at,
+                available_principals=current.available_principals,
+                subject=current.subject,
+            )
+            self._table.put(session_id, principal.tenant_id, updated)
+            return updated
+
+
 def set_session_cookie(response, session_id: str, *, max_age_seconds: int) -> None:
     response.set_cookie(
         SESSION_COOKIE_NAME,
@@ -248,6 +313,7 @@ __all__ = [
     "DEFAULT_SESSION_TTL",
     "SESSION_COOKIE_NAME",
     "InMemorySessionStore",
+    "PersistentSessionStore",
     "SessionRecord",
     "SessionStore",
     "clear_session_cookie",
