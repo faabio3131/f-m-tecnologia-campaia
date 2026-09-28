@@ -129,3 +129,10 @@ A especificação histórica mobile serve apenas como referência funcional; a s
 ## 5. Jornada comercial
 
 compra/trial=F5; tenant=F1; usuários/unidades=F1/F2; conexões=F8–F11; Brand Kit=F6; briefing/IA/policy/preview/aprovação=F7; publicação=F9–F12; métricas/otimização=F13; cobrança/admin=F5/F14; Premium=F15; segurança/resiliência=F16/F17; staging→produção→comercial=F18/F19/F20.
+
+
+## 6. Reconciliação WP-F02-01 — 28/09/2026
+
+O CURRENT de F2 agora inclui administração Web/API de unidades, memberships, papéis e ownership seguro, com step-up, idempotência, auditoria, revogação imediata de sessão e provas cross-tenant. O contrato OpenAPI cobre as novas rotas e está sincronizado com o cliente gerado.
+
+O estado permanece `PARTIAL`, não `DONE_VERIFIED`, porque a homologação do step-up Google real foi deliberadamente adiada por ausência de infraestrutura/credenciais externas (`EXTERNAL_INFRASTRUCTURE` / `EXTERNAL_CREDENTIAL`). PostgreSQL, concorrência multi-réplica e atomicidade de produção continuam nos WPs F3/F4.

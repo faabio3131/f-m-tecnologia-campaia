@@ -95,3 +95,16 @@ Portanto:
 ## 7. Rollback
 
 O hardening desta retomada é apenas cobertura de testes e documentação. Reverter o commit de testes `9add6f5` remove somente as novas provas cross-tenant; não altera o comportamento funcional existente.
+
+
+## 8. Adendo CURRENT — 28/09/2026
+
+A evidência histórica acima permanece válida, mas o CURRENT F1 avançou antes da abertura de F2:
+
+- HEAD funcional F1: `124da9fd5ea97ba19c2fbcc5c906561024ee70ea`;
+- Backend #133: `success` — 377 domínio + 242 API;
+- Frontend #71: `success` — 21 arquivos / 72 Vitest + 4 smoke E2E + 27 E2E cross-stack;
+- Google Login Web real implementado, com token curto validado server-side e sem persistência de refresh token no navegador;
+- autoafirmação pública de `PURCHASE` recusada fail-closed; billing/entitlement server-authoritative permanece F5.
+
+Decisão do Diretor em 28/09/2026: como ainda não existem as configurações externas para deploy/homologação, o teste com conta Google real será executado posteriormente. A pendência é `EXTERNAL_INFRASTRUCTURE` / `EXTERNAL_CREDENTIAL`; G1 continua `PARTIAL`. A decisão autoriza prosseguir com construção interna, mas não autoriza merge, deploy ou produção.

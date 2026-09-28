@@ -1,7 +1,7 @@
 # CampaIA — CONTROLE MESTRE DE EXECUÇÃO F0–F20
 
 **Data-base:** 27/09/2026  
-**Status:** G0 `DONE_VERIFIED`; F1/G1 `PARTIAL` — onboarding comercial implementado e CI verde, mas G1 não certificado sem evidência E2E sem fixture/IdP real e sem o fechamento do fluxo comercial de trial/compra. Não implica merge, deploy ou produção.  
+**Status:** G0 `DONE_VERIFIED`; F1/G1 `PARTIAL` por homologação Google externa e integração comercial de F5; F2/G2 `PARTIAL` — IAM/organização implementados e certificados internamente, mas step-up Google real permanece pendente de ambiente externo. Não implica merge, deploy ou produção.  
 **Repositório canônico:** faabio3131/f-m-tecnologia-campaia  
 **Linha de trabalho:** PR #31, branch reconciliation/campaia-final-takeover  
 **Fonte mestra:** “CAMPAIA - CRONOGRAMA MESTRE DE EXECUCAO TOTAL ATE PRONTO COMERCIAL”, v1.0, 27/09/2026.
@@ -106,3 +106,51 @@ O commit de reconciliação ff1d6d95ec8f5ecdab807cb46e56fce0328d7d08 foi submeti
 **Blockers/dependências:** evidência com IdP real (`EXTERNAL_INFRASTRUCTURE/EXTERNAL_CREDENTIAL` até confirmação do ambiente) e integração comercial de F5. F2/F3 continuam responsáveis por ownership transfer, IAM administrativo completo e garantias multi-instância/atomicidade.
 
 **Governança:** nenhum merge, deploy ou alteração de produção foi realizado.
+
+
+## 9. Atualização F1 — decisão operacional de 28/09/2026
+
+**Status permanece:** `PARTIAL`. Gate G1 permanece aberto.
+
+- HEAD funcional F1 antes do avanço para F2: `124da9fd5ea97ba19c2fbcc5c906561024ee70ea`.
+- Backend run #133: `success` — 377 testes de domínio + 242 testes de API.
+- Frontend run #71: `success` — 21 arquivos / 72 Vitest, 4 smoke E2E e 27 E2E cross-stack, além de lint, typecheck, contract drift, boundary check e build.
+- Login Google Web real já está implementado: GIS → Google Identity Platform → ID token curto → BFF → Firebase Admin. O browser não persiste refresh token.
+- O onboarding público rejeita `entry_mode=PURCHASE` autoafirmado pelo cliente; entitlement pago só poderá vir de confirmação server-side de billing em F5.
+- Em 28/09/2026 o Diretor determinou que deploy/homologação Google real sejam adiados até existir infraestrutura externa. Portanto a pendência fica explicitamente classificada como `EXTERNAL_INFRASTRUCTURE` / `EXTERNAL_CREDENTIAL`, sem bloquear a execução interna dos WPs seguintes.
+- Nenhum merge, deploy ou alteração de produção foi executado.
+
+## 10. Estado F2 / G2 — WP-F02-01 — 28/09/2026
+
+**Status:** `PARTIAL`. Gate G2 permanece aberto exclusivamente para as provas externas/ambiente produtivo que não podem ser fabricadas.
+
+**CURRENT funcional certificado:** `54a3082e59d8db821a8df51051d87331484c1c18`.
+
+**Entregue e comprovado internamente:**
+- CRUD de unidades de negócio do tenant atual: listar, criar, renomear, desativar e reativar;
+- unidade com membro ativo não pode ser desativada; tenant mantém ao menos uma unidade ativa;
+- papéis OWNER/ADMIN/FINANCE/APPROVER/MARKETER/VIEWER administráveis pela Web;
+- somente Owner pode administrar/conceder Owner;
+- último Owner ativo nunca pode perder Owner;
+- transferência segura de ownership pelo fluxo do produto: primeiro promove-se o sucessor a Owner, só então o Owner atual pode se rebaixar;
+- alteração de papel/unidade revoga imediatamente todas as sessões do membership alterado;
+- administração preserva isolamento de business unit operacional — Owner/Admin não ganharam acesso implícito a campanhas de outra unidade;
+- mutações administrativas exigem CSRF, step-up e idempotência;
+- replay devolve o resultado original e não duplica unidade;
+- tentativas cross-tenant de alterar unidade/membership falham fechado com 404;
+- alterações relevantes escrevem trilha de auditoria;
+- unidades, memberships e papéis sobrevivem restart no runtime persistente atual;
+- Web possui telas de Organização e Usuários/Permissões;
+- step-up Google real está integrado à Web sem armazenamento persistente de token; após prova válida o token é descartado e a janela server-side de elevação é respeitada;
+- OpenAPI e tipos TypeScript gerados estão sincronizados.
+
+**CI do HEAD funcional:**
+- Backend run #143 = `success`: 377 testes de domínio + 252 testes de API; `pip-audit` sem vulnerabilidades conhecidas; AsyncAPI 24/24.
+- Frontend run #81 = `success`: 21 arquivos / 72 Vitest; 4 smoke E2E; 27 E2E cross-stack; lint, typecheck, contract drift, security boundary e production build verdes; `npm audit` 0 vulnerabilidades.
+
+**Por que G2 não é promovido a DONE_VERIFIED:**
+- a reautenticação Google real depende das configurações externas já adiadas pelo Diretor (`FIREBASE_PROJECT_ID`, client ID/API pública e origens do ambiente);
+- PostgreSQL/multi-réplica/atomicidade de produção pertencem a F3/F4 e continuam `PRODUCTION_GATE`/TARGET, não são inferidos a partir do SQLite/RecordTable durável usado pela suíte;
+- nenhuma homologação externa, staging ou produção foi inventada.
+
+**Governança:** PR #31 permanece Draft; nenhum merge, deploy ou alteração de produção.
