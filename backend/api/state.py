@@ -74,20 +74,12 @@ class TokenPrincipal:
     mfa_enabled: bool = True
 
     def to_domain_principal(self, *, step_up_at: datetime | None) -> Principal:
-        # F2: Owner/Admin are tenant-wide administrators even when the active session
-        # carries a concrete business_unit_id for product context. Operational roles
-        # remain scoped to their assigned unit. This preserves tenant isolation while
-        # allowing organization administration across units without encoding special
-        # tenant IDs or bypasses.
-        tenant_wide_admin = bool(self.roles & frozenset({Role.OWNER, Role.ADMIN}))
         return Principal(
             user_id=self.user_id,
             tenant_id=self.tenant_id,
             roles=self.roles,
             business_unit_ids=(
-                None
-                if tenant_wide_admin or self.business_unit_id is None
-                else frozenset({self.business_unit_id})
+                None if self.business_unit_id is None else frozenset({self.business_unit_id})
             ),
             mfa_enabled=self.mfa_enabled,
             step_up_at=step_up_at,
