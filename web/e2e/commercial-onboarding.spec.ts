@@ -51,7 +51,7 @@ test.describe("F1 onboarding comercial sem tenant pre-seedado", () => {
     // F2 organization administration: create a second unit entirely through the product.
     await page.goto("/settings/organization");
     await expect(page.getByRole("heading", { name: "Organização" })).toBeVisible();
-    await page.getByLabel("Nome da unidade").fill("Comercial E2E");
+    await page.getByRole("textbox", { name: "Nome da unidade", exact: true }).fill("Comercial E2E");
     const unitResponsePromise = page.waitForResponse(
       (r) => r.url().endsWith("/business-units") && r.request().method() === "POST",
     );
