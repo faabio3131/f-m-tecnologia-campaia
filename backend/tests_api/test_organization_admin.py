@@ -241,6 +241,66 @@ class OrganizationAdministrationTests(unittest.TestCase):
         )
         self.assertEqual(membership_result.status_code, 404, membership_result.text)
 
+    def test_safe_ownership_transfer_promotes_successor_before_current_owner_demotes(self) -> None:
+        client, owner = self._owner()
+        successor_client, accepted = self._invite_accept(
+            client,
+            owner,
+            email=ID_MEMBER.email,
+            token=TOK_MEMBER,
+            role="ADMIN",
+            idem_suffix="ownership-successor",
+        )
+        successor_id = accepted["membership"]["id"]
+        unit_id = owner["organization"]["default_business_unit_id"]
+
+        # Last-owner invariant blocks a premature self-demotion.
+        premature = client.patch(
+            f"/memberships/{owner['membership']['id']}",
+            json={"roles": ["ADMIN"], "business_unit_id": unit_id},
+            headers=headers(owner["session"]["csrf_token"], "f2-transfer-premature-01"),
+        )
+        self.assertEqual(premature.status_code, 409, premature.text)
+        self.assertEqual(premature.json()["code"], "INVALID_STATE")
+
+        # Current Owner explicitly promotes the successor through the normal product API.
+        promoted = client.patch(
+            f"/memberships/{successor_id}",
+            json={"roles": ["OWNER"], "business_unit_id": unit_id},
+            headers=headers(owner["session"]["csrf_token"], "f2-transfer-promote-001"),
+        )
+        self.assertEqual(promoted.status_code, 200, promoted.text)
+        self.assertEqual(promoted.json()["roles"], ["OWNER"])
+
+        # The successor's pre-promotion session was revoked because authority changed.
+        self.assertEqual(successor_client.get("/me").status_code, 401)
+
+        # Only after another active Owner exists may the original Owner demote themself.
+        demoted = client.patch(
+            f"/memberships/{owner['membership']['id']}",
+            json={"roles": ["ADMIN"], "business_unit_id": unit_id},
+            headers=headers(owner["session"]["csrf_token"], "f2-transfer-demote-0001"),
+        )
+        self.assertEqual(demoted.status_code, 200, demoted.text)
+        self.assertEqual(demoted.json()["roles"], ["ADMIN"])
+
+        # Self authority change revokes the old Owner session immediately.
+        self.assertEqual(client.get("/me").status_code, 401)
+
+        successor_client.cookies.clear()
+        relogin = successor_client.post(
+            "/auth/session",
+            json={"id_token": TOK_MEMBER},
+            headers={"Origin": ORIGIN},
+        )
+        self.assertEqual(relogin.status_code, 200, relogin.text)
+        self.assertEqual(relogin.json()["roles"], ["OWNER"])
+        tenant_id = owner["organization"]["tenant_id"]
+        self.assertEqual(
+            client.app.state.campaia.organizations.active_owner_count(tenant_id),
+            1,
+        )
+
     def test_role_change_is_written_to_audit_trail(self) -> None:
         client, owner = self._owner()
         _, accepted = self._invite_accept(
