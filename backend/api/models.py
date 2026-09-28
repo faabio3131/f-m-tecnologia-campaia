@@ -121,6 +121,30 @@ class InvitationAcceptRequest(ApiModel):
     accept_token: str = Field(min_length=16, max_length=512)
 
 
+# --------------------------------------------------------------------------- F2 organization / IAM administration
+
+
+class BusinessUnitResponse(BaseModel):
+    id: str
+    name: str
+    status: str
+    created_at: datetime
+
+
+class BusinessUnitCreateRequest(ApiModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class BusinessUnitRenameRequest(ApiModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class MembershipAccessUpdateRequest(ApiModel):
+    roles: list[str] = Field(min_length=1)
+    business_unit_id: str
+
+
+
 # --------------------------------------------------------------------------- vinculos multi-tenant (WP-03)
 
 

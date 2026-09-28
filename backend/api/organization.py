@@ -422,6 +422,114 @@ class OrganizationRepository:
         )
 
 
+    def list_business_units_for_tenant(self, tenant_id: str) -> list[BusinessUnitRecord]:
+        organization = self._items.get(tenant_id)
+        if organization is None:
+            return []
+        return list(organization.business_units.values())
+
+    def create_business_unit(
+        self, tenant_id: str, *, name: str
+    ) -> BusinessUnitRecord:
+        organization = self._items.get(tenant_id)
+        if organization is None:
+            raise KeyError("TENANT_NOT_FOUND")
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("BUSINESS_UNIT_NAME_REQUIRED")
+        if any(
+            unit.name.casefold() == normalized_name.casefold()
+            for unit in organization.business_units.values()
+        ):
+            raise ValueError("BUSINESS_UNIT_NAME_EXISTS")
+        unit = BusinessUnitRecord(
+            business_unit_id=new_id("bu"),
+            tenant_id=tenant_id,
+            name=normalized_name,
+        )
+        organization.business_units[unit.business_unit_id] = unit
+        self._persist(organization)
+        return unit
+
+    def rename_business_unit(
+        self, tenant_id: str, business_unit_id: str, *, name: str
+    ) -> BusinessUnitRecord | None:
+        organization = self._items.get(tenant_id)
+        if organization is None:
+            return None
+        unit = organization.business_units.get(business_unit_id)
+        if unit is None:
+            return None
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("BUSINESS_UNIT_NAME_REQUIRED")
+        if any(
+            other.business_unit_id != business_unit_id
+            and other.name.casefold() == normalized_name.casefold()
+            for other in organization.business_units.values()
+        ):
+            raise ValueError("BUSINESS_UNIT_NAME_EXISTS")
+        unit.name = normalized_name
+        self._persist(organization)
+        return unit
+
+    def active_membership_count_for_unit(self, tenant_id: str, business_unit_id: str) -> int:
+        return sum(
+            1
+            for membership in self.list_memberships_for_tenant(tenant_id)
+            if membership.status == "ACTIVE"
+            and membership.business_unit_id == business_unit_id
+        )
+
+    def set_business_unit_status(
+        self, tenant_id: str, business_unit_id: str, *, status: str
+    ) -> BusinessUnitRecord | None:
+        organization = self._items.get(tenant_id)
+        if organization is None:
+            return None
+        unit = organization.business_units.get(business_unit_id)
+        if unit is None:
+            return None
+        if status not in {"ACTIVE", "INACTIVE"}:
+            raise ValueError("BUSINESS_UNIT_STATUS_INVALID")
+        if status == "INACTIVE":
+            if self.active_membership_count_for_unit(tenant_id, business_unit_id) > 0:
+                raise ValueError("BUSINESS_UNIT_HAS_ACTIVE_MEMBERS")
+            active_units = sum(
+                1
+                for candidate in organization.business_units.values()
+                if candidate.status == "ACTIVE"
+                and candidate.business_unit_id != business_unit_id
+            )
+            if active_units < 1:
+                raise ValueError("LAST_ACTIVE_BUSINESS_UNIT")
+        unit.status = status
+        self._persist(organization)
+        return unit
+
+    def update_membership_access(
+        self,
+        tenant_id: str,
+        membership_id: str,
+        *,
+        roles: frozenset[Role],
+        business_unit_id: str | None,
+        now: datetime | None = None,
+    ) -> MembershipRecord | None:
+        organization = self._items.get(tenant_id)
+        if organization is None:
+            return None
+        membership = organization.memberships.get(membership_id)
+        if membership is None:
+            return None
+        now = now or datetime.now(timezone.utc)
+        membership.roles = roles
+        membership.business_unit_id = business_unit_id
+        membership.updated_at = now
+        self._persist(organization)
+        return membership
+
+
 __all__ = [
     "BusinessUnitRecord",
     "INVITATION_TTL",

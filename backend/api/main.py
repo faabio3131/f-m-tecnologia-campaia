@@ -57,6 +57,14 @@ from .routes_onboarding import (
     list_members,
     reactivate_member,
 )
+from .routes_organization_admin import (
+    create_business_unit,
+    deactivate_business_unit,
+    list_business_units,
+    reactivate_business_unit,
+    rename_business_unit,
+    update_membership_access,
+)
 from .state import AppState
 
 
@@ -99,6 +107,20 @@ routes = [
     Route("/member-invitations", create_invitation, methods=["POST"]),
     Route("/memberships/{membershipId}/deactivate", deactivate_member, methods=["POST"]),
     Route("/memberships/{membershipId}/reactivate", reactivate_member, methods=["POST"]),
+    Route("/memberships/{membershipId}", update_membership_access, methods=["PATCH"]),
+    Route("/business-units", list_business_units, methods=["GET"]),
+    Route("/business-units", create_business_unit, methods=["POST"]),
+    Route("/business-units/{businessUnitId}", rename_business_unit, methods=["PATCH"]),
+    Route(
+        "/business-units/{businessUnitId}/deactivate",
+        deactivate_business_unit,
+        methods=["POST"],
+    ),
+    Route(
+        "/business-units/{businessUnitId}/reactivate",
+        reactivate_business_unit,
+        methods=["POST"],
+    ),
 
     Route("/brand-profiles", list_brand_profiles, methods=["GET"]),
     Route("/brand-profiles", create_brand_profile, methods=["POST"]),
