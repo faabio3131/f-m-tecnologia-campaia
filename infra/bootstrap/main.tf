@@ -59,6 +59,8 @@ resource "google_iam_workload_identity_pool_provider" "github" {
 resource "google_service_account" "github_deployer" {
   account_id   = "campaia-${var.environment}-deploy"
   display_name = "CampaIA ${var.environment} GitHub deployer"
+
+  depends_on = [google_project_service.bootstrap_apis]
 }
 
 resource "google_service_account_iam_member" "github_oidc" {

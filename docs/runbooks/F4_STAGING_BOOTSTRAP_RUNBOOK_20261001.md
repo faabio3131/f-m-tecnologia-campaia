@@ -81,6 +81,8 @@ terraform -chdir=infra/bootstrap output
 terraform -chdir=infra/bootstrap state list
 ```
 
+Se o apply falhar depois de criar apenas parte dos recursos, não reutilizar o plan salvo. Primeiro reconciliar o state real, corrigir a causa raiz e gerar um novo `terraform plan` antes de qualquer nova tentativa de apply.
+
 Evidência obrigatória:
 - bucket de state criado e importado para o backend GCS;
 - state do bootstrap presente no backend GCS;
