@@ -35,7 +35,7 @@ jobs:
           terraform -chdir=infra/terraform validate
 
   containers:
-    name: Reproducible container builds
+    name: Reproducible container builds and boot smoke
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -44,9 +44,47 @@ jobs:
       - name: Build backend image
         run: docker build --pull -t campaia-backend-ci backend
 
+      - name: Boot and smoke backend production image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name campaia-backend-ci-run \
+            -p 18080:8080 \
+            -e CAMPAIA_ENV=test \
+            campaia-backend-ci
+          trap 'docker logs campaia-backend-ci-run || true; docker rm -f campaia-backend-ci-run >/dev/null 2>&1 || true' EXIT
+          for attempt in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:18080/health/live >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Backend container did not become live." >&2
+          exit 1
+
       - name: Build web image
         run: |
-          docker build --pull             --build-arg CAMPAIA_BFF_ORIGIN=https://backend.invalid             --build-arg NEXT_PUBLIC_GOOGLE_IDENTITY_CLIENT_ID=ci-client.invalid             --build-arg NEXT_PUBLIC_IDENTITY_PLATFORM_PUBLIC_API=ci-public-api.invalid             --build-arg NEXT_PUBLIC_CAMPAIA_IDENTITY_MODE=test             -t campaia-web-ci web
+          docker build --pull \
+            --build-arg CAMPAIA_BFF_ORIGIN=https://backend.invalid \
+            --build-arg NEXT_PUBLIC_GOOGLE_IDENTITY_CLIENT_ID=ci-client.invalid \
+            --build-arg NEXT_PUBLIC_IDENTITY_PLATFORM_PUBLIC_API=ci-public-api.invalid \
+            --build-arg NEXT_PUBLIC_CAMPAIA_IDENTITY_MODE=test \
+            -t campaia-web-ci web
+
+      - name: Boot and smoke web production image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name campaia-web-ci-run -p 18081:8080 campaia-web-ci
+          trap 'docker logs campaia-web-ci-run || true; docker rm -f campaia-web-ci-run >/dev/null 2>&1 || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent --location http://127.0.0.1:18081/ >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Web container did not become reachable." >&2
+          exit 1
 
   security:
     name: Secret scan and SAST

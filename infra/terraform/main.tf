@@ -242,6 +242,12 @@ resource "google_project_iam_member" "deployer_run_admin" {
   member  = "serviceAccount:${var.deployer_service_account_email}"
 }
 
+resource "google_project_iam_member" "deployer_vpc_access" {
+  project = var.project_id
+  role    = "roles/vpcaccess.user"
+  member  = "serviceAccount:${var.deployer_service_account_email}"
+}
+
 resource "google_project_iam_member" "deployer_artifact_writer" {
   project = var.project_id
   role    = "roles/artifactregistry.writer"
