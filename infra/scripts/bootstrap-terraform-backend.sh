@@ -20,6 +20,30 @@ TERRAFORM_BIN="${TERRAFORM_BIN:-terraform}"
 BACKEND_PREFIX="campaia/bootstrap/${ENVIRONMENT}"
 BUCKET_URI="gs://${STATE_BUCKET}"
 
+if [[ "${TERRAFORM_BIN}" == */* ]]; then
+  if [[ ! -x "${TERRAFORM_BIN}" ]]; then
+    echo "Terraform executable '${TERRAFORM_BIN}' does not exist or is not executable." >&2
+    exit 5
+  fi
+else
+  RESOLVED_TERRAFORM_BIN="$(command -v "${TERRAFORM_BIN}" || true)"
+  if [[ -z "${RESOLVED_TERRAFORM_BIN}" ]]; then
+    echo "Terraform executable '${TERRAFORM_BIN}' was not found in PATH." >&2
+    exit 5
+  fi
+  TERRAFORM_BIN="${RESOLVED_TERRAFORM_BIN}"
+fi
+
+if ! "${TERRAFORM_BIN}" version >/dev/null 2>&1; then
+  echo "Terraform executable '${TERRAFORM_BIN}' is present but did not run successfully." >&2
+  exit 5
+fi
+
+if ! command -v gcloud >/dev/null 2>&1; then
+  echo "gcloud CLI was not found in PATH." >&2
+  exit 6
+fi
+
 echo "Project: ${PROJECT_ID}"
 echo "Environment: ${ENVIRONMENT}"
 echo "Region: ${REGION}"

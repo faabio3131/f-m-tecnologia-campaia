@@ -34,6 +34,14 @@ export REGION="southamerica-east1"
 export STATE_BUCKET="<STATE_BUCKET_GLOBALMENTE_UNICO>"
 ```
 
+Antes de qualquer mutação, validar que a VM/sessão atual possui Terraform executável:
+
+```bash
+terraform version
+```
+
+Em Cloud Shell, uma VM recriada pode não preservar pacotes instalados no sistema; se o comando falhar, reinstalar/reativar o Terraform antes de prosseguir.
+
 Após autorização explícita para criar o primeiro recurso de staging, executar:
 
 ```bash
