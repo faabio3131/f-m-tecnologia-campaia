@@ -41,10 +41,15 @@ variable "db_deletion_protection" {
   default     = true
 }
 
-variable "serverless_connector_cidr" {
-  description = "Dedicated /28 used by Serverless VPC Access."
+variable "direct_vpc_subnet_cidr" {
+  description = "Dedicated /26-or-larger subnet used by Cloud Run Direct VPC egress."
   type        = string
-  default     = "10.8.0.0/28"
+  default     = "10.8.0.0/26"
+
+  validation {
+    condition     = can(cidrnetmask(var.direct_vpc_subnet_cidr)) && tonumber(split("/", var.direct_vpc_subnet_cidr)[1]) <= 26
+    error_message = "direct_vpc_subnet_cidr must be a valid IPv4 CIDR with /26 or larger address space."
+  }
 }
 
 variable "assets_bucket_name" {

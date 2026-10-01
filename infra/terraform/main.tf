@@ -11,7 +11,6 @@ locals {
     "secretmanager.googleapis.com",
     "servicenetworking.googleapis.com",
     "sqladmin.googleapis.com",
-    "vpcaccess.googleapis.com",
   ])
 
   platform_secret_ids = toset([
@@ -71,6 +70,16 @@ resource "google_compute_network" "runtime" {
   depends_on = [google_project_service.apis]
 }
 
+resource "google_compute_subnetwork" "direct_vpc" {
+  name                     = "${local.name}-direct-vpc"
+  region                   = var.region
+  network                  = google_compute_network.runtime.id
+  ip_cidr_range            = var.direct_vpc_subnet_cidr
+  private_ip_google_access = true
+
+  depends_on = [google_project_service.apis]
+}
+
 resource "google_compute_global_address" "private_services" {
   name          = "${local.name}-private-services"
   purpose       = "VPC_PEERING"
@@ -83,18 +92,6 @@ resource "google_service_networking_connection" "private_services" {
   network                 = google_compute_network.runtime.id
   service                 = "servicenetworking.googleapis.com"
   reserved_peering_ranges = [google_compute_global_address.private_services.name]
-
-  depends_on = [google_project_service.apis]
-}
-
-resource "google_vpc_access_connector" "serverless" {
-  name          = "${local.name}-vpc"
-  region        = var.region
-  network       = google_compute_network.runtime.name
-  ip_cidr_range = var.serverless_connector_cidr
-  machine_type  = "e2-micro"
-  min_instances = 2
-  max_instances = 3
 
   depends_on = [google_project_service.apis]
 }
@@ -239,12 +236,6 @@ resource "google_pubsub_topic_iam_member" "backend_publish" {
 resource "google_project_iam_member" "deployer_run_admin" {
   project = var.project_id
   role    = "roles/run.admin"
-  member  = "serviceAccount:${var.deployer_service_account_email}"
-}
-
-resource "google_project_iam_member" "deployer_vpc_access" {
-  project = var.project_id
-  role    = "roles/vpcaccess.user"
   member  = "serviceAccount:${var.deployer_service_account_email}"
 }
 

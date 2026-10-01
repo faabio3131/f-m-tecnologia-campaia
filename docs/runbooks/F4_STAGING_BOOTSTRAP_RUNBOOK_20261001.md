@@ -163,7 +163,10 @@ Cadastrar variáveis não secretas:
 - `GCP_DEPLOY_SERVICE_ACCOUNT`;
 - `GCP_BACKEND_SERVICE_ACCOUNT`;
 - `GCP_WEB_SERVICE_ACCOUNT`;
-- `GCP_VPC_CONNECTOR`;
+- `GCP_VPC_NETWORK`;
+- `GCP_VPC_SUBNET`;
+- `GCP_CLOUD_RUN_MIN_INSTANCES=0`;
+- `GCP_CLOUD_RUN_MAX_INSTANCES=3`;
 - `CAMPAIA_DATABASE_URL_SECRET`;
 - `CAMPAIA_VAULT_KMS_KEY_NAME`;
 - `NEXT_PUBLIC_GOOGLE_IDENTITY_CLIENT_ID`;
@@ -180,6 +183,34 @@ Antes da jornada real:
 - nunca usar fixture/test identity mode.
 
 Custom domain/DNS/TLS, se adotado, deve ser configurado no ambiente e repetido na allowlist/origens do IdP.
+
+## 8.1. Operação econômica do staging
+
+O staging usa Cloud Run Direct VPC egress em uma sub-rede /26 e não provisiona
+Serverless VPC Access Connector. Durante construção:
+
+- Cloud Run deve permanecer com mínimo 0;
+- o banco Cloud SQL deve ficar ligado somente durante janelas de integração/homologação;
+- antes de release/migrations reais, abrir a janela com:
+
+```bash
+PROJECT_ID=campaia-staging ENVIRONMENT=staging infra/scripts/staging-runtime.sh start
+```
+
+- após concluir testes e coletar evidências, fechar a janela com:
+
+```bash
+PROJECT_ID=campaia-staging ENVIRONMENT=staging infra/scripts/staging-runtime.sh stop
+```
+
+- consultar a qualquer momento:
+
+```bash
+PROJECT_ID=campaia-staging ENVIRONMENT=staging infra/scripts/staging-runtime.sh status
+```
+
+Parar Cloud SQL suspende o compute da instância, mas não elimina cobrança residual de
+armazenamento/IP. Produção não pode usar este script.
 
 ## 9. Release staging
 

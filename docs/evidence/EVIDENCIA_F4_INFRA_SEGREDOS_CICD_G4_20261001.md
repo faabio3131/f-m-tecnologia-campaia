@@ -112,7 +112,7 @@ A F4 Platform CI não apenas constrói as imagens: ela inicia os containers de p
 - Artifact Registry;
 - VPC dedicada;
 - private service networking;
-- Serverless VPC Access;
+- sub-rede regional /26 para Cloud Run Direct VPC egress;
 - Cloud SQL PostgreSQL 16;
 - private IP only;
 - conexão criptografada;
@@ -194,12 +194,11 @@ Arquitetura operacional:
 ## 10. IAM e rede
 
 - Cloud SQL usa private IP;
-- backend acessa rede por Serverless VPC Access;
+- backend e migration job acessam a rede privada por Cloud Run Direct VPC egress;
 - backend e Web têm service accounts diferentes;
 - backend recebe acesso específico a KMS, secrets, assets e Pub/Sub;
 - Web não recebe acesso aos secrets do backend;
 - deployer recebe somente papéis necessários ao release modelado;
-- deployer recebe `roles/vpcaccess.user` para associar o serviço ao connector;
 - GitHub autentica por Workload Identity Federation/OIDC, não por service-account JSON key;
 - trust OIDC exige:
   - repositório canônico;
@@ -349,3 +348,27 @@ Restore real e RPO/RTO medidos continuam F17.
 A base necessária para provisionar e operar staging está codificada e certificada por CI. O Gate não é promovido porque não houve `terraform apply`, deploy ou staging real.
 
 Nenhum merge, deploy, staging ou produção foi executado.
+
+
+## 17. Atualização operacional — staging econômico/on-demand — 01/10/2026
+
+Após o bootstrap real de staging ter sido criado e reconciliado sem drift, o Diretor
+aprovou a estratégia de construção com custo mínimo sem empurrar G4 para a pré-estreia.
+
+TARGET atualizado:
+- remover Serverless VPC Access Connector e seu custo-base de VMs;
+- usar Cloud Run Direct VPC egress em sub-rede dedicada /26;
+- manter Cloud Run staging com mínimo 0 e limite inicial conservador;
+- operar Cloud SQL staging por janelas explícitas de start/stop;
+- manter state, IAM, KMS, Secret Manager, Storage e demais fundações persistentes;
+- ligar staging nos checkpoints que exigem OAuth/webhook/publicação/migrations/smoke;
+- manter G4 aberto até foundation, deploy, migrations, smoke e rollback reais.
+
+O bootstrap externo já comprovado permanece válido. A foundation anterior de 41 recursos
+foi apenas planejada e NÃO foi aplicada; ela fica `SUPERSEDED` pela variante econômica.
+Nenhum Serverless VPC Access Connector chegou a ser criado.
+
+Status:
+- F4: `PARTIAL`;
+- preparação interna: `DONE_VERIFIED` somente após a nova CI;
+- G4: `EXTERNAL_INFRASTRUCTURE` até o staging econômico real completar o gate.

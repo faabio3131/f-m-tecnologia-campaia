@@ -6,7 +6,7 @@ This directory codifies the F4 target approved by D-08: Google Cloud in
 ## What is code-owned here
 
 - Artifact Registry for immutable backend/web container images.
-- Private VPC + Serverless VPC Access.
+- Private VPC + Cloud Run Direct VPC egress through a dedicated /26 subnet; no always-on connector VMs.
 - Cloud SQL PostgreSQL 16, private IP only, encrypted connections, PITR and managed backups.
 - Secret Manager secret containers; **secret values are never Terraform literals**.
 - Cloud KMS key ring + symmetric key with 90-day primary-version rotation.
@@ -41,7 +41,8 @@ as Terraform or environment-specific application code.
 6. Configure GitHub Environment variables from Terraform/bootstrap outputs:
    `GCP_PROJECT_ID`, `GCP_REGION`, `GCP_WORKLOAD_IDENTITY_PROVIDER`,
    `GCP_DEPLOY_SERVICE_ACCOUNT`, `GCP_BACKEND_SERVICE_ACCOUNT`,
-   `GCP_WEB_SERVICE_ACCOUNT`, `GCP_VPC_CONNECTOR`, `CAMPAIA_DATABASE_URL_SECRET`,
+   `GCP_WEB_SERVICE_ACCOUNT`, `GCP_VPC_NETWORK`, `GCP_VPC_SUBNET`,
+   `GCP_CLOUD_RUN_MIN_INSTANCES`, `GCP_CLOUD_RUN_MAX_INSTANCES`, `CAMPAIA_DATABASE_URL_SECRET`,
    `CAMPAIA_VAULT_KMS_KEY_NAME`.
 7. Configure public Identity Platform values for the Web environment before homologation.
 8. Invoke the deployment workflow. GitHub Environment approval is an external gate.
@@ -64,5 +65,12 @@ Application rollback moves Cloud Run traffic to a known previous revision using
 traffic rollback; the versioned migration runner rolls back one migration only after a
 compatibility decision.
 
-A real staging apply, rollback rehearsal, DNS/TLS delegation and restore exercise remain
-external evidence required before G4/F17 can be promoted.
+For staging, set `GCP_CLOUD_RUN_MIN_INSTANCES=0` and a conservative
+`GCP_CLOUD_RUN_MAX_INSTANCES` (initially 3). Cloud Run and Direct VPC egress can then
+scale to zero when idle. Cloud SQL is the principal persistent compute cost; use
+`infra/scripts/staging-runtime.sh start|stop|status` to open and close controlled
+staging windows. Stopping staging Cloud SQL is an operational cost control and does not
+replace the G4 requirement to prove a real deploy, migration, smoke and rollback.
+
+A real staging foundation apply, rollback rehearsal, DNS/TLS delegation and restore
+exercise remain external evidence required before G4/F17 can be promoted.

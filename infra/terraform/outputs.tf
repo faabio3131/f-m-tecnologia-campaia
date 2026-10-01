@@ -30,8 +30,12 @@ output "pubsub_topic_name" {
   value = google_pubsub_topic.domain_events.name
 }
 
-output "vpc_connector_name" {
-  value = google_vpc_access_connector.serverless.name
+output "vpc_network_name" {
+  value = google_compute_network.runtime.name
+}
+
+output "direct_vpc_subnet_name" {
+  value = google_compute_subnetwork.direct_vpc.name
 }
 
 output "backend_service_account_email" {

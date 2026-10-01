@@ -25,7 +25,29 @@ jobs:
         run: terraform fmt -check -recursive infra
 
       - name: Validate infrastructure shell scripts
-        run: bash -n infra/scripts/bootstrap-terraform-backend.sh
+        run: |
+          bash -n infra/scripts/bootstrap-terraform-backend.sh
+          bash -n infra/scripts/staging-runtime.sh
+
+      - name: Validate low-cost staging network invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -q 'google_vpc_access_connector' infra/terraform/main.tf; then
+            echo "Serverless VPC Access connector must not return to the F4 foundation." >&2
+            exit 1
+          fi
+          if grep -q 'vpcaccess.googleapis.com' infra/terraform/main.tf; then
+            echo "vpcaccess API is not needed with Direct VPC egress." >&2
+            exit 1
+          fi
+          if grep -q -- '--vpc-connector=' .github/workflows/cloud-run-release.yml; then
+            echo "Release workflow must use Direct VPC egress." >&2
+            exit 1
+          fi
+          grep -q -- '--network=' .github/workflows/cloud-run-release.yml
+          grep -q -- '--subnet=' .github/workflows/cloud-run-release.yml
+          grep -q 'default     = "10.8.0.0/26"' infra/terraform/variables.tf
 
       - name: Validate bootstrap stack
         run: |
