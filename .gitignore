@@ -29,3 +29,10 @@ Thumbs.db
 
 # Logs
 *.log
+# Terraform / cloud auth generated files
+**/.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+gha-creds-*.json
+

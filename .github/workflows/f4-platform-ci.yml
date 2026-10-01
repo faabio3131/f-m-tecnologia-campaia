@@ -1,0 +1,70 @@
+name: CAMPAIA F4 Platform CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    name: Terraform format and validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive infra
+
+      - name: Validate bootstrap stack
+        run: |
+          terraform -chdir=infra/bootstrap init -backend=false
+          terraform -chdir=infra/bootstrap validate
+
+      - name: Validate environment foundation
+        run: |
+          terraform -chdir=infra/terraform init -backend=false
+          terraform -chdir=infra/terraform validate
+
+  containers:
+    name: Reproducible container builds
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build --pull -t campaia-backend-ci backend
+
+      - name: Build web image
+        run: |
+          docker build --pull             --build-arg CAMPAIA_BFF_ORIGIN=https://backend.invalid             --build-arg NEXT_PUBLIC_GOOGLE_IDENTITY_CLIENT_ID=ci-client.invalid             --build-arg NEXT_PUBLIC_IDENTITY_PLATFORM_PUBLIC_API=ci-public-api.invalid             --build-arg NEXT_PUBLIC_CAMPAIA_IDENTITY_MODE=test             -t campaia-web-ci web
+
+  security:
+    name: Secret scan and SAST
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Secret scan
+        run: python3 infra/scripts/scan-secrets.py
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Bandit
+        run: pip install bandit==1.9.4
+
+      - name: Bandit high-severity SAST
+        run: bandit -r backend/api backend/campaia_core -lll -q
