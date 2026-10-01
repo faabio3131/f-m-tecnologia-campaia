@@ -535,6 +535,11 @@ class AppState:
         self.agent_runner = AgentRunner(gateway=self.ai_gateway)
         self.agent_runner.register_schemas()
 
+    def lock_runtime_scope(self, scope: str) -> None:
+        """Lock a mutable scope inside the active persistent transaction."""
+        if self.db is not None:
+            self.db.lock_key(f"runtime:{scope}")
+
     def record_step_up(
         self, tenant_id: str, user_id: str, session_key: str, *, at: datetime
     ) -> None:

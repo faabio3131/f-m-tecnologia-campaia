@@ -80,68 +80,54 @@ async def decide_approval(request: Request) -> JSONResponse:
     idem_key = require_idempotency_key(request)
     approval_id = request.path_params["approvalId"]
     body = await parse_body(request, ApprovalDecisionRequest)
+    key = f"http:decide_approval:{idem_key}"
 
-    approval = state.approvals.get(fixture.tenant_id, approval_id)
-    if approval is None:
-        raise ApiError("NOT_FOUND", "Approval not found.")
-
-    # Idempotency check happens BEFORE `can_approve`, not just before the mutation. This
-    # endpoint's own side effect (adding fixture.user_id to approval.decided_by) feeds
-    # back into can_approve's own precondition (`already_decided_by`) -- so on a replay of
-    # the SAME Idempotency-Key by the same actor, can_approve would see "this user already
-    # decided" (true, because their own first call did it) and reject the replay with
-    # SEPARATION_OF_DUTIES instead of returning the original result. That is a genuine
-    # idempotency violation distinct from publish_campaign/patch_budget, where the
-    # preconditions checked before their idempotency gate belong to a DIFFERENT record
-    # (another ApprovalRequest) that this handler never mutates itself. Found by
-    # independent verification after the P-14 fix pass; documented in
-    # EVIDENCIA_P14_20260828.md as achado 16.
-    # SECURITY FIX (Fase C6, 27/09/2026 -- auditoria independente): o replay tinha que
-    # devolver `existing.result` (a resposta ORIGINAL desta chamada), nunca uma
-    # re-serializacao do estado atual -- mesma correcao de patch_budget/put_autonomy.
-    existing = state.idempotency.get(fixture.tenant_id, f"http:decide_approval:{idem_key}")
+    existing = state.idempotency.get(fixture.tenant_id, key)
     if existing is not None:
         return JSONResponse(existing.result)
-
-    resource = Resource(
-        tenant_id=fixture.tenant_id,
-        business_unit_id=fixture.business_unit_id,
-        resource_id=approval.campaign_id,
-        created_by=approval.requested_by,
-    )
-    decision = can_approve(
-        principal,
-        resource,
-        now=datetime.now(timezone.utc),
-        requester_id=approval.requested_by,
-        already_decided_by=frozenset(approval.decided_by),
-        amount=approval.amount,
-    )
-    if not decision.allowed:
-        raise ApiError(decision.code.value, decision.reason)
 
     if body.decision not in ("APPROVE", "REJECT", "REQUEST_CHANGES"):
         raise ApiError("VALIDATION_FAILED", "decision must be APPROVE, REJECT or REQUEST_CHANGES.")
 
     def _do_decide():
+        approval = state.approvals.get(fixture.tenant_id, approval_id)
+        if approval is None:
+            raise ApiError("NOT_FOUND", "Approval not found.")
+
+        resource = Resource(
+            tenant_id=fixture.tenant_id,
+            business_unit_id=fixture.business_unit_id,
+            resource_id=approval.campaign_id,
+            created_by=approval.requested_by,
+        )
+        decision = can_approve(
+            principal,
+            resource,
+            now=datetime.now(timezone.utc),
+            requester_id=approval.requested_by,
+            already_decided_by=frozenset(approval.decided_by),
+            amount=approval.amount,
+        )
+        if not decision.allowed:
+            raise ApiError(decision.code.value, decision.reason)
+
         if body.decision == "REJECT":
             approval.status = "REJECTED"
         elif body.decision == "REQUEST_CHANGES":
-            # Contract adds REQUEST_CHANGES as a decision option (achado 10): marks the
-            # approval CHANGES_REQUESTED rather than deciding it outright.
             approval.status = "CHANGES_REQUESTED"
         else:
             approval.decided_by.add(fixture.user_id)
             if approval.requires_dual_approval:
                 approval.status = (
-                    "APPROVED" if dual_approval_complete(frozenset(approval.decided_by)) else "PENDING"
+                    "APPROVED"
+                    if dual_approval_complete(frozenset(approval.decided_by))
+                    else "PENDING"
                 )
             else:
                 approval.status = "APPROVED"
 
         if body.reason:
             approval.context["decision_reason"] = body.reason
-
         state.audit.append(
             tenant_id=fixture.tenant_id,
             actor=fixture.user_id,
@@ -149,11 +135,10 @@ async def decide_approval(request: Request) -> JSONResponse:
             target=approval.approval_id,
             details={"reason": body.reason} if body.reason else None,
         )
-        # Fase C6: resposta final construida aqui, dentro do fecho, para ficar cacheada
-        # exatamente como foi -- nunca re-serializada no momento de um replay futuro.
         return serialize_approval(approval).model_dump(mode="json")
 
     result, _replay = state.idempotency.execute(
-        fixture.tenant_id, f"http:decide_approval:{idem_key}", _do_decide
+        fixture.tenant_id, key, _do_decide
     )
     return JSONResponse(result)
+

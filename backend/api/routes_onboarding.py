@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -145,17 +146,20 @@ async def create_tenant(request: Request) -> JSONResponse:
     scope = f"onboarding:{identity.subject}"
     idem_scope_key = f"http:create_tenant:{idem_key}"
     existing = state.idempotency.get(scope, idem_scope_key)
+    normalized_document = normalize_document(body.document)
 
     if existing is None:
-        normalized_document = normalize_document(body.document)
-        if normalized_document is not None and state.organizations.find_by_document(normalized_document):
-            raise ApiError(
-                "INVALID_STATE",
-                "Ja existe uma empresa com este documento. Acesso deve ser recuperado por convite/reativacao; nunca e criado um tenant duplicado.",
-                details={"field": "document"},
-            )
-
         def _create():
+            if normalized_document is not None:
+                state.lock_runtime_scope(f"onboarding-document:{normalized_document}")
+                if state.organizations.find_by_document(normalized_document):
+                    raise ApiError(
+                        "INVALID_STATE",
+                        "Ja existe uma empresa com este documento. Acesso deve ser "
+                        "recuperado por convite/reativacao; nunca e criado um tenant duplicado.",
+                        details={"field": "document"},
+                    )
+
             tenant, unit, membership = state.organizations.create_tenant_bundle(
                 company_name=body.company_name,
                 document=body.document,
@@ -400,49 +404,45 @@ async def accept_invitation(request: Request) -> JSONResponse:
 
     existing = state.idempotency.get(scope, scoped_key)
     if existing is None:
-        try:
-            membership = state.organizations.accept_invitation(
-                raw_token=body.accept_token,
-                identity_subject=identity.subject,
-                email=identity.email,
-            )
-        except ValueError as exc:
-            code = str(exc)
-            if code == "INVITATION_EMAIL_MISMATCH":
-                raise ApiError(
-                    "PERMISSION_DENIED",
-                    "Este convite pertence a outro e-mail.",
-                ) from exc
-            if code in {"INVITATION_INVALID", "INVITATION_NOT_PENDING", "INVITATION_EXPIRED"}:
-                raise ApiError(
-                    "INVALID_STATE",
-                    "Convite invalido, expirado ou ja utilizado.",
-                ) from exc
-            if code == "TENANT_INACTIVE":
-                raise ApiError("INVALID_STATE", "Tenant inativo.") from exc
-            raise
+        token_digest = hashlib.sha256(body.accept_token.encode("utf-8")).hexdigest()
 
-        state.audit.append(
-            tenant_id=membership.tenant_id,
-            actor=membership.membership_id,
-            action="MEMBER_INVITE_ACCEPT",
-            target=membership.membership_id,
-        )
-        result, _ = state.idempotency.execute(
-            scope,
-            scoped_key,
-            lambda: {
+        def _accept():
+            state.lock_runtime_scope(f"invitation-token:{token_digest}")
+            try:
+                membership = state.organizations.accept_invitation(
+                    raw_token=body.accept_token,
+                    identity_subject=identity.subject,
+                    email=identity.email,
+                )
+            except ValueError as exc:
+                code = str(exc)
+                if code == "INVITATION_EMAIL_MISMATCH":
+                    raise ApiError("PERMISSION_DENIED", "Este convite pertence a outro e-mail.") from exc
+                if code in {"INVITATION_INVALID", "INVITATION_NOT_PENDING", "INVITATION_EXPIRED"}:
+                    raise ApiError("INVALID_STATE", "Convite invalido, expirado ou ja utilizado.") from exc
+                if code == "TENANT_INACTIVE":
+                    raise ApiError("INVALID_STATE", "Tenant inativo.") from exc
+                raise
+            state.audit.append(
+                tenant_id=membership.tenant_id,
+                actor=membership.membership_id,
+                action="MEMBER_INVITE_ACCEPT",
+                target=membership.membership_id,
+            )
+            return {
                 "tenant_id": membership.tenant_id,
                 "membership_id": membership.membership_id,
-            },
-        )
+            }
+
+        result, _ = state.idempotency.execute(scope, scoped_key, _accept)
     else:
         result = existing.result
-        membership = state.organizations.get_membership(
-            result["tenant_id"], result["membership_id"]
-        )
-        if membership is None:
-            raise ApiError("UNKNOWN", "Resultado idempotente aponta para vinculo inexistente.")
+
+    membership = state.organizations.get_membership(
+        result["tenant_id"], result["membership_id"]
+    )
+    if membership is None or membership.identity_subject != identity.subject:
+        raise ApiError("PERMISSION_DENIED", "Vinculo do convite nao pertence a esta identidade.")
 
     organization = state.organizations.get_organization(membership.tenant_id)
     if organization is None:
@@ -481,22 +481,18 @@ async def deactivate_member(request: Request) -> JSONResponse:
     fixture, state = _authorize_member_manage(request)
     idem_key = require_idempotency_key(request)
     membership_id = request.path_params["membershipId"]
-    target = state.organizations.get_membership(fixture.tenant_id, membership_id)
-    if target is None:
-        raise ApiError("NOT_FOUND", "Usuario nao encontrado neste tenant.")
-    if target.membership_id == fixture.user_id:
-        raise ApiError(
-            "INVALID_STATE",
-            "Auto-desativacao nao e permitida. Transferencia de ownership sera tratada no fluxo administrativo da Fase 2.",
-        )
-    _enforce_target_role_authority(fixture, target)
-    if Role.OWNER in target.roles and state.organizations.active_owner_count(fixture.tenant_id) <= 1:
-        raise ApiError("INVALID_STATE", "O ultimo Owner ativo nunca pode ser removido.")
 
     def _do():
-        updated = state.organizations.deactivate_membership(
-            fixture.tenant_id, membership_id
-        )
+        target = state.organizations.get_membership(fixture.tenant_id, membership_id)
+        if target is None:
+            raise ApiError("NOT_FOUND", "Usuario nao encontrado neste tenant.")
+        if target.membership_id == fixture.user_id:
+            raise ApiError("INVALID_STATE", "Auto-desativacao nao e permitida.")
+        _enforce_target_role_authority(fixture, target)
+        if Role.OWNER in target.roles and state.organizations.active_owner_count(fixture.tenant_id) <= 1:
+            raise ApiError("INVALID_STATE", "O ultimo Owner ativo nunca pode ser removido.")
+
+        updated = state.organizations.deactivate_membership(fixture.tenant_id, membership_id)
         if updated is None:
             raise ApiError("NOT_FOUND", "Usuario nao encontrado neste tenant.")
         state.sessions.invalidate_membership(updated.membership_id)
@@ -518,26 +514,25 @@ async def reactivate_member(request: Request) -> JSONResponse:
     fixture, state = _authorize_member_manage(request)
     idem_key = require_idempotency_key(request)
     membership_id = request.path_params["membershipId"]
-    target = state.organizations.get_membership(fixture.tenant_id, membership_id)
-    if target is None:
-        raise ApiError("NOT_FOUND", "Usuario nao encontrado neste tenant.")
-    _enforce_target_role_authority(fixture, target)
-
-    organization = state.organizations.get_organization(fixture.tenant_id)
-    plan_id = organization.tenant.plan_id if organization else None
-    max_users = state.plan_user_limits.get(plan_id) if plan_id else None
-    if target.status != "ACTIVE" and max_users is not None:
-        if state.organizations.active_membership_count(fixture.tenant_id) >= max_users:
-            raise ApiError(
-                "QUOTA_EXHAUSTED",
-                "Limite de usuarios do plano atingido.",
-                details={"plan_id": plan_id, "max_users": max_users},
-            )
 
     def _do():
-        updated = state.organizations.reactivate_membership(
-            fixture.tenant_id, membership_id
-        )
+        target = state.organizations.get_membership(fixture.tenant_id, membership_id)
+        if target is None:
+            raise ApiError("NOT_FOUND", "Usuario nao encontrado neste tenant.")
+        _enforce_target_role_authority(fixture, target)
+
+        organization = state.organizations.get_organization(fixture.tenant_id)
+        plan_id = organization.tenant.plan_id if organization else None
+        max_users = state.plan_user_limits.get(plan_id) if plan_id else None
+        if target.status != "ACTIVE" and max_users is not None:
+            if state.organizations.active_membership_count(fixture.tenant_id) >= max_users:
+                raise ApiError(
+                    "QUOTA_EXHAUSTED",
+                    "Limite de usuarios do plano atingido.",
+                    details={"plan_id": plan_id, "max_users": max_users},
+                )
+
+        updated = state.organizations.reactivate_membership(fixture.tenant_id, membership_id)
         if updated is None:
             raise ApiError("NOT_FOUND", "Usuario nao encontrado neste tenant.")
         state.audit.append(
@@ -552,3 +547,4 @@ async def reactivate_member(request: Request) -> JSONResponse:
         fixture.tenant_id, f"http:reactivate_member:{idem_key}", _do
     )
     return JSONResponse(result)
+
