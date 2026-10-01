@@ -214,6 +214,37 @@ class PostgresRuntimeTests(unittest.TestCase):
         ]
         self.assertEqual(len(events), 1)
 
+    def test_different_idempotency_keys_same_tenant_are_serialized(self) -> None:
+        a, b = self._states()
+        barrier = threading.Barrier(2)
+        guard = threading.Lock()
+        active = 0
+        max_active = 0
+
+        def run(state, key):
+            nonlocal active, max_active
+            barrier.wait()
+
+            def operation():
+                nonlocal active, max_active
+                with guard:
+                    active += 1
+                    max_active = max(max_active, active)
+                time.sleep(0.12)
+                with guard:
+                    active -= 1
+                return {"key": key}
+
+            return state.idempotency.execute("demo-tenant", key, operation)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            one = pool.submit(run, a, "http:pg:tenant-lock-a")
+            two = pool.submit(run, b, "http:pg:tenant-lock-b")
+            one.result(timeout=10)
+            two.result(timeout=10)
+
+        self.assertEqual(max_active, 1)
+
     def test_same_idempotency_key_is_exactly_once_across_spawned_processes(self) -> None:
         ctx = multiprocessing.get_context("spawn")
         start_event = ctx.Event()

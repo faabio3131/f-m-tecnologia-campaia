@@ -211,18 +211,19 @@ async def get_plan(request: Request) -> JSONResponse:
 async def regenerate_plan(request: Request) -> JSONResponse:
     fixture, state, principal = _authorize(request, Permission.CAMPAIGN_EDIT)
     idem_key = require_idempotency_key(request)
-    record = _get_campaign_or_404(
-        state, fixture.tenant_id, request.path_params["campaignId"], principal=principal
-    )
+    campaign_id = request.path_params["campaignId"]
 
     def _do_regenerate():
+        record = _get_campaign_or_404(
+            state, fixture.tenant_id, campaign_id, principal=principal
+        )
         plan = _run_strategist(state, fixture, record)
         record.plan = plan
         record.plan_version += 1
-
         if record.campaign.state is CampaignState.DRAFT:
-            record.campaign.transition_to(CampaignState.STRATEGY_READY, reason="plan:regenerated")
-
+            record.campaign.transition_to(
+                CampaignState.STRATEGY_READY, reason="plan:regenerated"
+            )
         state.audit.append(
             tenant_id=fixture.tenant_id,
             actor=fixture.user_id,
@@ -231,13 +232,14 @@ async def regenerate_plan(request: Request) -> JSONResponse:
             details={"plan_version": record.plan_version},
         )
         return PlanResponse(
-            campaign_id=record.campaign_id, plan_version=record.plan_version, plan=record.plan
+            campaign_id=record.campaign_id,
+            plan_version=record.plan_version,
+            plan=record.plan,
         ).model_dump(mode="json")
 
     result, _replay = state.idempotency.execute(
         fixture.tenant_id, f"http:regenerate_plan:{idem_key}", _do_regenerate
     )
-    # Contract: 202 Accepted -- plan (re)generation is treated as async (achado 4).
     return JSONResponse(result, status_code=202)
 
 
@@ -448,11 +450,12 @@ async def publish_campaign(request: Request) -> JSONResponse:
 async def pause_campaign(request: Request) -> JSONResponse:
     fixture, state, principal = _authorize(request, Permission.CAMPAIGN_EDIT)
     idem_key = require_idempotency_key(request)
-    record = _get_campaign_or_404(
-        state, fixture.tenant_id, request.path_params["campaignId"], principal=principal
-    )
+    campaign_id = request.path_params["campaignId"]
 
     def _do_pause():
+        record = _get_campaign_or_404(
+            state, fixture.tenant_id, campaign_id, principal=principal
+        )
         try:
             record.campaign.transition_to(CampaignState.PAUSED, reason=f"pause:{idem_key}")
         except InvalidStateTransition as exc:
@@ -536,11 +539,12 @@ async def resume_campaign(request: Request) -> JSONResponse:
     fixture, state, principal = _authorize(request, Permission.CAMPAIGN_PUBLISH)
     require_step_up(request, fixture)
     idem_key = require_idempotency_key(request)
-    record = _get_campaign_or_404(
-        state, fixture.tenant_id, request.path_params["campaignId"], principal=principal
-    )
+    campaign_id = request.path_params["campaignId"]
 
     def _do_resume():
+        record = _get_campaign_or_404(
+            state, fixture.tenant_id, campaign_id, principal=principal
+        )
         try:
             # TransitionContext() default (kill_switch_active=False) -- mesmo padrao ja
             # usado por publish_campaign/validate_campaign para transition_to() nesta API:
@@ -584,66 +588,61 @@ async def patch_budget(request: Request) -> JSONResponse:
     fixture, state, principal = _authorize(request, Permission.BUDGET_CHANGE)
     require_step_up(request, fixture)
     idem_key = require_idempotency_key(request)
-    record = _get_campaign_or_404(
-        state, fixture.tenant_id, request.path_params["campaignId"], principal=principal
-    )
+    campaign_id = request.path_params["campaignId"]
     body = await parse_body(request, BudgetPatchRequest)
+    key = f"http:patch_budget:{idem_key}"
 
-    # Idempotency check happens BEFORE the mutation for the same reason as publish_campaign
-    # -- on replay, validate_change/limits-replace must not run a second time. ACHADO 19
-    # (Fase 3, reproduzido por execucao real nesta sessao): este gate precisa vir ANTES da
-    # checagem de approval.status agora que uma aprovacao usada e marcada como "APPLIED"
-    # abaixo -- senao um replay legitimo da MESMA Idempotency-Key seria incorretamente
-    # rejeitado como "aprovacao ja usada". Uma tentativa NOVA (Idempotency-Key diferente)
-    # reaproveitando o mesmo approval_id continua caindo nas checagens abaixo normalmente.
-    # SECURITY FIX (Fase C6, 27/09/2026 -- auditoria independente): o replay devolvia
-    # `serialize_campaign(record)` no ESTADO ATUAL, nunca o resultado original desta
-    # chamada -- se outra mudanca legitima (outra Idempotency-Key) tivesse alterado a
-    # campanha entre a chamada original e este replay, a resposta do replay refletiria
-    # esse estado novo, nao a resposta original que o cliente recebeu na primeira vez.
-    existing = state.idempotency.get(fixture.tenant_id, f"http:patch_budget:{idem_key}")
+    existing = state.idempotency.get(fixture.tenant_id, key)
     if existing is not None:
         return JSONResponse(existing.result, status_code=202)
 
-    approval = state.approvals.get(fixture.tenant_id, body.approval_id)
-    if approval is None or approval.campaign_id != record.campaign_id or approval.kind != "BUDGET_CHANGE":
-        raise ApiError("APPROVAL_REQUIRED", "approval_id not found for this budget change.")
-    if approval.status != "APPROVED":
-        raise ApiError("APPROVAL_REQUIRED", "Approval has not been granted.")
-
-    ok, change_pct, reason = record.budget.validate_change(body.new_daily_cap)
-    if not ok:
-        raise ApiError("BUDGET_LIMIT", reason, details={"change_pct": str(change_pct)})
-
     def _do_patch():
-        # BudgetEngine has no direct "set daily_cap" mutator (limits is frozen) -- replace
-        # the BudgetLimits with a new one carrying the same total/currency/policy, only
-        # daily_cap changed. This preserves spent_total/spent_today/reservations on the
-        # engine instance.
         from dataclasses import replace
 
-        record.budget.limits = replace(record.budget.limits, daily_cap=Decimal(str(body.new_daily_cap)))
+        record = _get_campaign_or_404(
+            state, fixture.tenant_id, campaign_id, principal=principal
+        )
+        approval = state.approvals.get(fixture.tenant_id, body.approval_id)
+        if (
+            approval is None
+            or approval.campaign_id != record.campaign_id
+            or approval.kind != "BUDGET_CHANGE"
+        ):
+            raise ApiError(
+                "APPROVAL_REQUIRED",
+                "approval_id not found for this budget change.",
+            )
+        if approval.status != "APPROVED":
+            raise ApiError("APPROVAL_REQUIRED", "Approval has not been granted.")
 
+        ok, change_pct, reason = record.budget.validate_change(body.new_daily_cap)
+        if not ok:
+            raise ApiError(
+                "BUDGET_LIMIT",
+                reason,
+                details={"change_pct": str(change_pct)},
+            )
+
+        record.budget.limits = replace(
+            record.budget.limits,
+            daily_cap=Decimal(str(body.new_daily_cap)),
+        )
         state.audit.append(
             tenant_id=fixture.tenant_id,
             actor=fixture.user_id,
             action="BUDGET_CHANGE",
             target=record.campaign_id,
-            details={"new_daily_cap": str(body.new_daily_cap), "change_pct": str(change_pct)},
+            details={
+                "new_daily_cap": str(body.new_daily_cap),
+                "change_pct": str(change_pct),
+            },
         )
-        # ACHADO 19: consome a aprovacao aqui, DENTRO do fecho protegido por
-        # `idempotency.execute()` -- so roda para uma Idempotency-Key genuinamente nova
-        # (o curto-circuito de replay acima ja retornou antes de chegar aqui para uma
-        # repeticao). A resposta final tambem e' construida aqui (Fase C6): e' este
-        # valor, capturado no momento da mutacao, que fica cacheado para replay exato --
-        # nunca uma re-serializacao do estado atual no momento do replay.
         approval.status = "APPLIED"
         return serialize_campaign(record).model_dump(mode="json")
 
     result, _replay = state.idempotency.execute(
-        fixture.tenant_id, f"http:patch_budget:{idem_key}", _do_patch
+        fixture.tenant_id, key, _do_patch
     )
-    # Contract: 202 Accepted (achado 4).
     return JSONResponse(result, status_code=202)
 
 

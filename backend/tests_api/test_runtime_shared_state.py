@@ -135,6 +135,48 @@ class RuntimeSharedStateTests(unittest.TestCase):
                 )
             )
 
+    def test_oauth_redeem_rolls_back_with_outer_idempotency_transaction(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "shared.sqlite3")
+            a, b = self._apps(path)
+            now = datetime.now(timezone.utc)
+            state = a.app.state.campaia
+            state.start_oauth_state(
+                "state-rollback",
+                tenant_id="demo-tenant",
+                provider="GOOGLE_ADS",
+                now=now,
+                user_id="user-owner-1",
+                session_key="session:rollback",
+                step_up_verified_at=now,
+            )
+
+            def failing():
+                pending = state.redeem_oauth_state(
+                    "state-rollback",
+                    tenant_id="demo-tenant",
+                    now=now,
+                )
+                self.assertIsNotNone(pending)
+                raise RuntimeError("injected oauth callback failure")
+
+            with self.assertRaisesRegex(
+                RuntimeError, "injected oauth callback failure"
+            ):
+                state.idempotency.execute(
+                    "demo-tenant",
+                    "http:oauth_callback:rollback-test",
+                    failing,
+                )
+
+            restored = b.app.state.campaia.redeem_oauth_state(
+                "state-rollback",
+                tenant_id="demo-tenant",
+                now=now,
+            )
+            self.assertIsNotNone(restored)
+            self.assertEqual(restored.provider, "GOOGLE_ADS")
+
     def test_persistent_repository_reads_fresh_state_written_by_other_replica(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "shared.sqlite3")

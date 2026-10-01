@@ -126,16 +126,18 @@ async def oauth_callback(request: Request) -> JSONResponse:
     if existing is not None:
         return JSONResponse(existing.result, status_code=201)
 
-    pending = state.redeem_oauth_state(
-        body.state, tenant_id=fixture.tenant_id, now=datetime.now(timezone.utc)
-    )
-    if pending is None:
-        raise ApiError(
-            "PERMISSION_DENIED",
-            "state de OAuth invalido, expirado, ja usado, ou de outro tenant.",
-        )
-
     def _do_create():
+        pending = state.redeem_oauth_state(
+            body.state,
+            tenant_id=fixture.tenant_id,
+            now=datetime.now(timezone.utc),
+        )
+        if pending is None:
+            raise ApiError(
+                "PERMISSION_DENIED",
+                "state de OAuth invalido, expirado, ja usado, ou de outro tenant.",
+            )
+
         # SECURITY FIX (Fase 3, achado 4, 27/09/2026): `credential` foi retirado do
         # contrato publico deste endpoint -- toda Connection criada aqui nasce so com
         # metadado (`mode=SIMULATOR`, sem segredo). Anexar um token real, quando ja
@@ -186,9 +188,6 @@ async def dev_attach_credential(request: Request) -> JSONResponse:
     connection_id = request.path_params["connectionId"]
     body = await parse_body(request, DevAttachCredentialRequest)
 
-    conn = state.connections.get(fixture.tenant_id, connection_id)
-    if conn is None:
-        raise ApiError("NOT_FOUND", "Connection not found.")
     if state.vault_cipher is None:
         raise ApiError(
             "VALIDATION_FAILED",
@@ -197,6 +196,9 @@ async def dev_attach_credential(request: Request) -> JSONResponse:
         )
 
     def _do_attach():
+        conn = state.connections.get(fixture.tenant_id, connection_id)
+        if conn is None:
+            raise ApiError("NOT_FOUND", "Connection not found.")
         secret_ref = state.vault.store(
             fixture.tenant_id,
             provider=conn.provider,
@@ -227,11 +229,10 @@ async def revoke_connection(request: Request) -> Response:
     idem_key = require_idempotency_key(request)
     connection_id = request.path_params["connectionId"]
 
-    conn = state.connections.get(fixture.tenant_id, connection_id)
-    if conn is None:
-        raise ApiError("NOT_FOUND", "Connection not found.")
-
     def _do_revoke():
+        conn = state.connections.get(fixture.tenant_id, connection_id)
+        if conn is None:
+            raise ApiError("NOT_FOUND", "Connection not found.")
         if conn.secret_ref is not None:
             state.vault.revoke(fixture.tenant_id, SecretRef(handle=conn.secret_ref))
         state.connections.revoke(fixture.tenant_id, connection_id)
