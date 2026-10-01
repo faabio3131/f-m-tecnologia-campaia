@@ -45,6 +45,25 @@ class TestHealth(unittest.TestCase):
             self.assertEqual(r.status_code, 200, r.text)
             self.assertEqual(r.json(), {"status": "ok"})
 
+    def test_live_probe_never_depends_on_database_readiness(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client = TestClient(
+                create_app(env="test", db_path=os.path.join(tmp, "health-live.sqlite3"))
+            )
+            with patch.object(Database, "ping", return_value=False):
+                r = client.get("/health/live")
+            self.assertEqual(r.status_code, 200, r.text)
+            self.assertEqual(r.json(), {"status": "ok"})
+
+    def test_ready_probe_is_dependency_aware(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client = TestClient(
+                create_app(env="test", db_path=os.path.join(tmp, "health-ready.sqlite3"))
+            )
+            with patch.object(Database, "ping", return_value=False):
+                r = client.get("/health/ready")
+            self.assertEqual(r.status_code, 503, r.text)
+
     def test_health_reports_503_when_the_configured_database_is_unreachable(self):
         """Prova que o endpoint nunca reporta sucesso com a dependencia critica indisponivel
         -- exatamente o comportamento exigido por

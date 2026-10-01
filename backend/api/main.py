@@ -48,7 +48,7 @@ from .routes_connections import (
     oauth_start,
     revoke_connection,
 )
-from .routes_health import health
+from .routes_health import health, liveness, readiness
 from .routes_me import get_me
 from .routes_onboarding import (
     accept_invitation,
@@ -87,6 +87,8 @@ routes = [
     # deliberadamente fora de contracts/bff-openapi.yaml, mesmo precedente de /test-idp/*
     # (real, porem fora do contrato BFF client-facing).
     Route("/health", health, methods=["GET"]),
+    Route("/health/live", liveness, methods=["GET"]),
+    Route("/health/ready", readiness, methods=["GET"]),
 
     # Item 1.3/WP-02 (24/09/2026): sessao real. Sem require_auth -- e o proprio endpoint
     # que estabelece/encerra a sessao que require_auth depois consome. GET devolve o

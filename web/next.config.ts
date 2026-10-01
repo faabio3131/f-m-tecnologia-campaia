@@ -12,6 +12,7 @@ import type { NextConfig } from "next";
  * (secao 11: "se rewrite nativo atender, preferir a solucao mais simples").
  */
 const nextConfig: NextConfig = {
+  output: "standalone",
   async rewrites() {
     const origin = process.env.CAMPAIA_BFF_ORIGIN;
     if (!origin) {

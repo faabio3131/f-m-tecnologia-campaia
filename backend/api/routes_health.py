@@ -36,3 +36,13 @@ async def health(request: Request) -> JSONResponse:
     if state.db is not None and not state.db.ping():
         return JSONResponse({"status": "unavailable", "database": "unreachable"}, status_code=503)
     return JSONResponse({"status": "ok"})
+
+
+async def liveness(request: Request) -> JSONResponse:
+    """Process liveness only: never depends on external services."""
+    return JSONResponse({"status": "ok"})
+
+
+async def readiness(request: Request) -> JSONResponse:
+    """Readiness uses the same dependency-aware semantics as the historical /health."""
+    return await health(request)
