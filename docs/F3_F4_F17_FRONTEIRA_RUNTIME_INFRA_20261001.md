@@ -49,3 +49,24 @@ O requisito de backup/restore/RPO/RTO continua visível porque aparece na F3 do 
 O Gate G3 pode ser certificado independentemente da existência de Cloud SQL real porque seu critério explícito é comportamento de 2+ réplicas sem perda de sessão, OAuth state, idempotência, approval ou isolamento. Essa prova foi feita contra PostgreSQL 16 real no CI.
 
 G4, G17, G18 e G19 permanecem abertos.
+
+
+## Atualização F4 — 01/10/2026
+
+A fronteira acima foi materializada no repositório:
+
+- F4 agora possui Terraform para Cloud SQL, KMS, Secret Manager, VPC, Storage, Pub/Sub e Artifact Registry;
+- Cloud Run foi escolhido como serviço de container;
+- containers backend/Web são construídos e inicializados no CI;
+- GitHub OIDC substitui chave JSON de deploy;
+- migration gate precede qualquer nova revisão;
+- KMS envelope substitui a root Fernet em env no TARGET staging/production;
+- backup/PITR estão codificados, mas ainda não comprovados em recurso Cloud SQL real.
+
+Portanto:
+- preparação interna de F4 = `DONE_VERIFIED`;
+- F4 global = `PARTIAL`;
+- G4 = `EXTERNAL_INFRASTRUCTURE`;
+- restore/RPO/RTO continuam F17.
+
+O critério para mudar G4 exige execução real do runbook de staging; `terraform validate` não é tratado como `terraform apply`.

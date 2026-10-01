@@ -1,7 +1,7 @@
 # CampaIA — CONTROLE MESTRE DE EXECUÇÃO F0–F20
 
 **Data-base:** 27/09/2026  
-**Status:** G0 `DONE_VERIFIED`; F1/G1 `PARTIAL`; F2/G2 `PARTIAL`; **G3 `DONE_VERIFIED`** no runtime CURRENT. F3 mantém resíduos `EXTERNAL_INFRASTRUCTURE` / `HUMAN_DECISION` para Cloud SQL gerenciado, backup/restore operacional e RPO/RTO, encaminhados a F4/F17 sem falsa homologação. Não implica merge, deploy ou produção.  
+**Status:** G0 `DONE_VERIFIED`; F1/G1 `PARTIAL`; F2/G2 `PARTIAL`; G3 `DONE_VERIFIED`; **F4 `PARTIAL`, G4 `EXTERNAL_INFRASTRUCTURE`**. A tranche interna de F4 (containers, IaC GCP, KMS envelope, CI/CD, migration gate e runbook) está `DONE_VERIFIED`; G4 permanece aberto até staging real subir do zero. Não implica merge, deploy ou produção.  
 **Repositório canônico:** faabio3131/f-m-tecnologia-campaia  
 **Linha de trabalho:** PR #31, branch reconciliation/campaia-final-takeover  
 **Fonte mestra:** “CAMPAIA - CRONOGRAMA MESTRE DE EXECUCAO TOTAL ATE PRONTO COMERCIAL”, v1.0, 27/09/2026.
@@ -36,7 +36,7 @@ F0 → F1/F2 → F3/F4 → F5 → F6/F7 → F8/F9 → F10 → F11 → F12–F14 
 | F1 | G1 | Trial/onboarding/tenant/unidade/usuários | PARTIAL |
 | F2 | G2 | Multi-tenancy/RBAC/step-up/isolamento | PARTIAL |
 | F3 | G3 | Atomicidade/idempotência/concorrência/runtime multi-process | DONE_VERIFIED no Gate G3; resíduos EXTERNAL_INFRASTRUCTURE/HUMAN_DECISION |
-| F4 | G4 | Infra/Cloud SQL/segredos/observabilidade-base | TARGET / EXTERNAL_INFRASTRUCTURE |
+| F4 | G4 | Infra/Cloud SQL/segredos/CI-CD/observabilidade-base | PARTIAL; G4 EXTERNAL_INFRASTRUCTURE |
 | F5 | G5 | Billing/trial/planos/admin comercial | PARTIAL |
 | F6 | G6 | Brand Kit/assets/storage | TARGET |
 | F7 | G7 | Briefing→IA→policy→preview→approval | PARTIAL |
@@ -187,3 +187,42 @@ O commit de reconciliação ff1d6d95ec8f5ecdab807cb46e56fce0328d7d08 foi submeti
 **Blockers reais preservados:** Cloud SQL/staging/backup real não foram executados; nenhuma evidência externa foi inventada.
 
 **Governança:** PR #31 permanece Draft; nenhum merge, deploy ou produção foi executado.
+
+
+## 12. Estado F4 / G4 — WP-F04-01 — tranche interna de 01/10/2026
+
+**F4:** `PARTIAL`.  
+**Tranche interna/repositório:** `DONE_VERIFIED`.  
+**G4:** `EXTERNAL_INFRASTRUCTURE`.
+
+**HEAD funcional certificado:** `c62c48302ff827c806425f59d91e5e6a8c274247`.
+
+**Entregue e certificado internamente:**
+- Cloud Run escolhido como runtime de container;
+- Dockerfiles backend/Web non-root e Next standalone;
+- liveness/readiness separados e testados;
+- Terraform de staging/production para Artifact Registry, VPC privada, Serverless VPC Access, Cloud SQL PostgreSQL 16, KMS, Secret Manager, Storage, Pub/Sub e service accounts;
+- Cloud SQL modelado com private IP, conexão criptografada, backups/PITR e deletion protection;
+- bootstrap de GCS remote state + GitHub Workload Identity Federation;
+- trust OIDC restrito a repo canônico + `main` + GitHub Environment correto;
+- Vault de tenant migrado no TARGET de produção para envelope encryption com Cloud KMS; `CAMPAIA_VAULT_KEY` legado é recusado em staging/production;
+- rotação KMS e proteção contra destroy;
+- Data Access audit para KMS e Secret Manager;
+- separação PLATFORM/TENANT preservada;
+- nenhum secret value em Terraform;
+- migration gate antes do deploy;
+- workflow manual/aprovado para staging/produção e rollback de revisão;
+- secret scan + Bandit SAST + dependency audits;
+- production-image build e boot smoke no CI;
+- runbook de staging do zero.
+
+**CI:** Backend #170 = `success` (377 domínio + 286 API, PostgreSQL 14/14, pip-audit verde, AsyncAPI 24/24); Frontend #108 = `success` (npm audit 0, lint/typecheck/contracts/security/build, 72 Vitest, 4 smoke E2E, 27 E2E cross-stack); F4 Platform CI #4 = `success` (Terraform fmt/validate, container build+boot smoke, secret scan e Bandit).
+
+**Por que G4 não é promovido:** o Gate exige staging real criado do zero. Nenhum `terraform apply`, Cloud Run, Cloud SQL, KMS, Secret Manager, DNS ou deploy real foi executado nesta tranche.
+
+**Blockers externos:** projeto/billing/permissões GCP de staging, GitHub Environment/reviewer, apply real, configuração IdP/origens/redirect URI, release staging e ensaio de rollback. Classificação: `EXTERNAL_INFRASTRUCTURE` / `EXTERNAL_APPROVAL`.
+
+**Evidência:** `docs/evidence/EVIDENCIA_F4_INFRA_SEGREDOS_CICD_G4_20261001.md`.  
+**Runbook:** `docs/runbooks/F4_STAGING_BOOTSTRAP_RUNBOOK_20261001.md`.
+
+**Governança:** PR #31 permanece Draft. Nenhum merge, deploy, staging ou produção foi executado.

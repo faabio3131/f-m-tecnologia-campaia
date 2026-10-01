@@ -11,7 +11,7 @@
 | WP-F01-01 | F1 | Trial, onboarding, empresa/tenant, unidade e usuários |
 | WP-F02-01 | F2 | Sessão, tenancy, RBAC/ABAC, step-up e cross-tenant |
 | WP-F03-01 | F3 | PostgreSQL runtime, atomicidade, idempotência durável, tenant isolation, shared state e concorrência/multi-process |
-| WP-F04-01 | F4 | Cloud SQL/infra, Secret Manager, outbox e observabilidade-base |
+| WP-F04-01 | F4 | Cloud Run/Cloud SQL IaC, Secret Manager/KMS, Storage/PubSub, CI/CD e staging repetível |
 | WP-F05-01 | F5 | Planos, trial, assinatura, créditos/excedente, Asaas/admin |
 | WP-F06-01 | F6 | Brand Kit, uploads/assets, storage e isolamento |
 | WP-F07-01 | F7 | Briefing, estratégia, criativos, policy, preview e aprovação |
@@ -166,5 +166,31 @@ O Gate G3 está fechado, mas F3 mantém dependências operacionais explícitas:
 - valores-alvo de RPO/RTO -> `HUMAN_DECISION`.
 
 A separação completa está em `docs/F3_F4_F17_FRONTEIRA_RUNTIME_INFRA_20261001.md`.
+
+Nenhum merge, deploy, staging ou produção foi executado.
+
+
+## 8. Reconciliação WP-F04-01 — 01/10/2026
+
+**F4:** `PARTIAL`; **G4:** `EXTERNAL_INFRASTRUCTURE`.
+
+A tranche interna do WP-F04-01 está `DONE_VERIFIED` no HEAD `c62c48302ff827c806425f59d91e5e6a8c274247`:
+- containers backend/Web reproduzíveis e smokeados;
+- Cloud Run escolhido;
+- IaC Google Cloud `southamerica-east1`;
+- Cloud SQL privado com backup/PITR modelados;
+- KMS envelope para tenant Vault;
+- Secret Manager PLATFORM sem secret values em Terraform;
+- rotação/auditoria de secrets;
+- Storage/PubSub/rede/IAM;
+- GitHub OIDC;
+- migration gate;
+- release/rollback governados;
+- secret scan/SAST/dependency audit;
+- runbook de staging.
+
+G4 continua aberto porque o critério exige staging **real** criado do zero. A aplicação de Terraform, configuração de GitHub Environment, Identity Platform, DNS/TLS/redirect URIs, deploy e rollback real permanecem `EXTERNAL_INFRASTRUCTURE` / `EXTERNAL_APPROVAL`.
+
+Cloud Workflows/jobs não foram materializados sem workload real de reconciliação; o item é “quando necessário” no Cronograma e será instanciado no WP de publicação/orquestração que definir o contrato F9/F12.
 
 Nenhum merge, deploy, staging ou produção foi executado.
