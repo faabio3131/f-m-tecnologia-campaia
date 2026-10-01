@@ -149,7 +149,7 @@ class TestCampaignStateMachineSurvivesRestart(PersistenceTestCase):
         )
         self.assertEqual(r.status_code, 202, r.text)
 
-        r = client.post(f"/campaigns/{campaign_id}/validate", headers=OWNER)
+        r = client.post(f"/campaigns/{campaign_id}/validate", headers={**OWNER, **idem("validate-a")})
         self.assertEqual(r.status_code, 200, r.text)
         decision = r.json()
         self.assertEqual(decision["outcome"], "APPROVABLE")
@@ -228,7 +228,7 @@ class TestIdempotencyRecordSurvivesRestart(PersistenceTestCase):
             f"/campaigns/{campaign_id}/plan/regenerate", headers={**OWNER, **idem("regen-b")}
         )
         self.assertEqual(r.status_code, 202)
-        r = c1.post(f"/campaigns/{campaign_id}/validate", headers=OWNER)
+        r = c1.post(f"/campaigns/{campaign_id}/validate", headers={**OWNER, **idem("validate-b1")})
         self.assertEqual(r.status_code, 200)
         r = c1.post(
             "/approvals",
@@ -252,7 +252,7 @@ class TestIdempotencyRecordSurvivesRestart(PersistenceTestCase):
         # is not a real transition) than the first. Getting the exact same 202-with-PAUSED
         # response from a brand new process is only possible if the first, successful call's
         # result was durably stored and is the one being replayed -- not a fresh execution.
-        decision = c1.post(f"/campaigns/{campaign_id}/validate", headers=OWNER).json()
+        decision = c1.post(f"/campaigns/{campaign_id}/validate", headers={**OWNER, **idem("validate-b2")}).json()
         pause_headers = {**OWNER, **idem("survives")}
 
         publish_headers = {**with_step_up(OWNER), **idem("survives-publish")}

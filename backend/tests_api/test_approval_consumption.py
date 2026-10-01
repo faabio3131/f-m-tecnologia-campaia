@@ -43,7 +43,7 @@ class TestBudgetApprovalConsumption(unittest.TestCase):
         camp = create_campaign(client)
         cid = camp["id"]
         approval = client.post(
-            "/approvals", headers=OWNER, json={"campaign_id": cid, "kind": "BUDGET_CHANGE"}
+            "/approvals", headers={**OWNER, **unique_idem()}, json={"campaign_id": cid, "kind": "BUDGET_CHANGE"}
         ).json()
         client.post(
             f"/approvals/{approval['id']}/decision",
@@ -86,7 +86,7 @@ class TestBudgetApprovalConsumption(unittest.TestCase):
         camp = create_campaign(client)
         cid = camp["id"]
         approval = client.post(
-            "/approvals", headers=OWNER, json={"campaign_id": cid, "kind": "BUDGET_CHANGE"}
+            "/approvals", headers={**OWNER, **unique_idem()}, json={"campaign_id": cid, "kind": "BUDGET_CHANGE"}
         ).json()
         client.post(
             f"/approvals/{approval['id']}/decision",
@@ -109,7 +109,7 @@ class TestAutonomyApprovalConsumption(unittest.TestCase):
         client = make_client()
         camp = create_campaign(client)
         approval = client.post(
-            "/approvals", headers=OWNER, json={"campaign_id": camp["id"], "kind": "AUTONOMY_CHANGE"}
+            "/approvals", headers={**OWNER, **unique_idem()}, json={"campaign_id": camp["id"], "kind": "AUTONOMY_CHANGE"}
         ).json()
         client.post(
             f"/approvals/{approval['id']}/decision",
@@ -145,7 +145,7 @@ class TestAutonomyApprovalConsumption(unittest.TestCase):
         client = make_client()
         camp = create_campaign(client)
         approval = client.post(
-            "/approvals", headers=OWNER, json={"campaign_id": camp["id"], "kind": "AUTONOMY_CHANGE"}
+            "/approvals", headers={**OWNER, **unique_idem()}, json={"campaign_id": camp["id"], "kind": "AUTONOMY_CHANGE"}
         ).json()
         client.post(
             f"/approvals/{approval['id']}/decision",

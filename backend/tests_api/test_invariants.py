@@ -154,6 +154,29 @@ class TestIdempotencyKeyRequired(unittest.TestCase):
         self.assertEqual(r.status_code, 422, r.text)
         self.assertEqual(r.json()["code"], "VALIDATION_FAILED")
 
+    def test_validate_without_idempotency_key_rejected(self):
+        client = make_client()
+        camp = create_campaign(client)
+        cid = camp["id"]
+        client.post(
+            f"/campaigns/{cid}/plan/regenerate",
+            headers={**OWNER, **unique_idem()},
+        )
+        r = client.post(f"/campaigns/{cid}/validate", headers=OWNER)
+        self.assertEqual(r.status_code, 422, r.text)
+        self.assertEqual(r.json()["code"], "VALIDATION_FAILED")
+
+    def test_create_approval_without_idempotency_key_rejected(self):
+        client = make_client()
+        camp = create_campaign(client)
+        r = client.post(
+            "/approvals",
+            headers=OWNER,
+            json={"campaign_id": camp["id"], "kind": "PUBLISH"},
+        )
+        self.assertEqual(r.status_code, 422, r.text)
+        self.assertEqual(r.json()["code"], "VALIDATION_FAILED")
+
     def test_create_brief_without_idempotency_key_rejected(self):
         client = make_client()
         r = client.post("/briefs", headers=OWNER, json=DEFAULT_BRIEF)
@@ -292,7 +315,7 @@ class TestStepUpRequired(unittest.TestCase):
     def test_approval_decision_without_step_up_is_403(self):
         client = make_client()
         camp = create_campaign(client)
-        r = client.post("/approvals", headers=OWNER, json={"campaign_id": camp["id"], "kind": "PUBLISH"})
+        r = client.post("/approvals", headers={**OWNER, **unique_idem()}, json={"campaign_id": camp["id"], "kind": "PUBLISH"})
         approval = r.json()
         r = client.post(
             f"/approvals/{approval['id']}/decision",
@@ -343,7 +366,7 @@ class TestPublishRequiresPolicyAndApproval(unittest.TestCase):
         camp = create_campaign(client)
         cid = camp["id"]
         client.post(f"/campaigns/{cid}/plan/regenerate", headers={**OWNER, **unique_idem()})
-        decision = client.post(f"/campaigns/{cid}/validate", headers=OWNER).json()
+        decision = client.post(f"/campaigns/{cid}/validate", headers={**OWNER, **unique_idem()}).json()
         approval = client.post(
             "/approvals", headers=OWNER, json={"campaign_id": cid, "kind": "PUBLISH"}
         ).json()
