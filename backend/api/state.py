@@ -272,14 +272,13 @@ def _default_asaas_webhook_receiver() -> AsaasWebhookReceiver:
     return AsaasWebhookReceiver(token_resolver=lambda: os.environ.get("ASAAS_WEBHOOK_TOKEN"))
 
 
-def _default_vault_cipher():
+def _default_vault_cipher(env: str):
     """Select the vault crypto backend without ever defaulting to a production root key.
 
     F4 production/staging uses Google Cloud KMS envelope encryption. The legacy Fernet
     environment key remains supported only for test/dev-local compatibility and is
     explicitly rejected in staging/production.
     """
-    env = _default_env()
     kms_key_name = os.environ.get("CAMPAIA_VAULT_KMS_KEY_NAME")
     raw_key = os.environ.get("CAMPAIA_VAULT_KEY")
 
@@ -404,11 +403,11 @@ class AppState:
 
     brand_profiles: BrandProfileRepository = field(default_factory=BrandProfileRepository)
     connections: ConnectionRepository = field(default_factory=ConnectionRepository)
-    #: Cofre real de credenciais de terceiro, por tenant (27/09/2026). `vault_cipher`
-    #: fica None (cofre indisponivel para escrita/leitura real) enquanto
-    #: `CAMPAIA_VAULT_KEY` nao estiver configurada -- ver `_default_vault_cipher`.
+    #: Cofre real de credenciais de terceiro, por tenant. Em staging/producao a
+    #: criptografia e resolvida em __post_init__ a partir de CAMPAIA_VAULT_KMS_KEY_NAME;
+    #: a chave Fernet em env fica restrita a test/dev-local.
     vault: VaultRepository = field(default_factory=VaultRepository)
-    vault_cipher: "CredentialCipher | None" = field(default_factory=_default_vault_cipher)
+    vault_cipher: object | None = None
     campaigns: CampaignRepository = field(default_factory=CampaignRepository)
     approvals: ApprovalRepository = field(default_factory=ApprovalRepository)
     audit: AuditLog = field(default_factory=AuditLog)
@@ -467,6 +466,11 @@ class AppState:
     allowed_origins: frozenset[str] = field(default_factory=_default_allowed_origins)
 
     def __post_init__(self) -> None:
+        # vault_cipher depende do ambiente efetivo passado a AppState; resolver aqui evita
+        # default_factory consultar CAMPAIA_ENV antes de considerar env="test"/"dev-local".
+        if self.vault_cipher is None:
+            self.vault_cipher = _default_vault_cipher(self.env)
+
         # Fixture de bearer token de dev/teste: so populado automaticamente quando `env`
         # permite; populado por qualquer outro meio fora desses ambientes recusa a
         # inicializacao (fail-closed por construcao -- exigencia literal do WP-02, nunca
