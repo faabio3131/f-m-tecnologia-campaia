@@ -176,7 +176,10 @@ O OIDC Terraform aceita apenas repo canônico + `main` + Environment `staging`.
 
 ## 8. Identity Platform/origens
 
-Antes da jornada real:
+A API `identitytoolkit.googleapis.com` faz parte da foundation gerenciada por Terraform.
+A inicialização do Identity Platform é uma operação externa separada e de criação única;
+não deve ser confundida com apenas habilitar a API. Antes da jornada real:
+
 - registrar origem Web real do staging;
 - registrar redirect URI aplicável;
 - validar `FIREBASE_PROJECT_ID`;

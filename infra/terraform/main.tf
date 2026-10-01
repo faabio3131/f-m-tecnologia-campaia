@@ -6,6 +6,7 @@ locals {
     "cloudkms.googleapis.com",
     "compute.googleapis.com",
     "iam.googleapis.com",
+    "identitytoolkit.googleapis.com",
     "pubsub.googleapis.com",
     "run.googleapis.com",
     "secretmanager.googleapis.com",
