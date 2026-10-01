@@ -23,7 +23,31 @@ Se qualquer item faltar, parar com `EXTERNAL_INFRASTRUCTURE` ou `EXTERNAL_APPROV
 
 ## 2. Bootstrap de state e OIDC
 
-Copiar somente valores não secretos para um tfvars local ignorado pelo Git:
+O bucket do backend é a única exceção de bootstrap: ele precisa existir antes de o Terraform poder usar GCS como backend. A criação deve ocorrer pelo script versionado e auditável, nunca por configuração manual escondida.
+
+Preparar somente valores não secretos em shell:
+
+```bash
+export PROJECT_ID="campaia-staging"
+export ENVIRONMENT="staging"
+export REGION="southamerica-east1"
+export STATE_BUCKET="<STATE_BUCKET_GLOBALMENTE_UNICO>"
+```
+
+Após autorização explícita para criar o primeiro recurso de staging, executar:
+
+```bash
+infra/scripts/bootstrap-terraform-backend.sh
+```
+
+O script:
+- habilita somente a API de Cloud Storage necessária ao bootstrap;
+- cria o bucket regional com uniform bucket-level access;
+- aplica public access prevention e versionamento;
+- inicializa o backend GCS em `campaia/bootstrap/<environment>`;
+- importa o bucket para o próprio state Terraform remoto.
+
+Depois criar um tfvars local ignorado pelo Git:
 
 ```bash
 cp infra/bootstrap/terraform.tfvars.example infra/bootstrap/terraform.tfvars
@@ -34,28 +58,23 @@ Preencher:
 - `environment = "staging"`;
 - `state_bucket_name`.
 
-Executar o primeiro bootstrap com state local somente até o bucket remoto existir:
+Planejar o restante do bootstrap antes de qualquer apply:
 
 ```bash
-terraform -chdir=infra/bootstrap init -backend=false
-terraform -chdir=infra/bootstrap plan -out=bootstrap.plan
-terraform -chdir=infra/bootstrap apply bootstrap.plan
-terraform -chdir=infra/bootstrap output
+terraform -chdir=infra/bootstrap plan -var-file=terraform.tfvars -out=bootstrap.plan
+terraform -chdir=infra/bootstrap show -no-color bootstrap.plan
 ```
 
-Imediatamente após o bucket existir, migrar o próprio state do bootstrap para GCS:
+Somente após revisão e aprovação do plan:
 
 ```bash
-terraform -chdir=infra/bootstrap init -migrate-state -force-copy \
-  -backend-config="bucket=<STATE_BUCKET>" \
-  -backend-config="prefix=campaia/bootstrap/staging"
+terraform -chdir=infra/bootstrap apply bootstrap.plan
+terraform -chdir=infra/bootstrap output
 terraform -chdir=infra/bootstrap state list
 ```
 
-Não prosseguir para a foundation se a migração do state do bootstrap falhar. O arquivo local `terraform.tfstate` deixa de ser a fonte de verdade após a migração.
-
 Evidência obrigatória:
-- bucket de state criado;
+- bucket de state criado e importado para o backend GCS;
 - state do bootstrap presente no backend GCS;
 - WIF provider criado;
 - deployer service account criada;

@@ -24,6 +24,9 @@ jobs:
       - name: Terraform fmt
         run: terraform fmt -check -recursive infra
 
+      - name: Validate infrastructure shell scripts
+        run: bash -n infra/scripts/bootstrap-terraform-backend.sh
+
       - name: Validate bootstrap stack
         run: |
           terraform -chdir=infra/bootstrap init -backend=false
