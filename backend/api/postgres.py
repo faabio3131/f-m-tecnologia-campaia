@@ -76,14 +76,33 @@ class PostgresRecordTable:
     def put(self, id_: str, tenant_id: str, obj: Any) -> None:
         if not tenant_id:
             raise ValueError("tenant_id is required for persisted runtime rows")
+        payload = Jsonb(encode(obj))
         with self._database.connection() as conn:
-            conn.execute(
-                f"INSERT INTO {self.qualified_name} (id, tenant_id, data) "
-                "VALUES (%s, %s, %s) "
-                "ON CONFLICT (id) DO UPDATE SET "
-                "tenant_id = EXCLUDED.tenant_id, data = EXCLUDED.data",
-                (id_, tenant_id, Jsonb(encode(obj))),
+            updated = conn.execute(
+                f"UPDATE {self.qualified_name} SET data = %s "
+                "WHERE id = %s AND tenant_id = %s",
+                (payload, id_, tenant_id),
             )
+            if updated.rowcount:
+                return
+            inserted = conn.execute(
+                f"INSERT INTO {self.qualified_name} (id, tenant_id, data) "
+                "VALUES (%s, %s, %s) ON CONFLICT (id) DO NOTHING",
+                (id_, tenant_id, payload),
+            )
+            if inserted.rowcount:
+                return
+            updated = conn.execute(
+                f"UPDATE {self.qualified_name} SET data = %s "
+                "WHERE id = %s AND tenant_id = %s",
+                (payload, id_, tenant_id),
+            )
+            if updated.rowcount == 0:
+                from campaia_core.errors import TenantIsolationViolation
+
+                raise TenantIsolationViolation(
+                    "Registro persistido pertence a outro tenant."
+                )
 
     def delete(self, id_: str) -> None:
         with self._database.connection() as conn:
@@ -97,6 +116,26 @@ class PostgresRecordTable:
         if row is None:
             return None
         return decode(row[0])
+
+    def get_for_tenant(self, id_: str, tenant_id: str) -> Any | None:
+        with self._database.connection() as conn:
+            row = conn.execute(
+                f"SELECT data FROM {self.qualified_name} "
+                "WHERE id = %s AND tenant_id = %s",
+                (id_, tenant_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return decode(row[0])
+
+    def delete_for_tenant(self, id_: str, tenant_id: str) -> bool:
+        with self._database.connection() as conn:
+            cursor = conn.execute(
+                f"DELETE FROM {self.qualified_name} "
+                "WHERE id = %s AND tenant_id = %s",
+                (id_, tenant_id),
+            )
+        return cursor.rowcount > 0
 
     def rows_for_tenant(self, tenant_id: str) -> list[tuple[str, str, Any]]:
         with self._database.connection() as conn:

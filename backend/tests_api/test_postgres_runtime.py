@@ -96,7 +96,7 @@ class PostgresRuntimeTests(unittest.TestCase):
     def test_00_migration_up_down_up_is_reversible_and_covers_current_stores(self) -> None:
         self.assertEqual(
             set(self.runner.applied_versions()),
-            {"001_runtime_store_schema"},
+            {"001_runtime_store_schema", "002_tenant_isolation_guard"},
         )
         self.assertTrue(RUNTIME_TABLES.issubset(self._runtime_tables()))
 
@@ -108,6 +108,40 @@ class PostgresRuntimeTests(unittest.TestCase):
 
         self.runner.apply_all()
         self.assertTrue(RUNTIME_TABLES.issubset(self._runtime_tables()))
+
+    def test_database_rejects_cross_tenant_rehome_and_scopes_reads(self) -> None:
+        table = PostgresDatabase(DSN).table("brand_profiles")
+        table.put("shared-id", "tenant-a", {"value": "a"})
+
+        with self.assertRaises(Exception):
+            table.put("shared-id", "tenant-b", {"value": "b"})
+
+        self.assertEqual(
+            table.get_for_tenant("shared-id", "tenant-a"),
+            {"value": "a"},
+        )
+        self.assertIsNone(table.get_for_tenant("shared-id", "tenant-b"))
+        self.assertFalse(table.delete_for_tenant("shared-id", "tenant-b"))
+
+        with self.assertRaises(psycopg.errors.InsufficientPrivilege):
+            with psycopg.connect(DSN) as conn:
+                conn.execute(
+                    "UPDATE campaia_runtime.brand_profiles "
+                    "SET tenant_id = %s WHERE id = %s",
+                    ("tenant-b", "shared-id"),
+                )
+
+    def test_sessions_are_explicit_pre_tenant_exception_to_rehome_trigger(self) -> None:
+        with psycopg.connect(DSN) as conn:
+            triggers = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT trigger_name FROM information_schema.triggers "
+                    "WHERE event_object_schema = %s AND event_object_table = %s",
+                    (RUNTIME_SCHEMA, "sessions"),
+                ).fetchall()
+            }
+        self.assertNotIn("sessions_tenant_immutable", triggers)
 
     def test_two_independent_app_instances_share_session_and_revocation(self) -> None:
         a, b = self._states()

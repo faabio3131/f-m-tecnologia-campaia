@@ -1,0 +1,14 @@
+DROP TRIGGER IF EXISTS asaas_webhook_seen_events_tenant_immutable ON campaia_runtime.asaas_webhook_seen_events;
+DROP TRIGGER IF EXISTS tenant_autonomy_updated_at_tenant_immutable ON campaia_runtime.tenant_autonomy_updated_at;
+DROP TRIGGER IF EXISTS tenant_autonomy_tenant_immutable ON campaia_runtime.tenant_autonomy;
+DROP TRIGGER IF EXISTS oauth_pending_states_tenant_immutable ON campaia_runtime.oauth_pending_states;
+DROP TRIGGER IF EXISTS step_up_states_tenant_immutable ON campaia_runtime.step_up_states;
+DROP TRIGGER IF EXISTS idempotency_tenant_immutable ON campaia_runtime.idempotency;
+DROP TRIGGER IF EXISTS organizations_tenant_immutable ON campaia_runtime.organizations;
+DROP TRIGGER IF EXISTS audit_events_tenant_immutable ON campaia_runtime.audit_events;
+DROP TRIGGER IF EXISTS approvals_tenant_immutable ON campaia_runtime.approvals;
+DROP TRIGGER IF EXISTS campaigns_tenant_immutable ON campaia_runtime.campaigns;
+DROP TRIGGER IF EXISTS credential_vault_tenant_immutable ON campaia_runtime.credential_vault;
+DROP TRIGGER IF EXISTS connections_tenant_immutable ON campaia_runtime.connections;
+DROP TRIGGER IF EXISTS brand_profiles_tenant_immutable ON campaia_runtime.brand_profiles;
+DROP FUNCTION IF EXISTS campaia_runtime.reject_tenant_rehome();

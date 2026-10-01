@@ -394,13 +394,32 @@ class RecordTable:
         self._database.lock_key(key)
 
     def put(self, id_: str, tenant_id: str, obj: Any) -> None:
+        if not tenant_id:
+            raise ValueError("tenant_id is required for persisted runtime rows")
         payload = json.dumps(encode(obj))
         with self._lock:
-            self._conn.execute(
-                f'INSERT INTO "{self._name}" (id, tenant_id, data) VALUES (?, ?, ?) '
-                "ON CONFLICT(id) DO UPDATE SET tenant_id = excluded.tenant_id, data = excluded.data",
-                (id_, tenant_id, payload),
+            updated = self._conn.execute(
+                f'UPDATE "{self._name}" SET data = ? WHERE id = ? AND tenant_id = ?',
+                (payload, id_, tenant_id),
             )
+            if updated.rowcount == 0:
+                inserted = self._conn.execute(
+                    f'INSERT OR IGNORE INTO "{self._name}" (id, tenant_id, data) '
+                    "VALUES (?, ?, ?)",
+                    (id_, tenant_id, payload),
+                )
+                if inserted.rowcount == 0:
+                    updated = self._conn.execute(
+                        f'UPDATE "{self._name}" SET data = ? '
+                        "WHERE id = ? AND tenant_id = ?",
+                        (payload, id_, tenant_id),
+                    )
+                    if updated.rowcount == 0:
+                        from campaia_core.errors import TenantIsolationViolation
+
+                        raise TenantIsolationViolation(
+                            "Registro persistido pertence a outro tenant."
+                        )
             if not self._database.in_transaction:
                 self._conn.commit()
 
@@ -418,6 +437,27 @@ class RecordTable:
         if row is None:
             return None
         return decode(json.loads(row[0]))
+
+    def get_for_tenant(self, id_: str, tenant_id: str) -> Any | None:
+        with self._lock:
+            row = self._conn.execute(
+                f'SELECT data FROM "{self._name}" '
+                "WHERE id = ? AND tenant_id = ?",
+                (id_, tenant_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return decode(json.loads(row[0]))
+
+    def delete_for_tenant(self, id_: str, tenant_id: str) -> bool:
+        with self._lock:
+            cursor = self._conn.execute(
+                f'DELETE FROM "{self._name}" WHERE id = ? AND tenant_id = ?',
+                (id_, tenant_id),
+            )
+            if not self._database.in_transaction:
+                self._conn.commit()
+        return cursor.rowcount > 0
 
     def rows_for_tenant(self, tenant_id: str) -> list[tuple[str, str, Any]]:
         with self._lock:
