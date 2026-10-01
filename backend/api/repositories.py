@@ -85,7 +85,7 @@ def _live_get(
         if item is None or getattr(item, "tenant_id", None) != tenant_id:
             return None
         return item
-    obj = table.get(id_)
+    obj = table.get_for_tenant(id_, tenant_id)
     if obj is None or getattr(obj, "tenant_id", None) != tenant_id:
         return None
     wrapped = _wrap_loaded(table, id_, tenant_id, obj)
@@ -253,7 +253,11 @@ class VaultRepository:
 
     def resolve(self, tenant_id: str, secret_ref: SecretRef, *, cipher: CredentialCipher) -> dict:
         secret_id = secret_ref.handle.rsplit("/", 1)[-1]
-        row = self._table.get(secret_id) if self._table is not None else self._items.get(secret_id)
+        row = (
+            self._table.get_for_tenant(secret_id, tenant_id)
+            if self._table is not None
+            else self._items.get(secret_id)
+        )
         if row is None:
             raise KeyError("Credencial nao encontrada no cofre.")
         if row.tenant_id != tenant_id:
@@ -264,12 +268,16 @@ class VaultRepository:
 
     def revoke(self, tenant_id: str, secret_ref: SecretRef) -> None:
         secret_id = secret_ref.handle.rsplit("/", 1)[-1]
-        row = self._table.get(secret_id) if self._table is not None else self._items.get(secret_id)
+        row = (
+            self._table.get_for_tenant(secret_id, tenant_id)
+            if self._table is not None
+            else self._items.get(secret_id)
+        )
         if row is None or row.tenant_id != tenant_id:
             return
         self._items.pop(secret_id, None)
         if self._table is not None:
-            self._table.delete(secret_id)
+            self._table.delete_for_tenant(secret_id, tenant_id)
 
 
 # --------------------------------------------------------------------------- campaigns

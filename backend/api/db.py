@@ -557,7 +557,7 @@ class PersistentTenantAutonomy:
         self._table = table
 
     def get(self, key: str, default=None):
-        row = self._table.get(key)
+        row = self._table.get_for_tenant(key, key)
         if row is not None:
             return row
         legacy = self._table.get("all")
@@ -607,7 +607,9 @@ class PersistentIdempotencyStore:
     def get(self, tenant_id: str, idempotency_key: str):
         from campaia_core.infra import StoredResult
 
-        row = self._table.get(self._composite_id(tenant_id, idempotency_key))
+        row = self._table.get_for_tenant(
+            self._composite_id(tenant_id, idempotency_key), tenant_id
+        )
         if row is None:
             return None
         return StoredResult(
@@ -678,7 +680,7 @@ class PersistentSeenEventStore:
         # serialized by BEGIN IMMEDIATE; PostgreSQL uses the same store contract.
         with self._table.transaction():
             self._table.lock_key(key)
-            if self._table.get(key) is not None:
+            if self._table.get_for_tenant(key, provider) is not None:
                 return False
             self._table.put(
                 key,

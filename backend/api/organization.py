@@ -135,7 +135,7 @@ class OrganizationRepository:
     def get_organization(self, tenant_id: str) -> TenantOrganization | None:
         if self._table is None:
             return self._items.get(tenant_id)
-        obj = self._table.get(tenant_id)
+        obj = self._table.get_for_tenant(tenant_id, tenant_id)
         if obj is None:
             return None
         wrapped = _wrap_loaded(self._table, tenant_id, tenant_id, obj)

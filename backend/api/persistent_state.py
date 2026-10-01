@@ -29,7 +29,9 @@ class PersistentStepUpStore:
         )
 
     def get(self, tenant_id: str, user_id: str, session_key: str) -> datetime | None:
-        row = self._table.get(self._key(tenant_id, user_id, session_key))
+        row = self._table.get_for_tenant(
+            self._key(tenant_id, user_id, session_key), tenant_id
+        )
         return None if row is None else row["verified_at"]
 
     def invalidate_session(self, session_key: str) -> None:
@@ -60,10 +62,10 @@ class PersistentOAuthStateStore:
         # Atomic single-use redemption. The record is deleted even when tenant/TTL
         # validation fails, preserving the pre-existing fail-closed semantics.
         with self._table.transaction():
-            pending = self._table.get(state_token)
+            pending = self._table.get_for_tenant(state_token, tenant_id)
             if pending is None:
                 return None
-            self._table.delete(state_token)
+            self._table.delete_for_tenant(state_token, tenant_id)
             if pending.tenant_id != tenant_id:
                 return None
             if (now - pending.created_at) > ttl:
