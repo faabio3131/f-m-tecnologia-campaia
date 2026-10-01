@@ -285,9 +285,8 @@ async def create_invitation(request: Request) -> JSONResponse:
             "Somente Owner pode convidar outro Owner.",
         )
 
-    existing = state.idempotency.get(
-        fixture.tenant_id, f"http:create_member_invitation:{idem_key}"
-    )
+    key = f"http:create_member_invitation:{idem_key}"
+    existing = state.idempotency.get(fixture.tenant_id, key)
     if existing is not None:
         invitation = next(
             (
@@ -299,49 +298,64 @@ async def create_invitation(request: Request) -> JSONResponse:
         )
         if invitation is None:
             raise ApiError("UNKNOWN", "Convite idempotente nao encontrado.")
+        # O token bruto e one-shot: replay nunca o reexpoe.
         return json_response(_serialize_invitation(invitation, accept_token=None), status_code=201)
 
-    organization = state.organizations.get_organization(fixture.tenant_id)
-    if organization is None:
-        raise ApiError(
-            "INVALID_STATE",
-            "Este tenant ainda nao possui organizacao comercial provisionada.",
-        )
-
-    active_existing = state.organizations.find_membership_by_email(
-        fixture.tenant_id, email, include_inactive=False
-    )
-    if active_existing is not None:
-        raise ApiError("INVALID_STATE", "Este e-mail ja possui acesso ativo neste tenant.")
-
-    unit = (
-        state.organizations.get_business_unit(fixture.tenant_id, body.business_unit_id)
-        if body.business_unit_id
-        else state.organizations.default_business_unit(fixture.tenant_id)
-    )
-    if unit is None or unit.status != "ACTIVE":
-        raise ApiError("NOT_FOUND", "Unidade de negocio nao encontrada neste tenant.")
-
-    plan_id = organization.tenant.plan_id
-    max_users = state.plan_user_limits.get(plan_id) if plan_id else None
-    if max_users is not None:
-        occupied = state.organizations.active_membership_count(fixture.tenant_id)
-        reserved = state.organizations.pending_invitation_count(fixture.tenant_id)
-        if occupied + reserved >= max_users:
-            raise ApiError(
-                "QUOTA_EXHAUSTED",
-                "Limite de usuarios do plano atingido.",
-                details={"plan_id": plan_id, "max_users": max_users},
-            )
+    created_raw_token: str | None = None
 
     def _create():
-        invitation, raw_token = state.organizations.create_invitation(
-            fixture.tenant_id,
-            email=email,
-            roles=roles,
-            business_unit_id=unit.business_unit_id,
-            created_by=fixture.user_id,
+        nonlocal created_raw_token
+
+        # Tudo que pode mudar por concorrencia fica dentro da mesma unidade transacional:
+        # organizacao/unidade corrente, quota, convite, auditoria e reserva idempotente.
+        organization = state.organizations.get_organization(fixture.tenant_id)
+        if organization is None:
+            raise ApiError(
+                "INVALID_STATE",
+                "Este tenant ainda nao possui organizacao comercial provisionada.",
+            )
+
+        active_existing = state.organizations.find_membership_by_email(
+            fixture.tenant_id, email, include_inactive=False
         )
+        if active_existing is not None:
+            raise ApiError("INVALID_STATE", "Este e-mail ja possui acesso ativo neste tenant.")
+
+        unit = (
+            state.organizations.get_business_unit(fixture.tenant_id, body.business_unit_id)
+            if body.business_unit_id
+            else state.organizations.default_business_unit(fixture.tenant_id)
+        )
+        if unit is None or unit.status != "ACTIVE":
+            raise ApiError("NOT_FOUND", "Unidade de negocio nao encontrada neste tenant.")
+
+        plan_id = organization.tenant.plan_id
+        max_users = state.plan_user_limits.get(plan_id) if plan_id else None
+        if max_users is not None:
+            occupied = state.organizations.active_membership_count(fixture.tenant_id)
+            reserved = state.organizations.pending_invitation_count(fixture.tenant_id)
+            if occupied + reserved >= max_users:
+                raise ApiError(
+                    "QUOTA_EXHAUSTED",
+                    "Limite de usuarios do plano atingido.",
+                    details={"plan_id": plan_id, "max_users": max_users},
+                )
+
+        try:
+            invitation, raw_token = state.organizations.create_invitation(
+                fixture.tenant_id,
+                email=email,
+                roles=roles,
+                business_unit_id=unit.business_unit_id,
+                created_by=fixture.user_id,
+            )
+        except ValueError as exc:
+            if str(exc) == "INVITATION_ALREADY_PENDING":
+                raise ApiError(
+                    "INVALID_STATE", "Ja existe um convite pendente para este e-mail."
+                ) from exc
+            raise
+
         state.audit.append(
             tenant_id=fixture.tenant_id,
             actor=fixture.user_id,
@@ -352,21 +366,29 @@ async def create_invitation(request: Request) -> JSONResponse:
                 "business_unit_id": invitation.business_unit_id,
             },
         )
-        return invitation, raw_token
+        created_raw_token = raw_token
+        # Persistir apenas o identificador; nunca guardar o token bruto no replay cache.
+        return {"invitation_id": invitation.invitation_id}
 
-    try:
-        invitation, raw_token = _create()
-    except ValueError as exc:
-        if str(exc) == "INVITATION_ALREADY_PENDING":
-            raise ApiError("INVALID_STATE", "Ja existe um convite pendente para este e-mail.") from exc
-        raise
-
-    state.idempotency.execute(
-        fixture.tenant_id,
-        f"http:create_member_invitation:{idem_key}",
-        lambda: {"invitation_id": invitation.invitation_id},
+    result, replay = state.idempotency.execute(fixture.tenant_id, key, _create)
+    invitation = next(
+        (
+            i
+            for i in state.organizations.list_invitations_for_tenant(fixture.tenant_id)
+            if i.invitation_id == result["invitation_id"]
+        ),
+        None,
     )
-    return json_response(_serialize_invitation(invitation, accept_token=raw_token), status_code=201)
+    if invitation is None:
+        raise ApiError("UNKNOWN", "Convite idempotente nao encontrado.")
+
+    return json_response(
+        _serialize_invitation(
+            invitation,
+            accept_token=None if replay else created_raw_token,
+        ),
+        status_code=201,
+    )
 
 
 async def accept_invitation(request: Request) -> JSONResponse:

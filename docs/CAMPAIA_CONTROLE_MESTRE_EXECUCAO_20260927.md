@@ -1,7 +1,7 @@
 # CampaIA — CONTROLE MESTRE DE EXECUÇÃO F0–F20
 
 **Data-base:** 27/09/2026  
-**Status:** G0 `DONE_VERIFIED`; F1/G1 `PARTIAL` por homologação Google externa e integração comercial de F5; F2/G2 `PARTIAL` — IAM/organização implementados e certificados internamente, mas step-up Google real permanece pendente de ambiente externo. Não implica merge, deploy ou produção.  
+**Status:** G0 `DONE_VERIFIED`; F1/G1 `PARTIAL`; F2/G2 `PARTIAL`; F3/G3 `PRODUCTION_GATE` em execução controlada. O CURRENT de F3 já possui transação SQLite de compatibilidade e estado de segurança compartilhado, mas PostgreSQL/multi-processo/backup/restore continuam abertos. Não implica merge, deploy ou produção.  
 **Repositório canônico:** faabio3131/f-m-tecnologia-campaia  
 **Linha de trabalho:** PR #31, branch reconciliation/campaia-final-takeover  
 **Fonte mestra:** “CAMPAIA - CRONOGRAMA MESTRE DE EXECUCAO TOTAL ATE PRONTO COMERCIAL”, v1.0, 27/09/2026.
@@ -35,7 +35,7 @@ F0 → F1/F2 → F3/F4 → F5 → F6/F7 → F8/F9 → F10 → F11 → F12–F14 
 | F0 | G0 | CURRENT + SSOT + cobertura + superseded | DONE_VERIFIED |
 | F1 | G1 | Trial/onboarding/tenant/unidade/usuários | PARTIAL |
 | F2 | G2 | Multi-tenancy/RBAC/step-up/isolamento | PARTIAL |
-| F3 | G3 | Atomicidade/idempotência/concorrência | PRODUCTION_GATE |
+| F3 | G3 | Atomicidade/idempotência/concorrência | PRODUCTION_GATE — execução ativa |
 | F4 | G4 | Persistência/infra/segredos/observabilidade-base | TARGET |
 | F5 | G5 | Billing/trial/planos/admin comercial | PARTIAL |
 | F6 | G6 | Brand Kit/assets/storage | TARGET |
@@ -154,3 +154,39 @@ O commit de reconciliação ff1d6d95ec8f5ecdab807cb46e56fce0328d7d08 foi submeti
 - nenhuma homologação externa, staging ou produção foi inventada.
 
 **Governança:** PR #31 permanece Draft; nenhum merge, deploy ou alteração de produção.
+
+## 11. Estado F3 / G3 — WP-F03-01 — reconciliação de 01/10/2026
+
+**Status:** `PRODUCTION_GATE`. Gate G3 permanece aberto.
+
+**CURRENT de entrada confirmado:** PR #31 Draft, branch `reconciliation/campaia-final-takeover`, HEAD `cb7a43107154d58df781cadd49639267799c128d`. Backend #145 e Frontend #83 estavam verdes antes desta tranche.
+
+**O que `cb7a431` realmente entregou:**
+- fronteira transacional explícita no backend SQLite de compatibilidade;
+- rollback coordenado das escritas RecordTable executadas dentro de `PersistentIdempotencyStore.execute()`;
+- SessionStore persistente/compartilhado;
+- step-up state persistente/compartilhado;
+- OAuth Pending State persistente, compartilhado e single-use;
+- dedupe de webhook persistente;
+- leitura live em parte dos repositories;
+- testes com duas instâncias da aplicação compartilhando o mesmo arquivo SQLite.
+
+**Lacunas confirmadas na auditoria de retomada:**
+- duas instâncias no mesmo processo/SQLite não equivalem a múltiplos processos/containers de produção;
+- não existe adapter PostgreSQL conectado ao runtime CURRENT;
+- o DDL histórico `backend/db/001_initial_schema.sql` cobre 7 estruturas, enquanto o runtime persistente CURRENT usa 14 stores; faltam no DDL histórico `credential_vault`, `organizations`, `sessions`, `step_up_states`, `oauth_pending_states`, `tenant_autonomy_updated_at` e `asaas_webhook_seen_events`;
+- métodos de `OrganizationRepository` ainda podiam consultar snapshots process-local obsoletos;
+- `create_invitation` materializava convite/auditoria antes da reserva idempotente;
+- `publish_campaign` persistia transições pré-publicação antes da unidade transacional;
+- rate limiter continua process-local;
+- subscriptions/charges do billing continuam em memória e pertencem ao fechamento de F5;
+- efeitos externos reais exigirão outbox/Saga/reconciliação; rollback SQL não desfaz uma chamada já confirmada por provider.
+
+**Tranche interna executada a partir desta reconciliação:** leituras organizacionais passam a reler o backing store; criação de convite coloca quota + criação + auditoria + idempotência na mesma unidade; validações críticas de IAM são refeitas dentro da transação; publicação move as transições locais para dentro da unidade transacional. Testes de regressão específicos acompanham a mudança.
+
+**Fronteira F3 x F4 para evitar retrabalho:** F3 responde pelo adapter/runtime PostgreSQL, schema/migrations compatíveis com o CURRENT, unit-of-work/locks/concorrência, shared state e provas multi-processo. F4 responde pelo Cloud SQL/infra real, rede/IAM de serviço, Secret Manager/KMS, ambientes, CI/CD de migration, backup gerenciado e deploy repetível.
+
+**Ainda obrigatório para G3:** PostgreSQL real no runtime, migrations CURRENT + rollback, isolamento no banco, concorrência multi-process/multi-worker, crash/replay, rate limiting distribuído quando necessário, prova de 2+ processos/réplicas e estratégia de backup/restore/RPO/RTO coordenada com F4/F17.
+
+**Governança:** nenhuma promoção a `DONE_VERIFIED`; nenhum merge, deploy ou produção autorizado por esta atualização.
+

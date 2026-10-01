@@ -136,3 +136,14 @@ compra/trial=F5; tenant=F1; usuários/unidades=F1/F2; conexões=F8–F11; Brand 
 O CURRENT de F2 agora inclui administração Web/API de unidades, memberships, papéis e ownership seguro, com step-up, idempotência, auditoria, revogação imediata de sessão e provas cross-tenant. O contrato OpenAPI cobre as novas rotas e está sincronizado com o cliente gerado.
 
 O estado permanece `PARTIAL`, não `DONE_VERIFIED`, porque a homologação do step-up Google real foi deliberadamente adiada por ausência de infraestrutura/credenciais externas (`EXTERNAL_INFRASTRUCTURE` / `EXTERNAL_CREDENTIAL`). PostgreSQL, concorrência multi-réplica e atomicidade de produção continuam nos WPs F3/F4.
+
+## 7. Reconciliação WP-F03-01 — 01/10/2026
+
+O CURRENT de F3 já contém uma primeira fronteira transacional e shared state sobre o backend SQLite de compatibilidade, mas isso não certifica PostgreSQL nem implantação horizontal. A auditoria do HEAD `cb7a431` identificou e separou três classes:
+
+- **corrigível internamente agora:** stale reads de organização, convite fora da unidade idempotente, validações IAM fora da transação e transições pré-publicação fora da unidade;
+- **`PRODUCTION_GATE`:** adapter PostgreSQL, schema/migrations CURRENT, locks/concorrência, multi-processo/multi-worker, crash/replay e prova de 2+ réplicas;
+- **F4/F17 / infraestrutura:** Cloud SQL provisionado, backup/restore gerenciado, RPO/RTO medidos, rede/secret manager e operação de ambiente.
+
+O DDL PostgreSQL histórico de 04/09 permanece evidência válida do que foi testado naquela data, mas é `PARTIAL/SUPERSEDED` como schema do CURRENT porque não cobre todos os stores adicionados posteriormente. G3 permanece aberto.
+

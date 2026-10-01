@@ -228,7 +228,7 @@ class OrganizationRepository:
         return list(organization.memberships.values())
 
     def get_membership(self, tenant_id: str, membership_id: str) -> MembershipRecord | None:
-        organization = self._items.get(tenant_id)
+        organization = self.get_organization(tenant_id)
         if organization is None:
             return None
         return organization.memberships.get(membership_id)
@@ -236,7 +236,7 @@ class OrganizationRepository:
     def find_membership_by_email(
         self, tenant_id: str, email: str, *, include_inactive: bool = True
     ) -> MembershipRecord | None:
-        organization = self._items.get(tenant_id)
+        organization = self.get_organization(tenant_id)
         if organization is None:
             return None
         normalized = normalize_email(email)
@@ -252,13 +252,13 @@ class OrganizationRepository:
     ) -> BusinessUnitRecord | None:
         if business_unit_id is None:
             return None
-        organization = self._items.get(tenant_id)
+        organization = self.get_organization(tenant_id)
         if organization is None:
             return None
         return organization.business_units.get(business_unit_id)
 
     def default_business_unit(self, tenant_id: str) -> BusinessUnitRecord | None:
-        organization = self._items.get(tenant_id)
+        organization = self.get_organization(tenant_id)
         if organization is None:
             return None
         for unit in organization.business_units.values():
@@ -271,7 +271,7 @@ class OrganizationRepository:
 
     def pending_invitation_count(self, tenant_id: str, *, now: datetime | None = None) -> int:
         now = now or datetime.now(timezone.utc)
-        organization = self._items.get(tenant_id)
+        organization = self.get_organization(tenant_id)
         if organization is None:
             return 0
         count = 0
@@ -298,7 +298,7 @@ class OrganizationRepository:
         created_by: str,
         now: datetime | None = None,
     ) -> tuple[InvitationRecord, str]:
-        organization = self._items.get(tenant_id)
+        organization = self.get_organization(tenant_id)
         if organization is None:
             raise KeyError("TENANT_NOT_FOUND")
         normalized_email = normalize_email(email)
@@ -329,7 +329,7 @@ class OrganizationRepository:
         return invitation, raw_token
 
     def list_invitations_for_tenant(self, tenant_id: str) -> list[InvitationRecord]:
-        organization = self._items.get(tenant_id)
+        organization = self.get_organization(tenant_id)
         if organization is None:
             return []
         return list(organization.invitations.values())
@@ -407,7 +407,7 @@ class OrganizationRepository:
         membership.status = "INACTIVE"
         membership.updated_at = now
         membership.deactivated_at = now
-        organization = self._items.get(tenant_id)
+        organization = self.get_organization(tenant_id)
         if organization is not None:
             self._persist(organization)
         return membership
@@ -422,7 +422,7 @@ class OrganizationRepository:
         membership.status = "ACTIVE"
         membership.updated_at = now
         membership.deactivated_at = None
-        organization = self._items.get(tenant_id)
+        organization = self.get_organization(tenant_id)
         if organization is not None:
             self._persist(organization)
         return membership
@@ -436,7 +436,7 @@ class OrganizationRepository:
 
 
     def list_business_units_for_tenant(self, tenant_id: str) -> list[BusinessUnitRecord]:
-        organization = self._items.get(tenant_id)
+        organization = self.get_organization(tenant_id)
         if organization is None:
             return []
         return list(organization.business_units.values())
@@ -444,7 +444,7 @@ class OrganizationRepository:
     def create_business_unit(
         self, tenant_id: str, *, name: str
     ) -> BusinessUnitRecord:
-        organization = self._items.get(tenant_id)
+        organization = self.get_organization(tenant_id)
         if organization is None:
             raise KeyError("TENANT_NOT_FOUND")
         normalized_name = name.strip()
@@ -467,7 +467,7 @@ class OrganizationRepository:
     def rename_business_unit(
         self, tenant_id: str, business_unit_id: str, *, name: str
     ) -> BusinessUnitRecord | None:
-        organization = self._items.get(tenant_id)
+        organization = self.get_organization(tenant_id)
         if organization is None:
             return None
         unit = organization.business_units.get(business_unit_id)
@@ -497,7 +497,7 @@ class OrganizationRepository:
     def set_business_unit_status(
         self, tenant_id: str, business_unit_id: str, *, status: str
     ) -> BusinessUnitRecord | None:
-        organization = self._items.get(tenant_id)
+        organization = self.get_organization(tenant_id)
         if organization is None:
             return None
         unit = organization.business_units.get(business_unit_id)
@@ -529,7 +529,7 @@ class OrganizationRepository:
         business_unit_id: str | None,
         now: datetime | None = None,
     ) -> MembershipRecord | None:
-        organization = self._items.get(tenant_id)
+        organization = self.get_organization(tenant_id)
         if organization is None:
             return None
         membership = organization.memberships.get(membership_id)

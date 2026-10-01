@@ -6,6 +6,7 @@ import os
 import tempfile
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 from starlette.testclient import TestClient
 
@@ -15,10 +16,13 @@ from campaia_core.permissions import Role
 
 from tests_api.test_commercial_onboarding import (
     FreshIdentityVerifier,
+    ID_MEMBER,
     ID_OWNER_A,
     ORIGIN,
     TOK_OWNER_A,
+    onboard,
 )
+from tests_api.test_helpers import OWNER, idem, publish_ready_campaign, with_step_up
 
 
 class RuntimeSharedStateTests(unittest.TestCase):
@@ -154,6 +158,121 @@ class RuntimeSharedStateTests(unittest.TestCase):
                 "demo-tenant", created.brand_profile_id
             )
             self.assertEqual(reread.name, "Replica B")
+
+
+    def test_organization_membership_read_is_fresh_across_replicas(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "shared.sqlite3")
+            a, b = self._apps(path)
+            state_a = a.app.state.campaia
+            state_b = b.app.state.campaia
+
+            tenant, unit, membership = state_a.organizations.create_tenant_bundle(
+                company_name="Replica Org",
+                document="60111111000160",
+                segment="servicos",
+                language="pt-BR",
+                timezone_name="America/Sao_Paulo",
+                entry_mode="TRIAL",
+                plan_id=None,
+                identity_subject=ID_OWNER_A.subject,
+                email=ID_OWNER_A.email,
+            )
+            # Replica B deliberately caches the old OWNER snapshot first.
+            cached = state_b.organizations.get_membership(
+                tenant.tenant_id, membership.membership_id
+            )
+            self.assertEqual(cached.roles, frozenset({Role.OWNER}))
+
+            def mutate():
+                updated = state_a.organizations.update_membership_access(
+                    tenant.tenant_id,
+                    membership.membership_id,
+                    roles=frozenset({Role.ADMIN}),
+                    business_unit_id=unit.business_unit_id,
+                )
+                return {"roles": sorted(role.value for role in updated.roles)}
+
+            state_a.idempotency.execute(
+                tenant.tenant_id, "http:f3-org-live-read-0001", mutate
+            )
+
+            reread = state_b.organizations.get_membership(
+                tenant.tenant_id, membership.membership_id
+            )
+            self.assertEqual(reread.roles, frozenset({Role.ADMIN}))
+
+    def test_invitation_failure_rolls_back_invite_audit_and_idempotency(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "shared.sqlite3")
+            a, b = self._apps(path)
+            created = onboard(a, TOK_OWNER_A, idem="f3-invite-owner-0001")
+            self.assertEqual(created.status_code, 201, created.text)
+            body = created.json()
+            tenant_id = body["organization"]["tenant_id"]
+            idem_key = "f3-invite-rollback-0001"
+
+            with patch.object(
+                a.app.state.campaia.audit,
+                "append",
+                side_effect=RuntimeError("injected invitation failure"),
+            ):
+                failed = a.post(
+                    "/member-invitations",
+                    json={"email": ID_MEMBER.email, "roles": ["VIEWER"]},
+                    headers={
+                        "x-csrf-token": body["session"]["csrf_token"],
+                        "X-Step-Up-Token": "f3-test-step-up",
+                        "Idempotency-Key": idem_key,
+                    },
+                )
+            self.assertEqual(failed.status_code, 500, failed.text)
+            self.assertEqual(
+                b.app.state.campaia.organizations.list_invitations_for_tenant(tenant_id),
+                [],
+            )
+            self.assertIsNone(
+                b.app.state.campaia.idempotency.get(
+                    tenant_id, f"http:create_member_invitation:{idem_key}"
+                )
+            )
+
+    def test_publish_failure_rolls_back_pre_publish_transitions_and_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "shared.sqlite3")
+            a, b = self._apps(path)
+            camp, decision, approval = publish_ready_campaign(a, headers=OWNER)
+            request_idem = idem("f3-publish-rollback-0001")
+
+            with patch(
+                "api.routes_campaigns.PublicationSaga.run",
+                side_effect=RuntimeError("injected publish failure"),
+            ):
+                failed = a.post(
+                    f"/campaigns/{camp['id']}/publish",
+                    headers={**with_step_up(OWNER), **request_idem},
+                    json={
+                        "policy_decision_id": decision["policy_decision_id"],
+                        "approval_id": approval["id"],
+                    },
+                )
+            self.assertEqual(failed.status_code, 500, failed.text)
+
+            campaign = b.app.state.campaia.campaigns.get("demo-tenant", camp["id"])
+            self.assertIsNotNone(campaign)
+            self.assertEqual(campaign.campaign.state.value, "VALIDATED")
+
+            approval_after = b.app.state.campaia.approvals.get(
+                "demo-tenant", approval["id"]
+            )
+            self.assertIsNotNone(approval_after)
+            self.assertEqual(approval_after.status, "APPROVED")
+            self.assertIsNone(
+                b.app.state.campaia.idempotency.get(
+                    "demo-tenant",
+                    f"http:publish:{request_idem['Idempotency-Key']}",
+                )
+            )
 
 
 if __name__ == "__main__":

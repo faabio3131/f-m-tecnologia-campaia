@@ -138,12 +138,12 @@ async def rename_business_unit(request: Request) -> JSONResponse:
     idem_key = require_idempotency_key(request)
     body = await parse_body(request, BusinessUnitRenameRequest)
     unit_id = request.path_params["businessUnitId"]
-    current = state.organizations.get_business_unit(fixture.tenant_id, unit_id)
-    if current is None:
-        raise ApiError("NOT_FOUND", "Unidade de negocio nao encontrada neste tenant.")
     key = f"http:rename_business_unit:{unit_id}:{idem_key}"
 
     def _do():
+        current = state.organizations.get_business_unit(fixture.tenant_id, unit_id)
+        if current is None:
+            raise ApiError("NOT_FOUND", "Unidade de negocio nao encontrada neste tenant.")
         old_name = current.name
         try:
             updated = state.organizations.rename_business_unit(
@@ -172,8 +172,6 @@ async def _set_unit_status(request: Request, *, status: str) -> JSONResponse:
     fixture, state = _authorize(request, manage=True)
     idem_key = require_idempotency_key(request)
     unit_id = request.path_params["businessUnitId"]
-    if state.organizations.get_business_unit(fixture.tenant_id, unit_id) is None:
-        raise ApiError("NOT_FOUND", "Unidade de negocio nao encontrada neste tenant.")
     action = "deactivate" if status == "INACTIVE" else "reactivate"
     key = f"http:{action}_business_unit:{unit_id}:{idem_key}"
 
@@ -221,30 +219,37 @@ async def update_membership_access(request: Request) -> JSONResponse:
     fixture, state = _authorize(request, manage=True)
     idem_key = require_idempotency_key(request)
     membership_id = request.path_params["membershipId"]
-    target = state.organizations.get_membership(fixture.tenant_id, membership_id)
-    if target is None:
-        raise ApiError("NOT_FOUND", "Usuario nao encontrado neste tenant.")
     body = await parse_body(request, MembershipAccessUpdateRequest)
     roles = _roles_from(body.roles)
-    _enforce_role_authority(fixture, target, roles)
-
-    unit = state.organizations.get_business_unit(
-        fixture.tenant_id, body.business_unit_id
-    )
-    if unit is None or unit.status != "ACTIVE":
-        raise ApiError("NOT_FOUND", "Unidade de negocio ativa nao encontrada neste tenant.")
-
-    if (
-        target.status == "ACTIVE"
-        and Role.OWNER in target.roles
-        and Role.OWNER not in roles
-        and state.organizations.active_owner_count(fixture.tenant_id) <= 1
-    ):
-        raise ApiError("INVALID_STATE", "O ultimo Owner ativo nunca pode perder esse papel.")
-
     key = f"http:update_membership_access:{membership_id}:{idem_key}"
 
     def _do():
+        # Rele toda a autoridade organizacional dentro da transacao. Isso impede que
+        # duas replicas validem simultaneamente um snapshot antigo (ex.: dois Owners
+        # tentando se rebaixar ao mesmo tempo) e violem o invariante do ultimo Owner.
+        target = state.organizations.get_membership(fixture.tenant_id, membership_id)
+        if target is None:
+            raise ApiError("NOT_FOUND", "Usuario nao encontrado neste tenant.")
+        _enforce_role_authority(fixture, target, roles)
+
+        unit = state.organizations.get_business_unit(
+            fixture.tenant_id, body.business_unit_id
+        )
+        if unit is None or unit.status != "ACTIVE":
+            raise ApiError(
+                "NOT_FOUND", "Unidade de negocio ativa nao encontrada neste tenant."
+            )
+
+        if (
+            target.status == "ACTIVE"
+            and Role.OWNER in target.roles
+            and Role.OWNER not in roles
+            and state.organizations.active_owner_count(fixture.tenant_id) <= 1
+        ):
+            raise ApiError(
+                "INVALID_STATE", "O ultimo Owner ativo nunca pode perder esse papel."
+            )
+
         old_roles = sorted(role.value for role in target.roles)
         old_unit = target.business_unit_id
         updated = state.organizations.update_membership_access(
@@ -255,8 +260,7 @@ async def update_membership_access(request: Request) -> JSONResponse:
         )
         if updated is None:
             raise ApiError("NOT_FOUND", "Usuario nao encontrado neste tenant.")
-        # Roles/unidade ficam capturados na sessao no login. Revogar e obrigar novo
-        # login e mais seguro do que manter uma sessao com autoridade obsoleta.
+
         state.sessions.invalidate_membership(updated.membership_id)
         state.audit.append(
             tenant_id=fixture.tenant_id,
@@ -274,3 +278,4 @@ async def update_membership_access(request: Request) -> JSONResponse:
 
     result, _ = state.idempotency.execute(fixture.tenant_id, key, _do)
     return JSONResponse(result)
+
