@@ -1,7 +1,9 @@
 resource "google_project_service" "bootstrap_apis" {
   for_each = toset([
+    "cloudresourcemanager.googleapis.com",
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",
+    "serviceusage.googleapis.com",
     "sts.googleapis.com",
     "storage.googleapis.com",
   ])

@@ -49,7 +49,7 @@ infra/scripts/bootstrap-terraform-backend.sh
 ```
 
 O script:
-- habilita somente a API de Cloud Storage necessária ao bootstrap;
+- habilita as APIs mínimas de controle necessárias ao bootstrap (`serviceusage.googleapis.com`, `cloudresourcemanager.googleapis.com` e `storage.googleapis.com`);
 - cria o bucket regional com uniform bucket-level access;
 - aplica public access prevention e versionamento;
 - inicializa o backend GCS em `campaia/bootstrap/<environment>`;

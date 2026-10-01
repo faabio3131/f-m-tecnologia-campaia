@@ -61,7 +61,12 @@ if [[ "${BILLING_ENABLED}" != "True" && "${BILLING_ENABLED}" != "true" ]]; then
   exit 4
 fi
 
-gcloud services enable storage.googleapis.com --project="${PROJECT_ID}" --quiet
+gcloud services enable \
+  serviceusage.googleapis.com \
+  cloudresourcemanager.googleapis.com \
+  storage.googleapis.com \
+  --project="${PROJECT_ID}" \
+  --quiet
 
 if gcloud storage buckets describe "${BUCKET_URI}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
   echo "State bucket already exists and is accessible; reusing it."
