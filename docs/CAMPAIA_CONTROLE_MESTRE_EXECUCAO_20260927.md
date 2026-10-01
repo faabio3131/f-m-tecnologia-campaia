@@ -188,5 +188,9 @@ O commit de reconciliação ff1d6d95ec8f5ecdab807cb46e56fce0328d7d08 foi submeti
 
 **Ainda obrigatório para G3:** PostgreSQL real no runtime, migrations CURRENT + rollback, isolamento no banco, concorrência multi-process/multi-worker, crash/replay, rate limiting distribuído quando necessário, prova de 2+ processos/réplicas e estratégia de backup/restore/RPO/RTO coordenada com F4/F17.
 
+**Certificação desta tranche:** HEAD funcional/segurança `4e3d00782b6c49af2bf3d2a52f3ee82490290f5c`; Backend #148 = `success` (377 domínio + 260 API, pip-audit verde, AsyncAPI 24/24); Frontend #86 = `success` (npm audit 0 vulnerabilidades, lint/typecheck/contract/boundary/build verdes, 72 Vitest, 4 smoke E2E, 27 E2E cross-stack). Durante a certificação, o gate npm detectou vulnerabilidade critical no Next.js 16.3.5; o runtime foi atualizado para 16.3.8 e a suíte completa voltou a verde.
+
+**CURRENT após a tranche:** F3 continua `PRODUCTION_GATE`. As lacunas internas comprovadas de stale-read organizacional, convite fora da unidade idempotente e transições pré-publicação fora da transação foram corrigidas e testadas. PostgreSQL/migrations CURRENT, multi-processo/multi-worker, rate limiting distribuído e backup/restore continuam abertos; nenhuma dessas pendências foi promovida artificialmente.
+
 **Governança:** nenhuma promoção a `DONE_VERIFIED`; nenhum merge, deploy ou produção autorizado por esta atualização.
 

@@ -83,6 +83,37 @@ A tranche adiciona regressões para:
 - falha injetada ao criar convite não deixar convite, audit ou idempotência persistidos;
 - falha injetada durante publicação restaurar campanha em `VALIDATED`, approval em `APPROVED` e não gravar resultado idempotente.
 
-## 9. Status
+## 9. Certificação da tranche
 
-`PRODUCTION_GATE`. Esta evidência não promove G3. O próximo bloco de F3 deve atacar o adapter PostgreSQL + migrations CURRENT e depois prova multi-processo. Resultado de CI será anexado após o commit funcional e execução real dos workflows.
+**HEAD funcional/segurança certificado:** `4e3d00782b6c49af2bf3d2a52f3ee82490290f5c`.
+
+### Backend — run #148 = success
+- 377 testes de domínio: OK;
+- 260 testes de API: OK;
+- `pip-audit`: nenhuma vulnerabilidade conhecida;
+- AsyncAPI: 24/24 eventos verificados end-to-end.
+
+### Frontend — run #86 = success
+- `npm audit`: 0 vulnerabilidades;
+- lint: success;
+- typecheck strict: success;
+- contract drift: success;
+- security boundary: success;
+- 21 arquivos / 72 testes Vitest: success;
+- production build: success;
+- 4 smoke E2E: success;
+- 27 E2E cross-stack backend real + frontend real: success.
+
+Os três testes F3 adicionados passaram dentro dos 260 testes de API: stale-read organizacional cross-instance, rollback de convite e rollback da publicação.
+
+## 10. Blocker de supply chain descoberto e corrigido durante a certificação
+
+Na primeira repetição da CI após a correção F3, o gate `npm audit --audit-level=high` passou a reportar uma vulnerabilidade **critical** no Next.js 16.3.5 (RCE em `next/og ImageResponse`, advisory GHSA-vcvr-r3jv-pc5j). O gate falhou corretamente.
+
+A dependência foi atualizada de `next@16.3.5` para `next@16.3.8`, junto de `@next/env` e binários SWC correspondentes no lockfile. A CI #86 confirmou `found 0 vulnerabilities`, sem regressão de lint, typecheck, build, testes ou E2E.
+
+Este achado não altera o escopo funcional de F3, mas foi tratado porque o Documento Mestre proíbe prosseguir com blocker crítico conhecido.
+
+## 11. Status
+
+`PRODUCTION_GATE`. Esta evidência **não promove G3**. O próximo bloco de F3 é o adapter PostgreSQL + migrations CURRENT, seguido por prova multi-processo/multi-worker. PostgreSQL/Cloud SQL, backup/restore e ambiente real continuam abertos nos gates correspondentes. Nenhum merge, deploy ou produção foi executado.
