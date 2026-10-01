@@ -584,6 +584,11 @@ class PersistentIdempotencyStore:
         # RecordTable mutation performed by operation(), audit writes and result storage.
         # A raised exception rolls back all durable effects.
         with self._table.transaction():
+            # Conservative F3 concurrency boundary: serialize critical persisted
+            # mutations per tenant even when callers use different Idempotency-Keys.
+            # This favors correctness over intra-tenant write throughput until finer
+            # resource locks are proven safe. Different tenants remain concurrent.
+            self._table.lock_key(f"tenant:{tenant_id}")
             composite_id = self._composite_id(tenant_id, idempotency_key)
             self._table.lock_key(composite_id)
             existing = self.get(tenant_id, idempotency_key)

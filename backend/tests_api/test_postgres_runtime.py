@@ -7,7 +7,9 @@ real PostgreSQL 16 service.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+import multiprocessing
 import os
+import queue
 import threading
 import time
 import unittest
@@ -25,6 +27,34 @@ from api.postgres import (
 
 
 DSN = os.environ.get("CAMPAIA_TEST_DATABASE_URL")
+
+
+def _process_idempotency_worker(dsn, label, start_event, result_queue, executed_queue):
+    state = create_app(database_url=dsn, env="test").state.campaia
+    if not start_event.wait(timeout=10):
+        result_queue.put(("error", label, "start timeout"))
+        return
+
+    def operation():
+        executed_queue.put(label)
+        time.sleep(0.25)
+        state.audit.append(
+            tenant_id="demo-tenant",
+            actor=label,
+            action="PG_PROCESS_EXACTLY_ONCE",
+            target="same-key",
+        )
+        return {"winner": label}
+
+    try:
+        result, replay = state.idempotency.execute(
+            "demo-tenant",
+            "http:pg:process-concurrent-idempotency",
+            operation,
+        )
+        result_queue.put(("ok", result, replay))
+    except Exception as exc:  # pragma: no cover - surfaced to parent assertion
+        result_queue.put(("error", label, repr(exc)))
 
 
 @unittest.skipUnless(DSN, "CAMPAIA_TEST_DATABASE_URL not configured")
@@ -181,6 +211,43 @@ class PostgresRuntimeTests(unittest.TestCase):
             e
             for e in a.audit.list_for_tenant("demo-tenant")
             if e.action == "PG_EXACTLY_ONCE"
+        ]
+        self.assertEqual(len(events), 1)
+
+    def test_same_idempotency_key_is_exactly_once_across_spawned_processes(self) -> None:
+        ctx = multiprocessing.get_context("spawn")
+        start_event = ctx.Event()
+        result_queue = ctx.Queue()
+        executed_queue = ctx.Queue()
+        processes = [
+            ctx.Process(
+                target=_process_idempotency_worker,
+                args=(DSN, label, start_event, result_queue, executed_queue),
+            )
+            for label in ("proc-a", "proc-b")
+        ]
+        for process in processes:
+            process.start()
+        start_event.set()
+        for process in processes:
+            process.join(timeout=15)
+            self.assertEqual(process.exitcode, 0)
+
+        results = [result_queue.get(timeout=5) for _ in processes]
+        self.assertTrue(all(item[0] == "ok" for item in results), results)
+        self.assertEqual(results[0][1], results[1][1])
+        self.assertEqual(sorted(item[2] for item in results), [False, True])
+
+        executed = [executed_queue.get(timeout=5)]
+        with self.assertRaises(queue.Empty):
+            executed_queue.get(timeout=0.25)
+        self.assertEqual(len(executed), 1)
+
+        state = create_app(database_url=DSN, env="test").state.campaia
+        events = [
+            event
+            for event in state.audit.list_for_tenant("demo-tenant")
+            if event.action == "PG_PROCESS_EXACTLY_ONCE"
         ]
         self.assertEqual(len(events), 1)
 
