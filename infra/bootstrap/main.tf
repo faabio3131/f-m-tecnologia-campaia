@@ -1,7 +1,3 @@
-data "google_project" "current" {
-  project_id = var.project_id
-}
-
 resource "google_project_service" "bootstrap_apis" {
   for_each = toset([
     "iam.googleapis.com",
