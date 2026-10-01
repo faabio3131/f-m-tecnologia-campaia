@@ -1,7 +1,7 @@
 # CampaIA — CONTROLE MESTRE DE EXECUÇÃO F0–F20
 
 **Data-base:** 27/09/2026  
-**Status:** G0 `DONE_VERIFIED`; F1/G1 `PARTIAL`; F2/G2 `PARTIAL`; F3/G3 `PRODUCTION_GATE` em execução controlada. O CURRENT de F3 já possui transação SQLite de compatibilidade e estado de segurança compartilhado, mas PostgreSQL/multi-processo/backup/restore continuam abertos. Não implica merge, deploy ou produção.  
+**Status:** G0 `DONE_VERIFIED`; F1/G1 `PARTIAL`; F2/G2 `PARTIAL`; **G3 `DONE_VERIFIED`** no runtime CURRENT. F3 mantém resíduos `EXTERNAL_INFRASTRUCTURE` / `HUMAN_DECISION` para Cloud SQL gerenciado, backup/restore operacional e RPO/RTO, encaminhados a F4/F17 sem falsa homologação. Não implica merge, deploy ou produção.  
 **Repositório canônico:** faabio3131/f-m-tecnologia-campaia  
 **Linha de trabalho:** PR #31, branch reconciliation/campaia-final-takeover  
 **Fonte mestra:** “CAMPAIA - CRONOGRAMA MESTRE DE EXECUCAO TOTAL ATE PRONTO COMERCIAL”, v1.0, 27/09/2026.
@@ -35,8 +35,8 @@ F0 → F1/F2 → F3/F4 → F5 → F6/F7 → F8/F9 → F10 → F11 → F12–F14 
 | F0 | G0 | CURRENT + SSOT + cobertura + superseded | DONE_VERIFIED |
 | F1 | G1 | Trial/onboarding/tenant/unidade/usuários | PARTIAL |
 | F2 | G2 | Multi-tenancy/RBAC/step-up/isolamento | PARTIAL |
-| F3 | G3 | Atomicidade/idempotência/concorrência | PRODUCTION_GATE — execução ativa |
-| F4 | G4 | Persistência/infra/segredos/observabilidade-base | TARGET |
+| F3 | G3 | Atomicidade/idempotência/concorrência/runtime multi-process | DONE_VERIFIED no Gate G3; resíduos EXTERNAL_INFRASTRUCTURE/HUMAN_DECISION |
+| F4 | G4 | Infra/Cloud SQL/segredos/observabilidade-base | TARGET / EXTERNAL_INFRASTRUCTURE |
 | F5 | G5 | Billing/trial/planos/admin comercial | PARTIAL |
 | F6 | G6 | Brand Kit/assets/storage | TARGET |
 | F7 | G7 | Briefing→IA→policy→preview→approval | PARTIAL |
@@ -155,42 +155,35 @@ O commit de reconciliação ff1d6d95ec8f5ecdab807cb46e56fce0328d7d08 foi submeti
 
 **Governança:** PR #31 permanece Draft; nenhum merge, deploy ou alteração de produção.
 
-## 11. Estado F3 / G3 — WP-F03-01 — reconciliação de 01/10/2026
+## 11. Estado F3 / G3 — WP-F03-01 — fechamento técnico de 01/10/2026
 
-**Status:** `PRODUCTION_GATE`. Gate G3 permanece aberto.
+**Gate G3:** `DONE_VERIFIED`.  
+**Fase F3 residual:** `EXTERNAL_INFRASTRUCTURE` / `HUMAN_DECISION` somente para dependências operacionais de backup/restore/RPO/RTO que necessitam F4/F17.
 
-**CURRENT de entrada confirmado:** PR #31 Draft, branch `reconciliation/campaia-final-takeover`, HEAD `cb7a43107154d58df781cadd49639267799c128d`. Backend #145 e Frontend #83 estavam verdes antes desta tranche.
+**HEAD funcional certificado:** `18b98c16d19127df2c9f842a3c7b171e997add02`.
 
-**O que `cb7a431` realmente entregou:**
-- fronteira transacional explícita no backend SQLite de compatibilidade;
-- rollback coordenado das escritas RecordTable executadas dentro de `PersistentIdempotencyStore.execute()`;
-- SessionStore persistente/compartilhado;
-- step-up state persistente/compartilhado;
-- OAuth Pending State persistente, compartilhado e single-use;
-- dedupe de webhook persistente;
-- leitura live em parte dos repositories;
-- testes com duas instâncias da aplicação compartilhando o mesmo arquivo SQLite.
+**Entregue e comprovado:**
+- adapter PostgreSQL do runtime + `CAMPAIA_DATABASE_URL`;
+- migrations 001/002/003 versionadas, rollback completo e reaplicação em PostgreSQL 16;
+- schema CURRENT para os stores persistentes;
+- atomicidade multi-tabela protegida por unit-of-work;
+- advisory locks e serialização conservadora por tenant;
+- idempotência exactly-once entre conexões e processos;
+- crash/replay: processo terminado durante transação não deixa commit parcial; retry da mesma chave commita uma vez;
+- SessionStore, step-up, OAuth Pending State, idempotência, approvals e dedupe compartilhados;
+- duas instâncias/processos simultâneos compartilham session/OAuth/approval e preservam cross-tenant;
+- tenant isolation no banco por query scoping + ownership imutável + triggers PostgreSQL; RLS genérico foi avaliado e rejeitado para o CURRENT porque stores pré-tenant, em especial sessions, exigiriam bypasses especiais;
+- rate limiter do webhook Asaas compartilhado em PostgreSQL e provado entre processos; origem persistida somente como hash;
+- `validateCampaign` e `createApproval` agora seguem o DoD de mutação: Idempotency-Key, replay exato, contrato e Web sincronizados.
 
-**Lacunas confirmadas na auditoria de retomada:**
-- duas instâncias no mesmo processo/SQLite não equivalem a múltiplos processos/containers de produção;
-- não existe adapter PostgreSQL conectado ao runtime CURRENT;
-- o DDL histórico `backend/db/001_initial_schema.sql` cobre 7 estruturas, enquanto o runtime persistente CURRENT usa 14 stores; faltam no DDL histórico `credential_vault`, `organizations`, `sessions`, `step_up_states`, `oauth_pending_states`, `tenant_autonomy_updated_at` e `asaas_webhook_seen_events`;
-- métodos de `OrganizationRepository` ainda podiam consultar snapshots process-local obsoletos;
-- `create_invitation` materializava convite/auditoria antes da reserva idempotente;
-- `publish_campaign` persistia transições pré-publicação antes da unidade transacional;
-- rate limiter continua process-local;
-- subscriptions/charges do billing continuam em memória e pertencem ao fechamento de F5;
-- efeitos externos reais exigirão outbox/Saga/reconciliação; rollback SQL não desfaz uma chamada já confirmada por provider.
+**CI:** Backend #161 = `success` — 377 domínio + 279 API, pip-audit verde, AsyncAPI 24/24; job PostgreSQL 16 = 14/14 testes. Frontend #99 = `success` — npm audit 0, lint/typecheck/contracts/security/build verdes, 72 Vitest, 4 smoke E2E, 27 E2E cross-stack.
 
-**Tranche interna executada a partir desta reconciliação:** leituras organizacionais passam a reler o backing store; criação de convite coloca quota + criação + auditoria + idempotência na mesma unidade; validações críticas de IAM são refeitas dentro da transação; publicação move as transições locais para dentro da unidade transacional. Testes de regressão específicos acompanham a mudança.
+**Fronteira F3/F4/F17:** documento canônico `docs/F3_F4_F17_FRONTEIRA_RUNTIME_INFRA_20261001.md`.
+- F3 fecha runtime/código e o critério G3.
+- F4 provisiona Cloud SQL, rede/IAM, Secret Manager/KMS, migration gate, staging e backup/PITR gerenciado.
+- F17 ensaia restore e mede RPO/RTO.
+- valores-alvo de RPO/RTO permanecem `HUMAN_DECISION` porque o Cronograma não define números e eles alteram custo/risco operacional.
 
-**Fronteira F3 x F4 para evitar retrabalho:** F3 responde pelo adapter/runtime PostgreSQL, schema/migrations compatíveis com o CURRENT, unit-of-work/locks/concorrência, shared state e provas multi-processo. F4 responde pelo Cloud SQL/infra real, rede/IAM de serviço, Secret Manager/KMS, ambientes, CI/CD de migration, backup gerenciado e deploy repetível.
+**Blockers reais preservados:** Cloud SQL/staging/backup real não foram executados; nenhuma evidência externa foi inventada.
 
-**Ainda obrigatório para G3:** PostgreSQL real no runtime, migrations CURRENT + rollback, isolamento no banco, concorrência multi-process/multi-worker, crash/replay, rate limiting distribuído quando necessário, prova de 2+ processos/réplicas e estratégia de backup/restore/RPO/RTO coordenada com F4/F17.
-
-**Certificação desta tranche:** HEAD funcional/segurança `4e3d00782b6c49af2bf3d2a52f3ee82490290f5c`; Backend #148 = `success` (377 domínio + 260 API, pip-audit verde, AsyncAPI 24/24); Frontend #86 = `success` (npm audit 0 vulnerabilidades, lint/typecheck/contract/boundary/build verdes, 72 Vitest, 4 smoke E2E, 27 E2E cross-stack). Durante a certificação, o gate npm detectou vulnerabilidade critical no Next.js 16.3.5; o runtime foi atualizado para 16.3.8 e a suíte completa voltou a verde.
-
-**CURRENT após a tranche:** F3 continua `PRODUCTION_GATE`. As lacunas internas comprovadas de stale-read organizacional, convite fora da unidade idempotente e transições pré-publicação fora da transação foram corrigidas e testadas. PostgreSQL/migrations CURRENT, multi-processo/multi-worker, rate limiting distribuído e backup/restore continuam abertos; nenhuma dessas pendências foi promovida artificialmente.
-
-**Governança:** nenhuma promoção a `DONE_VERIFIED`; nenhum merge, deploy ou produção autorizado por esta atualização.
-
+**Governança:** PR #31 permanece Draft; nenhum merge, deploy ou produção foi executado.

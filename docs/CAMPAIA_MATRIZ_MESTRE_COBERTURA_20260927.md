@@ -10,8 +10,8 @@
 | WP-F00-01 | F0 | CURRENT/SSOT, matriz, superseded e tracker |
 | WP-F01-01 | F1 | Trial, onboarding, empresa/tenant, unidade e usuários |
 | WP-F02-01 | F2 | Sessão, tenancy, RBAC/ABAC, step-up e cross-tenant |
-| WP-F03-01 | F3 | Atomicidade, idempotência durável, concorrência/multi-worker |
-| WP-F04-01 | F4 | Postgres, infra, Secret Manager, outbox e observabilidade-base |
+| WP-F03-01 | F3 | PostgreSQL runtime, atomicidade, idempotência durável, tenant isolation, shared state e concorrência/multi-process |
+| WP-F04-01 | F4 | Cloud SQL/infra, Secret Manager, outbox e observabilidade-base |
 | WP-F05-01 | F5 | Planos, trial, assinatura, créditos/excedente, Asaas/admin |
 | WP-F06-01 | F6 | Brand Kit, uploads/assets, storage e isolamento |
 | WP-F07-01 | F7 | Briefing, estratégia, criativos, policy, preview e aprovação |
@@ -53,7 +53,7 @@
 | F6.1 Publicar Google | WP-F09-01 | F12 | TARGET |
 | F6.2 Publicar Meta | WP-F10-01 | F12 | TARGET |
 | F6.3 Click-to-WhatsApp | WP-F11-01 | F10/F12 | TARGET |
-| F6.4 Idempotência | WP-F03-01 | F9/F10/F11/F12 | PRODUCTION_GATE |
+| F6.4 Idempotência | WP-F03-01 | F9/F10/F11/F12 | PARTIAL — runtime F3 DONE_VERIFIED; providers reais pendentes |
 | F7.1 Dashboard | WP-F13-01 | F14 | TARGET |
 | F7.2 Métricas | WP-F13-01 | F9/F10/F11 | TARGET |
 | F7.3 Alertas orçamento | WP-F13-01 | F4/F17 | TARGET |
@@ -139,11 +139,32 @@ O estado permanece `PARTIAL`, não `DONE_VERIFIED`, porque a homologação do st
 
 ## 7. Reconciliação WP-F03-01 — 01/10/2026
 
-O CURRENT de F3 já contém uma primeira fronteira transacional e shared state sobre o backend SQLite de compatibilidade, mas isso não certifica PostgreSQL nem implantação horizontal. A auditoria do HEAD `cb7a431` identificou e separou três classes:
+**Gate G3:** `DONE_VERIFIED` no CURRENT técnico.
 
-- **corrigível internamente agora:** stale reads de organização, convite fora da unidade idempotente, validações IAM fora da transação e transições pré-publicação fora da unidade;
-- **`PRODUCTION_GATE`:** adapter PostgreSQL, schema/migrations CURRENT, locks/concorrência, multi-processo/multi-worker, crash/replay e prova de 2+ réplicas;
-- **F4/F17 / infraestrutura:** Cloud SQL provisionado, backup/restore gerenciado, RPO/RTO medidos, rede/secret manager e operação de ambiente.
+O runtime agora possui PostgreSQL real no CI, migrations versionadas/rollback, shared security state, idempotência transacional, locks multi-processo, crash/replay, tenant isolation no banco e rate limit distribuído.
 
-O DDL PostgreSQL histórico de 04/09 permanece evidência válida do que foi testado naquela data, mas é `PARTIAL/SUPERSEDED` como schema do CURRENT porque não cobre todos os stores adicionados posteriormente. G3 permanece aberto.
+A prova literal de G3 usa dois processos Python simultâneos apontando para PostgreSQL 16: sessão, OAuth state e approval criados por um processo são observados/consumidos pelo outro; lookup cross-tenant permanece fail-closed e revogação de sessão cruza processos.
 
+### Isolamento
+
+RLS foi avaliado. Para o CURRENT, a solução escolhida é mecanismo equivalente e explícito:
+- tenant predicate nas queries tenant-scoped;
+- `tenant_id` imutável para rows tenant-owned;
+- triggers PostgreSQL contra re-home;
+- negative path cross-tenant e raw SQL.
+`sessions` é exceção documentada ao trigger porque o lookup ocorre por ID opaco antes da seleção do vínculo ativo e a sessão pode alternar tenants legitimamente.
+
+### Rate limit
+
+O webhook público usa `PostgresFixedWindowRateLimiter` quando PostgreSQL está ativo. O limite é único entre réplicas/processos e a chave de origem é armazenada como hash.
+
+### Fronteira externa
+
+O Gate G3 está fechado, mas F3 mantém dependências operacionais explícitas:
+- Cloud SQL/ambientes/backup gerenciado -> `EXTERNAL_INFRASTRUCTURE`, F4;
+- restore e medição RPO/RTO -> `EXTERNAL_INFRASTRUCTURE`, F17;
+- valores-alvo de RPO/RTO -> `HUMAN_DECISION`.
+
+A separação completa está em `docs/F3_F4_F17_FRONTEIRA_RUNTIME_INFRA_20261001.md`.
+
+Nenhum merge, deploy, staging ou produção foi executado.
