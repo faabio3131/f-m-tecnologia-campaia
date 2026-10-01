@@ -1,0 +1,5 @@
+project_id                     = "REPLACE_WITH_PRODUCTION_PROJECT_ID"
+environment                    = "production"
+deployer_service_account_email = "REPLACE_WITH_BOOTSTRAP_OUTPUT"
+db_tier                        = "db-custom-2-4096"
+db_deletion_protection         = true
