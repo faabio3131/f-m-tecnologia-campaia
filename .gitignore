@@ -33,6 +33,5 @@ Thumbs.db
 **/.terraform/
 *.tfstate
 *.tfstate.*
-.terraform.lock.hcl
 gha-creds-*.json
 
