@@ -272,21 +272,33 @@ def _default_asaas_webhook_receiver() -> AsaasWebhookReceiver:
     return AsaasWebhookReceiver(token_resolver=lambda: os.environ.get("ASAAS_WEBHOOK_TOKEN"))
 
 
-def _default_vault_cipher() -> "CredentialCipher | None":
-    """Decisao do Diretor (27/09/2026, SaaS multi-tenant): sem `CAMPAIA_VAULT_KEY`
-    configurada, o cofre de credenciais fica indisponivel (None) -- nenhuma credencial
-    real de tenant pode ser guardada nesse estado, mas isso nao impede o resto do app de
-    rodar (mesma disciplina de `_default_ai_provider`/`_default_billing_gateway`: nunca
-    crashar a aplicacao inteira por falta de uma integracao externa opcional). A rota que
-    tentar guardar uma credencial real com o cofre indisponivel recebe `VaultKeyMissing`
-    explicito, nunca um None silencioso tratado como sucesso.
-    """
-    from campaia_core.credential_vault import CredentialCipher
+def _default_vault_cipher():
+    """Select the vault crypto backend without ever defaulting to a production root key.
 
+    F4 production/staging uses Google Cloud KMS envelope encryption. The legacy Fernet
+    environment key remains supported only for test/dev-local compatibility and is
+    explicitly rejected in staging/production.
+    """
+    env = _default_env()
+    kms_key_name = os.environ.get("CAMPAIA_VAULT_KMS_KEY_NAME")
     raw_key = os.environ.get("CAMPAIA_VAULT_KEY")
-    if not raw_key:
-        return None
-    return CredentialCipher.from_env_value(raw_key)
+
+    if kms_key_name:
+        from .kms_vault import KmsEnvelopeCredentialCipher
+
+        return KmsEnvelopeCredentialCipher(kms_key_name)
+
+    if raw_key:
+        if env not in DEV_AUTH_FIXTURE_ALLOWED_ENVS:
+            raise RuntimeError(
+                "CAMPAIA_VAULT_KEY legacy nao e permitido em staging/production. "
+                "Configure CAMPAIA_VAULT_KMS_KEY_NAME e use Cloud KMS envelope encryption."
+            )
+        from campaia_core.credential_vault import CredentialCipher
+
+        return CredentialCipher.from_env_value(raw_key)
+
+    return None
 
 
 def _default_ai_provider() -> AIProvider:
