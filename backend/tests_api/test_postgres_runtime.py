@@ -132,6 +132,27 @@ def _g3_state_reader(dsn, ready_event, done_event, ids, result_queue):
     done_event.set()
 
 
+def _g3_crash_holder(dsn, ready_event):
+    state = create_app(database_url=dsn, env="test").state.campaia
+
+    def operation():
+        state.audit.append(
+            tenant_id="demo-tenant",
+            actor="crashed-process",
+            action="G3_CRASH_REPLAY",
+            target="crash-key",
+        )
+        ready_event.set()
+        threading.Event().wait(timeout=60)
+        return {"unexpected": "survived"}
+
+    state.idempotency.execute(
+        "demo-tenant",
+        "http:g3:crash-replay",
+        operation,
+    )
+
+
 @unittest.skipUnless(DSN, "CAMPAIA_TEST_DATABASE_URL not configured")
 class PostgresRuntimeTests(unittest.TestCase):
     @classmethod
@@ -435,6 +456,55 @@ class PostgresRuntimeTests(unittest.TestCase):
         self.assertIsNone(state.sessions.get(ids[0]))
         self.assertIsNotNone(state.approvals.get("demo-tenant", ids[1]))
         self.assertIsNone(state.approvals.get("other-tenant", ids[1]))
+
+    def test_process_crash_rolls_back_and_same_key_retries_once(self) -> None:
+        ctx = multiprocessing.get_context("spawn")
+        ready_event = ctx.Event()
+        crashed = ctx.Process(
+            target=_g3_crash_holder,
+            args=(DSN, ready_event),
+        )
+        crashed.start()
+        self.assertTrue(ready_event.wait(timeout=10))
+        crashed.terminate()
+        crashed.join(timeout=15)
+        self.assertNotEqual(crashed.exitcode, 0)
+
+        state = create_app(database_url=DSN, env="test").state.campaia
+        self.assertIsNone(
+            state.idempotency.get("demo-tenant", "http:g3:crash-replay")
+        )
+        before = [
+            event
+            for event in state.audit.list_for_tenant("demo-tenant")
+            if event.action == "G3_CRASH_REPLAY"
+        ]
+        self.assertEqual(before, [])
+
+        def retry_operation():
+            state.audit.append(
+                tenant_id="demo-tenant",
+                actor="retry-process",
+                action="G3_CRASH_REPLAY",
+                target="crash-key",
+            )
+            return {"status": "committed"}
+
+        result, replay = state.idempotency.execute(
+            "demo-tenant",
+            "http:g3:crash-replay",
+            retry_operation,
+        )
+        self.assertEqual(result, {"status": "committed"})
+        self.assertFalse(replay)
+
+        after = [
+            event
+            for event in state.audit.list_for_tenant("demo-tenant")
+            if event.action == "G3_CRASH_REPLAY"
+        ]
+        self.assertEqual(len(after), 1)
+        self.assertEqual(after[0].actor, "retry-process")
 
     def test_rate_limiter_is_shared_across_independent_app_instances(self) -> None:
         a, b = self._states()
