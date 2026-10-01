@@ -115,7 +115,13 @@ export default function CampaignDetailPage() {
     setActionError(null);
     setBusy(true);
     try {
-      const result = await api.post<PolicyDecision>(`/campaigns/${campaignId}/validate`);
+      const result = await api.post<PolicyDecision>(
+        `/campaigns/${campaignId}/validate`,
+        undefined,
+        {
+          idempotencyKey: `campaign-validate-${campaignId}-${crypto.randomUUID()}`,
+        },
+      );
       setDecision(result);
       await loadCampaignAndPlan();
     } catch (err) {

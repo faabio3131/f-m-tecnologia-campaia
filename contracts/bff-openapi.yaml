@@ -802,6 +802,7 @@ paths:
       operationId: validateCampaign
       parameters:
         - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           description: Resultado da validacao
@@ -929,6 +930,8 @@ paths:
         POST /approvals/{id}/decision nao tinha nada para decidir. Este e' um criador
         minimo: nao produz nenhum efeito de dominio por si so.
       operationId: createApproval
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:

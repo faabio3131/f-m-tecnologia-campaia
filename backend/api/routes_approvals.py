@@ -40,38 +40,42 @@ async def list_approvals(request: Request) -> JSONResponse:
 
 
 async def create_approval(request: Request) -> JSONResponse:
-    """Not in the paraphrased contract's endpoint list, added as a minimal, clearly-
-    labeled deviation: the contract requires publish/budget-change/autonomy-change to
-    reference an approval "already on record", but specifies no endpoint that puts one on
-    record in the first place. Without this, /approvals/{id}/decision has nothing to act
-    on and the required approval-gated flows are untestable end-to-end. This is a thin
-    creator for a PENDING ApprovalRequest row; it performs no domain mutation itself.
-    """
+    """Create one PENDING ApprovalRequest with exact idempotent replay."""
     fixture, state, _principal = _authorize(request, Permission.CAMPAIGN_CREATE)
+    idem_key = require_idempotency_key(request)
     body = await parse_body(request, ApprovalCreateRequest)
+    key = f"http:create_approval:{idem_key}"
 
-    campaign = state.campaigns.get(fixture.tenant_id, body.campaign_id)
-    if campaign is None:
-        raise ApiError("NOT_FOUND", "campaign_id not found.")
+    existing = state.idempotency.get(fixture.tenant_id, key)
+    if existing is not None:
+        return JSONResponse(existing.result, status_code=201)
 
-    approval = state.approvals.create(
-        fixture.tenant_id,
-        campaign_id=body.campaign_id,
-        kind=body.kind,
-        requested_by=fixture.user_id,
-        amount=body.amount,
-        requires_dual_approval=body.requires_dual_approval,
-        # Contract's ApprovalRequest.plan_version (achado 9): captured from the related
-        # campaign's CURRENT plan_version at request time, not looked up live later.
-        plan_version=campaign.plan_version,
+    def _do_create():
+        campaign = state.campaigns.get(fixture.tenant_id, body.campaign_id)
+        if campaign is None:
+            raise ApiError("NOT_FOUND", "campaign_id not found.")
+
+        approval = state.approvals.create(
+            fixture.tenant_id,
+            campaign_id=body.campaign_id,
+            kind=body.kind,
+            requested_by=fixture.user_id,
+            amount=body.amount,
+            requires_dual_approval=body.requires_dual_approval,
+            plan_version=campaign.plan_version,
+        )
+        state.audit.append(
+            tenant_id=fixture.tenant_id,
+            actor=fixture.user_id,
+            action="APPROVAL_REQUEST_CREATE",
+            target=approval.approval_id,
+        )
+        return serialize_approval(approval).model_dump(mode="json")
+
+    result, _replay = state.idempotency.execute(
+        fixture.tenant_id, key, _do_create
     )
-    state.audit.append(
-        tenant_id=fixture.tenant_id,
-        actor=fixture.user_id,
-        action="APPROVAL_REQUEST_CREATE",
-        target=approval.approval_id,
-    )
-    return json_response(serialize_approval(approval), status_code=201)
+    return JSONResponse(result, status_code=201)
 
 
 async def decide_approval(request: Request) -> JSONResponse:

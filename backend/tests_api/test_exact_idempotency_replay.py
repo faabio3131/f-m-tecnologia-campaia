@@ -14,7 +14,15 @@ from __future__ import annotations
 
 import unittest
 
-from tests_api.test_helpers import OWNER, idem, make_client, publish_ready_campaign, with_step_up
+from tests_api.test_helpers import (
+    OWNER,
+    create_campaign,
+    idem,
+    make_client,
+    publish_ready_campaign,
+    unique_idem,
+    with_step_up,
+)
 
 
 def _approve_budget_change(client, cid: str, new_daily_cap: str, headers=OWNER):
@@ -80,6 +88,66 @@ class TestExactIdempotencyReplay(unittest.TestCase):
         self.assertEqual(replay.status_code, 202, replay.text)
         self.assertEqual(replay.json(), first.json())
         self.assertEqual(replay.json()["budget"]["daily_cap"], "550")
+
+
+    def test_validate_campaign_replay_is_exact_and_audit_is_not_duplicated(self):
+        client = make_client()
+        camp = create_campaign(client, OWNER)
+        cid = camp["id"]
+        plan = client.post(
+            f"/campaigns/{cid}/plan/regenerate",
+            headers={**OWNER, **unique_idem()},
+        )
+        self.assertEqual(plan.status_code, 202, plan.text)
+
+        key = idem("validate-exact-replay")
+        first = client.post(
+            f"/campaigns/{cid}/validate",
+            headers={**OWNER, **key},
+        )
+        second = client.post(
+            f"/campaigns/{cid}/validate",
+            headers={**OWNER, **key},
+        )
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(second.status_code, 200, second.text)
+        self.assertEqual(second.json(), first.json())
+
+        events = [
+            event
+            for event in client.app.state.campaia.audit.list_for_tenant("demo-tenant")
+            if event.action == "CAMPAIGN_VALIDATE" and event.target == cid
+        ]
+        self.assertEqual(len(events), 1)
+
+    def test_create_approval_replay_returns_same_request_once(self):
+        client = make_client()
+        camp = create_campaign(client, OWNER)
+        cid = camp["id"]
+        key = idem("approval-create-exact-replay")
+        payload = {"campaign_id": cid, "kind": "PUBLISH"}
+
+        first = client.post(
+            "/approvals",
+            headers={**OWNER, **key},
+            json=payload,
+        )
+        second = client.post(
+            "/approvals",
+            headers={**OWNER, **key},
+            json=payload,
+        )
+        self.assertEqual(first.status_code, 201, first.text)
+        self.assertEqual(second.status_code, 201, second.text)
+        self.assertEqual(second.json(), first.json())
+
+        events = [
+            event
+            for event in client.app.state.campaia.audit.list_for_tenant("demo-tenant")
+            if event.action == "APPROVAL_REQUEST_CREATE"
+            and event.target == first.json()["id"]
+        ]
+        self.assertEqual(len(events), 1)
 
 
 if __name__ == "__main__":  # pragma: no cover

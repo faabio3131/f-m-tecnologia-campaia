@@ -248,56 +248,74 @@ async def regenerate_plan(request: Request) -> JSONResponse:
 
 async def validate_campaign(request: Request) -> JSONResponse:
     fixture, state, principal = _authorize(request, Permission.CAMPAIGN_EDIT)
-    record = _get_campaign_or_404(
-        state, fixture.tenant_id, request.path_params["campaignId"], principal=principal
-    )
+    idem_key = require_idempotency_key(request)
+    campaign_id = request.path_params["campaignId"]
+    key = f"http:validate_campaign:{idem_key}"
 
-    if record.campaign.state in (CampaignState.DRAFT,):
-        # Advance the local state machine through the pre-validation states so /validate
-        # reflects "this campaign is ready to be judged", mirroring the campaign lifecycle
-        # documented in states.py (DRAFT -> STRATEGY_READY -> ASSETS_READY -> VALIDATED).
-        record.campaign.transition_to(CampaignState.STRATEGY_READY, reason="validate:auto")
-    if record.campaign.state is CampaignState.STRATEGY_READY:
-        record.campaign.transition_to(CampaignState.ASSETS_READY, reason="validate:auto")
+    existing = state.idempotency.get(fixture.tenant_id, key)
+    if existing is not None:
+        return JSONResponse(existing.result)
 
-    channel_support = {
-        ch: state.capabilities.is_supported(
-            "SIMULATOR", f"PUBLISH:{ch}", country="BR", api_version="sim-1"
+    def _do_validate():
+        record = _get_campaign_or_404(
+            state, fixture.tenant_id, campaign_id, principal=principal
         )
-        for ch in record.planned_channels
-    }
 
-    engine = PolicyEngine()
-    req = PolicyRequest(
-        tenant_id=fixture.tenant_id,
-        campaign_id=record.campaign_id,
-        plan_version=record.plan_version,
-        action=ActionKind.FIRST_PUBLISH,
-        autonomy=record.autonomy,
-        budget=record.budget,
-        # Validate against the daily cap, not the total budget: PolicyEngine checks
-        # requested_amount against both available_total and available_today (budget.py),
-        # and the amount that will actually be committed on day one of publishing is
-        # bounded by the daily cap, not the full campaign lifetime budget.
-        requested_amount=Decimal(str(record.brief.get("daily_cap", "0"))),
-        channel_support=channel_support,
-        brand_restrictions=tuple(),
-        plan_text=str(record.plan.get("output", "")) if record.plan else "",
+        if record.campaign.state is CampaignState.DRAFT:
+            record.campaign.transition_to(
+                CampaignState.STRATEGY_READY, reason="validate:auto"
+            )
+        if record.campaign.state is CampaignState.STRATEGY_READY:
+            record.campaign.transition_to(
+                CampaignState.ASSETS_READY, reason="validate:auto"
+            )
+
+        channel_support = {
+            ch: state.capabilities.is_supported(
+                "SIMULATOR",
+                f"PUBLISH:{ch}",
+                country="BR",
+                api_version="sim-1",
+            )
+            for ch in record.planned_channels
+        }
+        engine = PolicyEngine()
+        req = PolicyRequest(
+            tenant_id=fixture.tenant_id,
+            campaign_id=record.campaign_id,
+            plan_version=record.plan_version,
+            action=ActionKind.FIRST_PUBLISH,
+            autonomy=record.autonomy,
+            budget=record.budget,
+            requested_amount=Decimal(str(record.brief.get("daily_cap", "0"))),
+            channel_support=channel_support,
+            brand_restrictions=tuple(),
+            plan_text=str(record.plan.get("output", "")) if record.plan else "",
+        )
+        decision = engine.evaluate(req, now=datetime.now(timezone.utc))
+        record.last_policy_decision = decision
+
+        if (
+            decision.outcome.value == "APPROVABLE"
+            and record.campaign.state is CampaignState.ASSETS_READY
+        ):
+            record.campaign.transition_to(
+                CampaignState.VALIDATED, reason="validate:approvable"
+            )
+
+        state.audit.append(
+            tenant_id=fixture.tenant_id,
+            actor=fixture.user_id,
+            action="CAMPAIGN_VALIDATE",
+            target=record.campaign_id,
+            policy_decision_id=decision.policy_decision_id,
+        )
+        return serialize_policy_decision(decision).model_dump(mode="json")
+
+    result, _replay = state.idempotency.execute(
+        fixture.tenant_id, key, _do_validate
     )
-    decision = engine.evaluate(req, now=datetime.now(timezone.utc))
-    record.last_policy_decision = decision
-
-    if decision.outcome.value == "APPROVABLE" and record.campaign.state is CampaignState.ASSETS_READY:
-        record.campaign.transition_to(CampaignState.VALIDATED, reason="validate:approvable")
-
-    state.audit.append(
-        tenant_id=fixture.tenant_id,
-        actor=fixture.user_id,
-        action="CAMPAIGN_VALIDATE",
-        target=record.campaign_id,
-        policy_decision_id=decision.policy_decision_id,
-    )
-    return json_response(serialize_policy_decision(decision))
+    return JSONResponse(result)
 
 
 # --------------------------------------------------------------------------- publish

@@ -2176,7 +2176,10 @@ export interface operations {
     validateCampaign: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
             path: {
                 campaignId: components["parameters"]["CampaignId"];
             };
@@ -2344,7 +2347,10 @@ export interface operations {
     createApproval: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
             path?: never;
             cookie?: never;
         };
