@@ -368,7 +368,9 @@ class TestPublishRequiresPolicyAndApproval(unittest.TestCase):
         client.post(f"/campaigns/{cid}/plan/regenerate", headers={**OWNER, **unique_idem()})
         decision = client.post(f"/campaigns/{cid}/validate", headers={**OWNER, **unique_idem()}).json()
         approval = client.post(
-            "/approvals", headers=OWNER, json={"campaign_id": cid, "kind": "PUBLISH"}
+            "/approvals",
+            headers={**OWNER, **unique_idem()},
+            json={"campaign_id": cid, "kind": "PUBLISH"},
         ).json()
         # Never decided -- still PENDING.
         headers = {**with_step_up(OWNER), **idem("publish-pending-1")}
