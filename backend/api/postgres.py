@@ -12,6 +12,8 @@ schema implicitly; deployment automation must run migrations before promotion.
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import datetime, timedelta
+import hashlib
 from pathlib import Path
 import re
 import threading
@@ -246,6 +248,71 @@ class PostgresDatabase:
                 self._local.transaction_depth = 0
 
 
+class PostgresFixedWindowRateLimiter:
+    """Fixed-window limiter shared by every replica through PostgreSQL.
+
+    The source key (today the webhook origin address) is SHA-256 hashed before storage so
+    the runtime database never persists the raw address merely for rate limiting.
+    """
+
+    def __init__(
+        self,
+        database: PostgresDatabase,
+        *,
+        scope: str,
+        max_requests: int,
+        window: timedelta,
+    ) -> None:
+        if not scope:
+            raise ValueError("rate-limit scope is required")
+        self._database = database
+        self._scope = scope
+        self._max_requests = max_requests
+        self._window = window
+
+    @staticmethod
+    def _hash_key(key: str) -> str:
+        return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+    def allow(self, key: str, *, now: datetime) -> bool:
+        if not key:
+            return False
+        key_hash = self._hash_key(key)
+        with self._database.transaction():
+            self._database.lock_key(
+                f"rate-limit:{self._scope}:{key_hash}"
+            )
+            with self._database.connection() as conn:
+                row = conn.execute(
+                    f"SELECT window_started_at, request_count "
+                    f"FROM {RUNTIME_SCHEMA}.rate_limit_windows "
+                    "WHERE scope = %s AND key_hash = %s",
+                    (self._scope, key_hash),
+                ).fetchone()
+
+                if row is None or (now - row[0]) >= self._window:
+                    count = 1
+                    conn.execute(
+                        f"INSERT INTO {RUNTIME_SCHEMA}.rate_limit_windows "
+                        "(scope, key_hash, window_started_at, request_count, updated_at) "
+                        "VALUES (%s, %s, %s, %s, %s) "
+                        "ON CONFLICT (scope, key_hash) DO UPDATE SET "
+                        "window_started_at = EXCLUDED.window_started_at, "
+                        "request_count = EXCLUDED.request_count, "
+                        "updated_at = EXCLUDED.updated_at",
+                        (self._scope, key_hash, now, count, now),
+                    )
+                else:
+                    count = int(row[1]) + 1
+                    conn.execute(
+                        f"UPDATE {RUNTIME_SCHEMA}.rate_limit_windows "
+                        "SET request_count = %s, updated_at = %s "
+                        "WHERE scope = %s AND key_hash = %s",
+                        (count, now, self._scope, key_hash),
+                    )
+        return count <= self._max_requests
+
+
 class PostgresMigrationRunner:
     """Versioned up/down migration runner used by CI and deployment automation."""
 
@@ -330,6 +397,7 @@ class PostgresMigrationRunner:
 
 __all__ = [
     "PostgresDatabase",
+    "PostgresFixedWindowRateLimiter",
     "PostgresMigrationRunner",
     "PostgresRecordTable",
     "RUNTIME_SCHEMA",

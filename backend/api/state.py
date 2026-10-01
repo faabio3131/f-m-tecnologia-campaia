@@ -524,6 +524,15 @@ class AppState:
                     self.db.table("asaas_webhook_seen_events")
                 ),
             )
+            if self.database_url is not None:
+                from .postgres import PostgresFixedWindowRateLimiter
+
+                self.asaas_webhook_rate_limiter = PostgresFixedWindowRateLimiter(
+                    self.db,
+                    scope="asaas-webhook",
+                    max_requests=ASAAS_WEBHOOK_RATE_LIMIT_MAX_REQUESTS,
+                    window=ASAAS_WEBHOOK_RATE_LIMIT_WINDOW,
+                )
             # capabilities and dev/test tokens remain startup fixtures, never persisted.
 
         # The identity directory must be created AFTER persistence is selected so the

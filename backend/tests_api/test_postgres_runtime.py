@@ -13,13 +13,14 @@ import queue
 import threading
 import time
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import psycopg
 
 from api.main import create_app
 from api.postgres import (
     PostgresDatabase,
+    PostgresFixedWindowRateLimiter,
     PostgresMigrationRunner,
     RUNTIME_SCHEMA,
     RUNTIME_TABLES,
@@ -55,6 +56,26 @@ def _process_idempotency_worker(dsn, label, start_event, result_queue, executed_
         result_queue.put(("ok", result, replay))
     except Exception as exc:  # pragma: no cover - surfaced to parent assertion
         result_queue.put(("error", label, repr(exc)))
+
+
+def _process_rate_limit_worker(
+    dsn, label, start_event, result_queue, attempts, now_iso
+):
+    limiter = PostgresFixedWindowRateLimiter(
+        PostgresDatabase(dsn),
+        scope="process-rate-limit-test",
+        max_requests=5,
+        window=timedelta(minutes=1),
+    )
+    now = datetime.fromisoformat(now_iso)
+    if not start_event.wait(timeout=10):
+        result_queue.put(("error", label, "start timeout"))
+        return
+    accepted = sum(
+        1 for _ in range(attempts)
+        if limiter.allow("203.0.113.50", now=now)
+    )
+    result_queue.put(("ok", label, accepted))
 
 
 @unittest.skipUnless(DSN, "CAMPAIA_TEST_DATABASE_URL not configured")
@@ -96,7 +117,11 @@ class PostgresRuntimeTests(unittest.TestCase):
     def test_00_migration_up_down_up_is_reversible_and_covers_current_stores(self) -> None:
         self.assertEqual(
             set(self.runner.applied_versions()),
-            {"001_runtime_store_schema", "002_tenant_isolation_guard"},
+            {
+                "001_runtime_store_schema",
+                "002_tenant_isolation_guard",
+                "003_distributed_rate_limit",
+            },
         )
         self.assertTrue(RUNTIME_TABLES.issubset(self._runtime_tables()))
 
@@ -315,6 +340,53 @@ class PostgresRuntimeTests(unittest.TestCase):
             if event.action == "PG_PROCESS_EXACTLY_ONCE"
         ]
         self.assertEqual(len(events), 1)
+
+    def test_rate_limiter_is_shared_across_independent_app_instances(self) -> None:
+        a, b = self._states()
+        now = datetime.now(timezone.utc)
+        accepted = 0
+        for index in range(61):
+            limiter = (
+                a.asaas_webhook_rate_limiter
+                if index % 2 == 0
+                else b.asaas_webhook_rate_limiter
+            )
+            accepted += int(limiter.allow("198.51.100.24", now=now))
+        self.assertEqual(accepted, 60)
+
+        with psycopg.connect(DSN) as conn:
+            rows = conn.execute(
+                f"SELECT key_hash, request_count "
+                f"FROM {RUNTIME_SCHEMA}.rate_limit_windows "
+                "WHERE scope = %s",
+                ("asaas-webhook",),
+            ).fetchall()
+        self.assertEqual(len(rows), 1)
+        self.assertNotEqual(rows[0][0], "198.51.100.24")
+        self.assertEqual(rows[0][1], 61)
+
+    def test_rate_limiter_is_global_across_spawned_processes(self) -> None:
+        ctx = multiprocessing.get_context("spawn")
+        start_event = ctx.Event()
+        result_queue = ctx.Queue()
+        now_iso = datetime.now(timezone.utc).isoformat()
+        processes = [
+            ctx.Process(
+                target=_process_rate_limit_worker,
+                args=(DSN, label, start_event, result_queue, 4, now_iso),
+            )
+            for label in ("rate-a", "rate-b")
+        ]
+        for process in processes:
+            process.start()
+        start_event.set()
+        for process in processes:
+            process.join(timeout=15)
+            self.assertEqual(process.exitcode, 0)
+
+        results = [result_queue.get(timeout=5) for _ in processes]
+        self.assertTrue(all(item[0] == "ok" for item in results), results)
+        self.assertEqual(sum(item[2] for item in results), 5)
 
     def test_database_ping_and_table_contract_are_real_postgres(self) -> None:
         db = PostgresDatabase(DSN)
