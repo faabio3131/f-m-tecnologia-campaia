@@ -35,8 +35,8 @@ class RuntimeSharedStateTests(unittest.TestCase):
             )
             app.state.campaia.allowed_origins = frozenset({ORIGIN})
         return (
-            TestClient(a, base_url=ORIGIN),
-            TestClient(b, base_url=ORIGIN),
+            TestClient(a, base_url=ORIGIN, raise_server_exceptions=False),
+            TestClient(b, base_url=ORIGIN, raise_server_exceptions=False),
         )
 
     def test_session_created_on_replica_a_is_readable_and_revocable_on_b(self) -> None:
