@@ -34,17 +34,29 @@ Preencher:
 - `environment = "staging"`;
 - `state_bucket_name`.
 
-Executar:
+Executar o primeiro bootstrap com state local somente até o bucket remoto existir:
 
 ```bash
-terraform -chdir=infra/bootstrap init
-terraform -chdir=infra/bootstrap plan
-terraform -chdir=infra/bootstrap apply
+terraform -chdir=infra/bootstrap init -backend=false
+terraform -chdir=infra/bootstrap plan -out=bootstrap.plan
+terraform -chdir=infra/bootstrap apply bootstrap.plan
 terraform -chdir=infra/bootstrap output
 ```
 
+Imediatamente após o bucket existir, migrar o próprio state do bootstrap para GCS:
+
+```bash
+terraform -chdir=infra/bootstrap init -migrate-state -force-copy \
+  -backend-config="bucket=<STATE_BUCKET>" \
+  -backend-config="prefix=campaia/bootstrap/staging"
+terraform -chdir=infra/bootstrap state list
+```
+
+Não prosseguir para a foundation se a migração do state do bootstrap falhar. O arquivo local `terraform.tfstate` deixa de ser a fonte de verdade após a migração.
+
 Evidência obrigatória:
 - bucket de state criado;
+- state do bootstrap presente no backend GCS;
 - WIF provider criado;
 - deployer service account criada;
 - nenhum JSON key gerado.
