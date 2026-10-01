@@ -372,3 +372,70 @@ Status:
 - F4: `PARTIAL`;
 - preparação interna: `DONE_VERIFIED` somente após a nova CI;
 - G4: `EXTERNAL_INFRASTRUCTURE` até o staging econômico real completar o gate.
+
+
+## 18. Evidência externa real — staging econômico — 01/10/2026
+
+Após a atualização da estratégia econômica, foram executadas e verificadas as seguintes
+etapas externas no projeto GCP `campaia-staging`:
+
+- bootstrap Terraform real aplicado e reconciliado em backend GCS remoto;
+- state bucket regional com public access prevention, uniform bucket-level access e versionamento;
+- Workload Identity Pool/Provider e deploy service account reais;
+- foundation econômica real aplicada com Direct VPC egress, sem Serverless VPC Access Connector;
+- drift check da foundation: `No changes`, `TERRAFORM_EXIT_CODE=0`;
+- Cloud SQL PostgreSQL 16 privado criado;
+- KMS, Secret Manager, Storage, Pub/Sub, Artifact Registry, service accounts e IAM criados;
+- usuário PostgreSQL `campaia_app` criado;
+- secret `campaia-staging-database-url` com versão habilitada no Secret Manager;
+- GitHub Environment `staging` criado com variáveis não secretas de infraestrutura;
+- `identitytoolkit.googleapis.com` incorporada à foundation Terraform e aplicada;
+- Identity Platform inicializado no projeto;
+- Browser API key criada automaticamente pelo Firebase/Identity Platform e registrada como
+  `NEXT_PUBLIC_IDENTITY_PLATFORM_PUBLIC_API` no Environment `staging`;
+- OAuth client Web `CampaIA Staging Web` criado no Google Auth Platform;
+- provider `google.com` do Identity Platform verificado com `enabled=true`,
+  `clientId` presente e `hasClientSecret=true`;
+- origem Cloud Run staging adicionada a `authorizedDomains` e verificada com
+  `domainPresent=true`;
+- `NEXT_PUBLIC_GOOGLE_IDENTITY_CLIENT_ID` registrada no GitHub Environment;
+- o Diretor informou que adicionou o usuário de teste do OAuth; a prova funcional desse
+  usuário ocorrerá no login real do staging.
+
+Nenhum Client Secret foi versionado no repositório, no Terraform ou em documentação.
+O Client Secret foi usado somente na configuração do provider e removido da sessão shell
+após a operação.
+
+### CURRENT reconciliado
+
+- HEAD de código antes desta atualização documental:
+  `784cd8d8c1c468b65be43a19e88fa7f0ef5ba272`;
+- Backend #180 = `success`;
+- Frontend #118 = `success`;
+- F4 Platform CI #14 = `success`;
+- PR #31 continua Draft, aberta, mergeable e não mergeada;
+- `main` ainda não contém o workflow de release;
+- o WIF continua corretamente restrito a `refs/heads/main` + Environment correspondente.
+
+### Blockers restantes para G4
+
+Restam, no mínimo:
+
+1. revisão final da PR #31 para promoção à `main`;
+2. autorização expressa do Diretor para merge;
+3. merge sem regressão e CI da `main` verde;
+4. primeiro release real de staging via GitHub OIDC;
+5. migration Job real concluído com sucesso;
+6. backend `/health/ready` real = 200;
+7. Web real = HTTP success;
+8. login Google real do usuário de teste;
+9. evidência de backup/PITR do Cloud SQL real;
+10. ensaio real de rollback de revisão de aplicação;
+11. hibernação controlada do Cloud SQL após a janela de homologação.
+
+Status permanece:
+- F4: `PARTIAL`;
+- G4: `EXTERNAL_INFRASTRUCTURE`.
+
+A infraestrutura base real já existe; o Gate não é promovido antes do release, smoke,
+login e rollback reais.
