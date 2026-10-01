@@ -10,6 +10,8 @@ so this app mirrors the routing/response shape a FastAPI app would have.
 
 from __future__ import annotations
 
+import os
+
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -180,20 +182,22 @@ exception_handlers = {
 }
 
 
-def create_app(db_path: str | None = None, env: str | None = None) -> Starlette:
-    """``db_path=None`` (the default) is pure in-memory state, byte-for-byte identical to
-    this app before persistence existed -- every pre-existing test relies on that. Passing
-    a real path backs campaigns, approvals, connections, brand profiles, the audit log,
-    idempotency records, and tenant autonomy settings with a SQLite file at that path (see
-    api/db.py and api/state.py's AppState.__post_init__), so state survives a process
-    restart when the same path is reused.
+def create_app(
+    db_path: str | None = None,
+    env: str | None = None,
+    database_url: str | None = None,
+) -> Starlette:
+    """Create the BFF with ephemeral, SQLite, or PostgreSQL persistence.
 
-    ``env=None`` (the default) lets `AppState` read `CAMPAIA_ENV` itself, defaulting to
-    the fail-closed "production" value (item 1.3/WP-02: no dev auth fixture). Test/local
-    dev call sites pass ``env="test"``/``"dev-local"`` explicitly.
+    Production selects PostgreSQL with CAMPAIA_DATABASE_URL. The application never
+    auto-creates its PostgreSQL schema; deployment automation must run versioned
+    migrations before starting the new revision.
     """
+    if database_url is None:
+        database_url = os.environ.get("CAMPAIA_DATABASE_URL")
+
     app = Starlette(routes=routes, exception_handlers=exception_handlers)
-    kwargs = {"db_path": db_path}
+    kwargs = {"db_path": db_path, "database_url": database_url}
     if env is not None:
         kwargs["env"] = env
     app.state.campaia = AppState(**kwargs)

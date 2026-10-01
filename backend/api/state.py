@@ -359,6 +359,8 @@ class AppState:
     #: the ephemeral defaults wholesale instead, which is also what keeps this field's
     #: presence a no-op for every pre-existing (persistence-unaware) caller of AppState().
     db_path: str | None = None
+    #: F3 production adapter. SQLite remains a compatibility backend for local/test use.
+    database_url: str | None = None
 
     #: Item 1.3/WP-02 (24/09/2026). "production" (o default quando a variavel de ambiente
     #: nao esta setada) e o ambiente mais restritivo -- nunca populado com fixture de auth
@@ -467,19 +469,27 @@ class AppState:
                 f"fixture de auth nunca pode ficar disponivel em preview/staging/produção, "
                 f"mesmo por engano de configuracao."
             )
-        #: Handle to the open SQLite connection when db_path is set, else None. Not a
-        #: dataclass field (nothing outside this method needs to construct one) -- kept
-        #: only so callers that DO want to close it explicitly (see tests_api's
-        #: teardown_client, and the reference persistence tests) have somewhere to reach
-        #: it via app.state.campaia.db, and so __del__ on the Database can run its
-        #: best-effort close when this AppState (and everything holding its repositories)
-        #: is garbage collected.
+        # Exactly one persistent backend may be active.
+        if self.db_path is not None and self.database_url is not None:
+            raise RuntimeError(
+                "Configure only one persistence backend: db_path or database_url."
+            )
+
         self.db = None
         self._persistent_step_up_store = None
         self._persistent_oauth_state_store = None
-        if self.db_path is not None:
+
+        if self.database_url is not None:
+            from .postgres import PostgresDatabase
+
+            self.db = PostgresDatabase(self.database_url)
+        elif self.db_path is not None:
+            from .db import Database
+
+            self.db = Database(self.db_path)
+
+        if self.db is not None:
             from .db import (
-                Database,
                 PersistentIdempotencyStore,
                 PersistentSeenEventStore,
                 PersistentTenantAutonomy,
@@ -487,13 +497,6 @@ class AppState:
             from .persistent_state import PersistentOAuthStateStore, PersistentStepUpStore
             from .session import PersistentSessionStore
 
-            self.db = Database(self.db_path)
-            # Every field replaced below is a plain in-memory default_factory value at
-            # this point (dataclass field defaults always run before __post_init__ and
-            # can't see db_path) -- swapping them out here, before anything has read or
-            # written through them, is what makes db_path=None (the default) leave this
-            # method a no-op past this point and every existing caller of AppState()
-            # completely unaffected.
             self.brand_profiles = BrandProfileRepository(self.db.table("brand_profiles"))
             self.connections = ConnectionRepository(self.db.table("connections"))
             self.vault = VaultRepository(self.db.table("credential_vault"))
@@ -509,22 +512,19 @@ class AppState:
             self._persistent_oauth_state_store = PersistentOAuthStateStore(
                 self.db.table("oauth_pending_states")
             )
-            self.tenant_autonomy = PersistentTenantAutonomy(self.db.table("tenant_autonomy"))
+            self.tenant_autonomy = PersistentTenantAutonomy(
+                self.db.table("tenant_autonomy")
+            )
             self.tenant_autonomy_updated_at = PersistentTenantAutonomy(
                 self.db.table("tenant_autonomy_updated_at")
             )
-            # Item 1.1 do cronograma mestre (24/09/2026): o dedupe do webhook do Asaas
-            # tambem precisa sobreviver a um reinicio de processo entre duas entregas do
-            # mesmo evento -- token_resolver preservado do factory default, so o seen_store
-            # troca para a implementacao persistida.
             self.asaas_webhook = AsaasWebhookReceiver(
                 token_resolver=self.asaas_webhook.token_resolver,
-                seen_store=PersistentSeenEventStore(self.db.table("asaas_webhook_seen_events")),
+                seen_store=PersistentSeenEventStore(
+                    self.db.table("asaas_webhook_seen_events")
+                ),
             )
-            # capabilities and tokens are deliberately NOT persisted: both are
-            # process-startup fixture/seed data (a hardcoded Capability Matrix and a
-            # hardcoded dev bearer-token map), never mutated by any route handler, so
-            # there is nothing about them a restart could lose.
+            # capabilities and dev/test tokens remain startup fixtures, never persisted.
 
         # The identity directory must be created AFTER persistence is selected so the
         # commercial directory observes the final OrganizationRepository instance.

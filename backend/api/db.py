@@ -390,6 +390,9 @@ class RecordTable:
     def transaction(self):
         return self._database.transaction()
 
+    def lock_key(self, key: str) -> None:
+        self._database.lock_key(key)
+
     def put(self, id_: str, tenant_id: str, obj: Any) -> None:
         payload = json.dumps(encode(obj))
         with self._lock:
@@ -475,6 +478,11 @@ class Database:
                     self._conn.commit()
             finally:
                 self._local.transaction_depth = depth
+
+    def lock_key(self, key: str) -> None:
+        # BEGIN IMMEDIATE and the process-wide RLock already serialize SQLite writers.
+        if not self.in_transaction:
+            raise RuntimeError("lock_key requires an active SQLite transaction")
 
     def table(self, name: str) -> RecordTable:
         return RecordTable(self, name)
@@ -576,13 +584,15 @@ class PersistentIdempotencyStore:
         # RecordTable mutation performed by operation(), audit writes and result storage.
         # A raised exception rolls back all durable effects.
         with self._table.transaction():
+            composite_id = self._composite_id(tenant_id, idempotency_key)
+            self._table.lock_key(composite_id)
             existing = self.get(tenant_id, idempotency_key)
             if existing is not None:
                 return existing.result, True
 
             result = operation()
             self._table.put(
-                self._composite_id(tenant_id, idempotency_key),
+                composite_id,
                 tenant_id,
                 {
                     "tenant_id": tenant_id,
@@ -622,6 +632,7 @@ class PersistentSeenEventStore:
         # F3: atomic get+put. Concurrent deliveries on separate SQLite connections are
         # serialized by BEGIN IMMEDIATE; PostgreSQL uses the same store contract.
         with self._table.transaction():
+            self._table.lock_key(key)
             if self._table.get(key) is not None:
                 return False
             self._table.put(
