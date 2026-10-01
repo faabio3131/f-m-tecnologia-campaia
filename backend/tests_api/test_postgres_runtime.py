@@ -78,6 +78,60 @@ def _process_rate_limit_worker(
     result_queue.put(("ok", label, accepted))
 
 
+def _g3_state_writer(dsn, ready_event, done_event, ids_queue):
+    state = create_app(database_url=dsn, env="test").state.campaia
+    principal = state.tokens["demo-owner-token"]
+    now = datetime.now(timezone.utc)
+    session = state.sessions.create(
+        principal,
+        now=now,
+        available_principals=(principal,),
+        subject="g3-two-process-subject",
+    )
+    state.start_oauth_state(
+        "g3-two-process-oauth",
+        tenant_id="demo-tenant",
+        provider="GOOGLE_ADS",
+        now=now,
+        user_id=principal.user_id,
+        session_key=f"session:{session.session_id}",
+        step_up_verified_at=now,
+    )
+    approval = state.approvals.create(
+        "demo-tenant",
+        campaign_id="g3-process-campaign",
+        kind="PUBLISH",
+        requested_by=principal.user_id,
+        amount=None,
+        requires_dual_approval=False,
+        plan_version=1,
+    )
+    ids_queue.put((session.session_id, approval.approval_id, now.isoformat()))
+    ready_event.set()
+    done_event.wait(timeout=15)
+
+
+def _g3_state_reader(dsn, ready_event, done_event, ids, result_queue):
+    if not ready_event.wait(timeout=10):
+        result_queue.put(("error",))
+        return
+    session_id, approval_id, now_iso = ids
+    state = create_app(database_url=dsn, env="test").state.campaia
+    session = state.sessions.get(session_id)
+    pending = state.redeem_oauth_state(
+        "g3-two-process-oauth",
+        tenant_id="demo-tenant",
+        now=datetime.fromisoformat(now_iso),
+    )
+    approval = state.approvals.get("demo-tenant", approval_id)
+    wrong_tenant = state.approvals.get("other-tenant", approval_id)
+    state.sessions.invalidate(session_id)
+    result_queue.put(
+        ("ok", session is not None, pending is not None, approval is not None, wrong_tenant is None)
+    )
+    done_event.set()
+
+
 @unittest.skipUnless(DSN, "CAMPAIA_TEST_DATABASE_URL not configured")
 class PostgresRuntimeTests(unittest.TestCase):
     @classmethod
@@ -97,6 +151,7 @@ class PostgresRuntimeTests(unittest.TestCase):
                 conn.execute(
                     f'TRUNCATE TABLE {RUNTIME_SCHEMA}."{table}" RESTART IDENTITY'
                 )
+            conn.execute(f"TRUNCATE TABLE {RUNTIME_SCHEMA}.rate_limit_windows")
 
     def _states(self):
         a = create_app(database_url=DSN, env="test").state.campaia
@@ -126,8 +181,12 @@ class PostgresRuntimeTests(unittest.TestCase):
         self.assertTrue(RUNTIME_TABLES.issubset(self._runtime_tables()))
 
         self.assertEqual(
-            self.runner.rollback_latest(),
-            "001_runtime_store_schema",
+            self.runner.rollback_all(),
+            [
+                "003_distributed_rate_limit",
+                "002_tenant_isolation_guard",
+                "001_runtime_store_schema",
+            ],
         )
         self.assertTrue(RUNTIME_TABLES.isdisjoint(self._runtime_tables()))
 
@@ -340,6 +399,42 @@ class PostgresRuntimeTests(unittest.TestCase):
             if event.action == "PG_PROCESS_EXACTLY_ONCE"
         ]
         self.assertEqual(len(events), 1)
+
+    def test_gate_g3_two_simultaneous_processes_share_required_state(self) -> None:
+        ctx = multiprocessing.get_context("spawn")
+        ready_event = ctx.Event()
+        done_event = ctx.Event()
+        ids_queue = ctx.Queue()
+        result_queue = ctx.Queue()
+
+        writer = ctx.Process(
+            target=_g3_state_writer,
+            args=(DSN, ready_event, done_event, ids_queue),
+        )
+        writer.start()
+        self.assertTrue(ready_event.wait(timeout=10))
+        ids = ids_queue.get(timeout=5)
+
+        reader = ctx.Process(
+            target=_g3_state_reader,
+            args=(DSN, ready_event, done_event, ids, result_queue),
+        )
+        reader.start()
+        reader.join(timeout=15)
+        self.assertEqual(reader.exitcode, 0)
+        self.assertEqual(
+            result_queue.get(timeout=5),
+            ("ok", True, True, True, True),
+        )
+
+        done_event.set()
+        writer.join(timeout=15)
+        self.assertEqual(writer.exitcode, 0)
+
+        state = create_app(database_url=DSN, env="test").state.campaia
+        self.assertIsNone(state.sessions.get(ids[0]))
+        self.assertIsNotNone(state.approvals.get("demo-tenant", ids[1]))
+        self.assertIsNone(state.approvals.get("other-tenant", ids[1]))
 
     def test_rate_limiter_is_shared_across_independent_app_instances(self) -> None:
         a, b = self._states()
