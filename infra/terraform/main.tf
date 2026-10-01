@@ -35,6 +35,26 @@ resource "google_project_service" "apis" {
   disable_on_destroy = false
 }
 
+resource "google_project_iam_audit_config" "sensitive_data_access" {
+  for_each = toset([
+    "cloudkms.googleapis.com",
+    "secretmanager.googleapis.com",
+  ])
+
+  project = var.project_id
+  service = each.value
+
+  audit_log_config {
+    log_type = "DATA_READ"
+  }
+
+  audit_log_config {
+    log_type = "DATA_WRITE"
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
 resource "google_artifact_registry_repository" "containers" {
   location      = var.region
   repository_id = "campaia"
