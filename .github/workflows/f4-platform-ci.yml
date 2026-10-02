@@ -69,6 +69,12 @@ jobs:
       - name: Build backend image
         run: docker build --pull -t campaia-backend-ci backend
 
+      - name: Smoke migration module entrypoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm campaia-backend-ci python3 -m scripts.migrate_postgres --help >/dev/null
+
       - name: Boot and smoke backend production image
         shell: bash
         run: |
