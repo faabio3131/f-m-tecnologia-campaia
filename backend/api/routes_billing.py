@@ -118,14 +118,36 @@ async def put_subscription(request: Request) -> JSONResponse:
                 "BILLING_CATALOG_UNAVAILABLE", str(exc), status_code=503
             ) from exc
 
-        try:
-            subscription = Subscription(
-                tenant_id=fixture.tenant_id,
-                customer_ref=fixture.tenant_id,
-                customer_document=body.customer_document,
-                plan=plan,
-                status=SubscriptionStatus.PENDING_PAYMENT,
+        existing = state.subscriptions.get(fixture.tenant_id)
+        if existing is not None and existing.plan.plan_id != plan.plan_id:
+            raise ApiError(
+                "BILLING_PLAN_CHANGE_REQUIRES_POLICY",
+                "Troca de plano exige o fluxo explicito de upgrade/downgrade, ainda nao "
+                "congelado comercialmente.",
+                status_code=409,
             )
+
+        try:
+            if existing is None:
+                subscription = Subscription(
+                    tenant_id=fixture.tenant_id,
+                    customer_ref=fixture.tenant_id,
+                    customer_document=body.customer_document,
+                    plan=plan,
+                    status=SubscriptionStatus.PENDING_PAYMENT,
+                )
+            else:
+                subscription = Subscription(
+                    tenant_id=existing.tenant_id,
+                    customer_ref=existing.customer_ref,
+                    customer_document=body.customer_document,
+                    plan=plan,
+                    status=existing.status,
+                    trial_started_at=existing.trial_started_at,
+                    trial_ends_at=existing.trial_ends_at,
+                    activated_at=existing.activated_at,
+                )
+
             if body.start_trial:
                 subscription = start_trial(
                     subscription,
