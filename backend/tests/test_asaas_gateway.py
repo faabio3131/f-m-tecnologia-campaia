@@ -83,7 +83,15 @@ class AsaasGatewayRequestShapeTests(unittest.TestCase):
     falso — nunca uma chamada de rede real (nenhuma credencial existe nesta sandbox)."""
 
     def _gateway(self, handler, mode: GatewayMode = GatewayMode.SANDBOX) -> AsaasGateway:
-        transport = httpx.MockTransport(handler)
+        def wrapped(request: httpx.Request) -> httpx.Response:
+            # Every create now performs provider-side reconciliation first. Existing request
+            # shape tests are about the operation under test, so their default provider has
+            # no prior payment unless a dedicated recovery test says otherwise.
+            if request.method == "GET" and request.url.path.endswith("/payments"):
+                return httpx.Response(200, json={"data": []})
+            return handler(request)
+
+        transport = httpx.MockTransport(wrapped)
         return AsaasGateway(config=_config(mode=mode), transport=transport)
 
     def test_below_minimum_amount_is_rejected_before_any_network_call(self) -> None:
@@ -215,6 +223,71 @@ class AsaasGatewayRequestShapeTests(unittest.TestCase):
             result_before_restart.gateway_charge_id, result_after_restart.gateway_charge_id
         )
         self.assertEqual(call_count, calls_after_first_process)  # nenhuma nova chamada de rede
+
+    def test_provider_reconciliation_recovers_after_local_idempotency_loss(self) -> None:
+        """Crash window proof: process A creates the external payment, then its local
+        idempotency result is lost before commit. Process B starts with a fresh local store.
+        The deterministic externalReference lookup must recover the existing Asaas payment
+        instead of issuing a second POST /payments.
+        """
+        provider_payment: dict | None = None
+        payment_posts = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal provider_payment, payment_posts
+            if request.method == "GET" and request.url.path.endswith("/payments"):
+                self.assertEqual(request.url.params["externalReference"], "idem-crash-window")
+                return httpx.Response(
+                    200,
+                    json={"data": [] if provider_payment is None else [provider_payment]},
+                )
+            if request.method == "GET" and request.url.path.endswith("/customers"):
+                return httpx.Response(200, json={"data": [{"id": "cus_1"}]})
+            if request.method == "POST" and request.url.path.endswith("/payments"):
+                payment_posts += 1
+                provider_payment = {"id": "pay_recovered", "status": "PENDING"}
+                return httpx.Response(200, json=provider_payment)
+            raise AssertionError(f"chamada inesperada: {request.method} {request.url}")
+
+        transport = httpx.MockTransport(handler)
+        first_process = AsaasGateway(
+            config=_config(), transport=transport, idempotency=IdempotencyStore()
+        )
+        before_crash = first_process.create_charge(_command("idem-crash-window"))
+        self.assertEqual(before_crash.gateway_charge_id, "pay_recovered")
+        self.assertEqual(payment_posts, 1)
+
+        # Fresh store deliberately simulates loss/rollback of the local idempotency commit.
+        second_process = AsaasGateway(
+            config=_config(), transport=transport, idempotency=IdempotencyStore()
+        )
+        after_restart = second_process.create_charge(_command("idem-crash-window"))
+
+        self.assertEqual(after_restart.gateway_charge_id, "pay_recovered")
+        self.assertEqual(payment_posts, 1)
+
+    def test_duplicate_provider_matches_fail_closed(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.method == "GET" and request.url.path.endswith("/payments"):
+                return httpx.Response(
+                    200,
+                    json={
+                        "data": [
+                            {"id": "pay_1", "status": "PENDING"},
+                            {"id": "pay_2", "status": "PENDING"},
+                        ]
+                    },
+                )
+            raise AssertionError("duplicate reconciliation must fail before customer/create")
+
+        gateway = AsaasGateway(
+            config=_config(),
+            transport=httpx.MockTransport(handler),
+            idempotency=IdempotencyStore(),
+        )
+        with self.assertRaises(PaymentGatewayError) as ctx:
+            gateway.create_charge(_command("idem-duplicate-provider"))
+        self.assertEqual(ctx.exception.gateway_code, PaymentGatewayErrorCode.UNKNOWN)
 
     def test_confirmed_status_mapping(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
