@@ -496,6 +496,6 @@ KMS real:
 - CryptoKey `tenant-credentials`;
 - rotação de 90 dias configurada.
 
-Achado a reconciliar: a consulta real do Cloud SQL reportou `settings.deletionProtectionEnabled=false`, enquanto o TARGET Terraform usa `db_deletion_protection=true`. Status desse item: `PARTIAL` até confirmar state/plan e corrigir eventual drift com evidência.
+Nota de semântica: a consulta real do Cloud SQL reportou `settings.deletionProtectionEnabled=false`. Esse campo da API não é o mesmo que o Terraform `deletion_protection=true`, que protege contra destroy pelo Terraform. Portanto o valor da API não é classificado como drift do controle Terraform vigente. A proteção GCP global pode ser avaliada em hardening posterior sem reabrir o fato de que o Terraform está protegido contra destroy.
 
-G4 passa de `EXTERNAL_INFRASTRUCTURE` para `PARTIAL`, mas não recebe `DONE_VERIFIED` antes de rollback real, login Google real em staging e reconciliação da proteção contra exclusão. Restore/RPO/RTO continuam F17.
+G4 passa de `EXTERNAL_INFRASTRUCTURE` para `PARTIAL`, mas não recebe `DONE_VERIFIED` antes de rollback real e login Google real em staging. Restore/RPO/RTO continuam F17.
