@@ -269,3 +269,22 @@ O commit de reconciliação ff1d6d95ec8f5ecdab807cb46e56fce0328d7d08 foi submeti
 4. após a janela de homologação, executar a hibernação controlada do Cloud SQL conforme runbook econômico, sem confundir isso com fechamento do gate.
 
 **Governança:** nenhum deploy de produção foi executado nem autorizado.
+
+
+## 13. Atualização F4 / G4 — staging real pós-merge — 02/10/2026
+
+**F4:** `PARTIAL`. **G4:** `PARTIAL`.
+
+CURRENT: `main` em `70bb364dd9e1a9054b5e3e8706b0988df8a8ef59`; PR #32 mergeada; Backend Tests, Frontend Tests e F4 Platform CI pós-merge = `success`; release staging run #36955222281 = `success`.
+
+Evidência real: migration gate = success; backend readiness = HTTP 200; Web = HTTP 200; backend `campaia-backend-staging-00002-pjr` com 100% do tráfego; Web `campaia-web-staging-00001-lst` com 100%; Cloud SQL `campaia-staging-pg` PostgreSQL 16, RUNNABLE, sem IPv4 público, backup automático e PITR ativos, retenção de transaction log 7 dias; KMS `tenant-credentials` com rotação de 90 dias.
+
+A primeira tentativa de staging (run #36952878196) falhou corretamente no Migration gate por `ModuleNotFoundError: No module named 'api'`. A PR #32 corrigiu o entrypoint para `python3 -m scripts.migrate_postgres up`, adicionou smoke específico e foi validada no CI e no staging real.
+
+Pendências para `DONE_VERIFIED` de G4:
+1. ensaio real do workflow de rollback e retorno controlado à revisão corrente;
+2. login Google real do usuário de teste no staging;
+3. reconciliar `settings.deletionProtectionEnabled=false` observado no Cloud SQL com o TARGET Terraform `db_deletion_protection=true`;
+4. hibernação controlada do Cloud SQL após a janela de homologação.
+
+Produção não foi executada.
