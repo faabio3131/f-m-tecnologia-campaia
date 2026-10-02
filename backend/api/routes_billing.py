@@ -24,7 +24,15 @@ from campaia_core.fiscal_handoff import build_campaia_fiscal_handoff
 from campaia_core.payment_gateway import PaymentGatewayError
 from campaia_core.permissions import Permission, Resource, authorize
 from campaia_core.plan_catalog import PlanCatalogError, get_plan, load_plan_catalog
-from campaia_core.subscription import Subscription, compute_cycle_charge
+from campaia_core.subscription import (
+    Subscription,
+    SubscriptionStatus,
+    activate_from_settled_payment,
+    compute_cycle_charge,
+    entitlement_access_is_active,
+    refresh_trial_status,
+    start_trial,
+)
 
 from .deps import (
     build_domain_principal,
@@ -38,6 +46,7 @@ from .helpers import parse_body
 from .models import (
     BillingChargeCreate,
     BillingChargeResponse,
+    BillingEntitlementsResponse,
     BillingSubscriptionResponse,
     BillingSubscriptionUpsert,
 )
@@ -57,13 +66,30 @@ def _authorize_billing(request: Request, permission: Permission):
 
 
 def _serialize_subscription(sub: Subscription) -> dict:
+    current = refresh_trial_status(sub)
+    entitlements = current.plan.entitlements
+    entitlement_payload = None
+    if entitlements is not None:
+        entitlement_payload = BillingEntitlementsResponse(
+            max_users=current.plan.effective_max_users,
+            max_active_campaigns=entitlements.max_active_campaigns,
+            channels=list(entitlements.channels),
+            ai_capabilities=list(entitlements.ai_capabilities),
+            resources=list(entitlements.resources),
+        )
+
     return BillingSubscriptionResponse(
-        tenant_id=sub.tenant_id,
-        customer_ref=sub.customer_ref,
-        customer_document=sub.customer_document,
-        plan_id=sub.plan.plan_id,
-        plan_name=sub.plan.name,
-        status=sub.status.value,
+        tenant_id=current.tenant_id,
+        customer_ref=current.customer_ref,
+        customer_document=current.customer_document,
+        plan_id=current.plan.plan_id,
+        plan_name=current.plan.name,
+        status=current.status.value,
+        trial_started_at=current.trial_started_at,
+        trial_ends_at=current.trial_ends_at,
+        activated_at=current.activated_at,
+        entitlement_access_active=entitlement_access_is_active(current),
+        entitlements=entitlement_payload,
     ).model_dump(mode="json")
 
 
@@ -75,7 +101,18 @@ def _require_subscription(state: AppState, tenant_id: str) -> Subscription:
             "Nenhuma assinatura configurada para este tenant. Configure uma via "
             "PUT /billing/subscription antes de gerar uma cobranca.",
         )
-    return subscription
+
+    refreshed = refresh_trial_status(subscription, now=datetime.now(timezone.utc))
+    if refreshed != subscription:
+        state.subscriptions[tenant_id] = refreshed
+        state.audit.append(
+            tenant_id=tenant_id,
+            actor="system",
+            actor_kind="SYSTEM",
+            action="BILLING_TRIAL_EXPIRED",
+            target=refreshed.plan.plan_id,
+        )
+    return refreshed
 
 
 async def put_subscription(request: Request) -> JSONResponse:
@@ -92,13 +129,41 @@ async def put_subscription(request: Request) -> JSONResponse:
                 "BILLING_CATALOG_UNAVAILABLE", str(exc), status_code=503
             ) from exc
 
-        try:
-            subscription = Subscription(
-                tenant_id=fixture.tenant_id,
-                customer_ref=fixture.tenant_id,
-                customer_document=body.customer_document,
-                plan=plan,
+        existing = state.subscriptions.get(fixture.tenant_id)
+        if existing is not None and existing.plan.plan_id != plan.plan_id:
+            raise ApiError(
+                "BILLING_PLAN_CHANGE_REQUIRES_POLICY",
+                "Troca de plano exige o fluxo explicito de upgrade/downgrade, ainda nao "
+                "congelado comercialmente.",
+                status_code=409,
             )
+
+        try:
+            if existing is None:
+                subscription = Subscription(
+                    tenant_id=fixture.tenant_id,
+                    customer_ref=fixture.tenant_id,
+                    customer_document=body.customer_document,
+                    plan=plan,
+                    status=SubscriptionStatus.PENDING_PAYMENT,
+                )
+            else:
+                subscription = Subscription(
+                    tenant_id=existing.tenant_id,
+                    customer_ref=existing.customer_ref,
+                    customer_document=body.customer_document,
+                    plan=plan,
+                    status=existing.status,
+                    trial_started_at=existing.trial_started_at,
+                    trial_ends_at=existing.trial_ends_at,
+                    activated_at=existing.activated_at,
+                )
+
+            if body.start_trial:
+                subscription = start_trial(
+                    subscription,
+                    now=datetime.now(timezone.utc),
+                )
         except ValueError as exc:
             raise ApiError("VALIDATION_FAILED", str(exc)) from exc
 
@@ -108,6 +173,10 @@ async def put_subscription(request: Request) -> JSONResponse:
             actor=fixture.user_id,
             action="BILLING_SUBSCRIPTION_UPSERT",
             target=body.plan_id,
+            details={
+                "status": subscription.status.value,
+                "trial_requested": body.start_trial,
+            },
         )
         return _serialize_subscription(subscription)
 
@@ -225,6 +294,26 @@ async def asaas_webhook(request: Request) -> JSONResponse:
         return JSONResponse({"accepted": True, "processed": False, "status": status.value})
 
     handoff = build_campaia_fiscal_handoff(fact)
+
+    subscription = state.subscriptions.get(charge.tenant_id)
+    if subscription is not None:
+        try:
+            activated = activate_from_settled_payment(
+                subscription,
+                settled_at=fact.settled_at,
+            )
+        except ValueError as exc:
+            raise ApiError("BILLING_ACTIVATION_REJECTED", str(exc), status_code=409) from exc
+        state.subscriptions[charge.tenant_id] = activated
+        state.audit.append(
+            tenant_id=charge.tenant_id,
+            actor="asaas",
+            actor_kind="EXTERNAL_PROVIDER",
+            action="BILLING_SUBSCRIPTION_ACTIVATED",
+            target=activated.plan.plan_id,
+            details={"billing_id": charge.billing_id},
+        )
+
     state.audit.append(
         tenant_id=charge.tenant_id,
         actor="asaas",

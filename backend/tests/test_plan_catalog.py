@@ -31,6 +31,14 @@ class PlanCatalogTests(unittest.TestCase):
             "included_credits": 100,
             "extra_credit_unit_price": 1.50,
             "max_users": 5,
+            "trial_days": 14,
+            "entitlements": {
+                "max_users": 5,
+                "max_active_campaigns": 10,
+                "channels": ["GOOGLE_ADS", "META_ADS"],
+                "ai_capabilities": ["TEXT_STRATEGY"],
+                "resources": ["BRAND_KIT"],
+            },
         }
         base.update(overrides)
         return base
@@ -43,6 +51,10 @@ class PlanCatalogTests(unittest.TestCase):
         self.assertEqual(plan.monthly_price, Decimal("199.90"))
         self.assertEqual(plan.currency, "BRL")
         self.assertEqual(plan.max_users, 5)
+        self.assertEqual(plan.trial_days, 14)
+        self.assertIsNotNone(plan.entitlements)
+        self.assertEqual(plan.entitlements.max_active_campaigns, 10)
+        self.assertEqual(plan.entitlements.channels, ("GOOGLE_ADS", "META_ADS"))
 
     def test_loads_valid_catalog_from_environment_variable(self) -> None:
         path = self.write_catalog([self.valid_entry()])
@@ -112,8 +124,33 @@ class PlanCatalogTests(unittest.TestCase):
     def test_max_users_can_remain_unfrozen(self) -> None:
         entry = self.valid_entry()
         entry["max_users"] = None
+        entry["entitlements"]["max_users"] = None
         path = self.write_catalog([entry])
         self.assertIsNone(load_plan_catalog(path)["essencial"].max_users)
+
+    def test_invalid_trial_days_fails_closed(self) -> None:
+        path = self.write_catalog([self.valid_entry(trial_days=0)])
+        with self.assertRaises(PlanCatalogError):
+            load_plan_catalog(path)
+
+    def test_invalid_entitlements_shape_fails_closed(self) -> None:
+        path = self.write_catalog([self.valid_entry(entitlements=["nao", "objeto"])])
+        with self.assertRaises(PlanCatalogError):
+            load_plan_catalog(path)
+
+    def test_duplicate_entitlement_values_fail_closed(self) -> None:
+        entry = self.valid_entry()
+        entry["entitlements"]["channels"] = ["GOOGLE_ADS", "GOOGLE_ADS"]
+        path = self.write_catalog([entry])
+        with self.assertRaises(PlanCatalogError):
+            load_plan_catalog(path)
+
+    def test_historical_and_entitlement_max_users_must_match(self) -> None:
+        entry = self.valid_entry(max_users=5)
+        entry["entitlements"]["max_users"] = 6
+        path = self.write_catalog([entry])
+        with self.assertRaises(PlanCatalogError):
+            load_plan_catalog(path)
 
     def test_duplicate_plan_id_fails_closed(self) -> None:
         path = self.write_catalog([self.valid_entry(), self.valid_entry(name="Outro nome")])

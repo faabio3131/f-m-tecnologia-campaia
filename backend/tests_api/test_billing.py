@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import unittest
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from starlette.testclient import TestClient
@@ -73,11 +75,69 @@ class BillingSubscriptionTests(unittest.TestCase):
         body = put_response.json()
         assert body["plan_id"] == "exemplo-essencial"
         assert body["customer_document"] == "11144477735"
-        assert body["status"] == "ACTIVE"
+        assert body["status"] == "PENDING_PAYMENT"
+        assert body["entitlement_access_active"] is False
+        assert body["entitlements"]["max_users"] == 1
+        assert body["trial_started_at"] is None
+        assert body["trial_ends_at"] is None
 
         get_response = client.get("/billing/subscription", headers=OWNER)
         assert get_response.status_code == 200, get_response.text
         assert get_response.json() == body
+
+    def test_explicit_trial_uses_catalog_duration_and_entitlements(self) -> None:
+        client = make_client()
+        with _with_catalog():
+            response = client.put(
+                "/billing/subscription",
+                headers={**with_step_up(OWNER), **unique_idem()},
+                json={
+                    "plan_id": "exemplo-essencial",
+                    "customer_document": "11144477735",
+                    "start_trial": True,
+                },
+            )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["status"] == "TRIAL"
+        assert body["trial_started_at"] is not None
+        assert body["trial_ends_at"] is not None
+        assert body["entitlement_access_active"] is True
+        assert body["entitlements"]["channels"] == ["EXEMPLO_CHANNEL"]
+
+    def test_expired_trial_is_persisted_and_audited_when_observed(self) -> None:
+        client = make_client()
+        with _with_catalog():
+            response = client.put(
+                "/billing/subscription",
+                headers={**with_step_up(OWNER), **unique_idem()},
+                json={
+                    "plan_id": "exemplo-essencial",
+                    "customer_document": "11144477735",
+                    "start_trial": True,
+                },
+            )
+        assert response.status_code == 200, response.text
+
+        state = client.app.state.campaia
+        current = state.subscriptions["demo-tenant"]
+        state.subscriptions["demo-tenant"] = replace(
+            current,
+            trial_started_at=datetime.now(timezone.utc) - timedelta(days=8),
+            trial_ends_at=datetime.now(timezone.utc) - timedelta(days=1),
+        )
+
+        observed = client.get("/billing/subscription", headers=OWNER)
+        assert observed.status_code == 200, observed.text
+        assert observed.json()["status"] == "EXPIRED"
+        assert observed.json()["entitlement_access_active"] is False
+        assert state.subscriptions["demo-tenant"].status.value == "EXPIRED"
+
+        actions = [
+            event.action
+            for event in state.audit.list_for_tenant("demo-tenant")
+        ]
+        assert "BILLING_TRIAL_EXPIRED" in actions
 
     def test_unknown_plan_id_fails_closed(self) -> None:
         client = make_client()
@@ -231,6 +291,13 @@ class AsaasWebhookTests(unittest.TestCase):
             assert body["accepted"] is True
             assert body["processed"] is True
             assert body["billing_id"]
+
+            subscription = client.get("/billing/subscription", headers=OWNER)
+            assert subscription.status_code == 200, subscription.text
+            sub_body = subscription.json()
+            assert sub_body["status"] == "ACTIVE"
+            assert sub_body["activated_at"] is not None
+            assert sub_body["entitlement_access_active"] is True
         finally:
             self._restore_webhook_token(old)
 
