@@ -188,12 +188,10 @@ def start_trial(subscription: Subscription, *, now: datetime | None = None) -> S
     Nao ha duracao default. Ausencia de trial_days e HUMAN_DECISION pendente e falha fechada.
     """
 
-    if subscription.status not in {
-        SubscriptionStatus.PENDING_PAYMENT,
-        SubscriptionStatus.EXPIRED,
-    }:
+    if subscription.status is not SubscriptionStatus.PENDING_PAYMENT:
         raise ValueError(
-            f"trial nao pode iniciar a partir de {subscription.status.value}."
+            f"trial nao pode iniciar a partir de {subscription.status.value}; "
+            "novo trial apos expiracao exige politica comercial explicita."
         )
     if subscription.plan.trial_days is None:
         raise ValueError("plano sem trial_days configurado nao pode iniciar trial.")
@@ -237,6 +235,10 @@ def activate_from_settled_payment(
 
     if subscription.status is SubscriptionStatus.CANCELED:
         raise ValueError("assinatura cancelada exige fluxo explicito de reativacao.")
+    if subscription.plan.entitlements is None:
+        raise ValueError(
+            "plano sem entitlements configurados nao pode ativar acesso comercial."
+        )
     if subscription.status is SubscriptionStatus.ACTIVE:
         return subscription
 
