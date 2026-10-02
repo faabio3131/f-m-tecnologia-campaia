@@ -197,6 +197,7 @@ class PostgresRuntimeTests(unittest.TestCase):
                 "001_runtime_store_schema",
                 "002_tenant_isolation_guard",
                 "003_distributed_rate_limit",
+                "004_billing_persistence",
             },
         )
         self.assertTrue(RUNTIME_TABLES.issubset(self._runtime_tables()))
@@ -204,6 +205,7 @@ class PostgresRuntimeTests(unittest.TestCase):
         self.assertEqual(
             self.runner.rollback_all(),
             [
+                "004_billing_persistence",
                 "003_distributed_rate_limit",
                 "002_tenant_isolation_guard",
                 "001_runtime_store_schema",
@@ -234,6 +236,32 @@ class PostgresRuntimeTests(unittest.TestCase):
                     "UPDATE campaia_runtime.brand_profiles "
                     "SET tenant_id = %s WHERE id = %s",
                     ("tenant-b", "shared-id"),
+                )
+
+    def test_billing_tables_reject_cross_tenant_rehome(self) -> None:
+        table = PostgresDatabase(DSN).table("billing_charges")
+        table.put(
+            "pay-shared",
+            "tenant-a",
+            {"tenant_id": "tenant-a", "billing_id": "bill-a"},
+        )
+
+        with self.assertRaises(Exception):
+            table.put(
+                "pay-shared",
+                "tenant-b",
+                {"tenant_id": "tenant-b", "billing_id": "bill-b"},
+            )
+
+        self.assertIsNotNone(table.get_for_tenant("pay-shared", "tenant-a"))
+        self.assertIsNone(table.get_for_tenant("pay-shared", "tenant-b"))
+
+        with self.assertRaises(psycopg.errors.InsufficientPrivilege):
+            with psycopg.connect(DSN) as conn:
+                conn.execute(
+                    "UPDATE campaia_runtime.billing_charges "
+                    "SET tenant_id = %s WHERE id = %s",
+                    ("tenant-b", "pay-shared"),
                 )
 
     def test_sessions_are_explicit_pre_tenant_exception_to_rehome_trigger(self) -> None:
