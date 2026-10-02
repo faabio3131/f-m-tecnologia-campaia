@@ -19,7 +19,7 @@ import os
 from decimal import Decimal
 from pathlib import Path
 
-from .subscription import PlanDefinition
+from .subscription import PlanDefinition, PlanEntitlements
 
 #: Variavel de ambiente que aponta para o arquivo real de planos (dado de configuracao,
 #: tipicamente gerido fora do repositorio de codigo — ex.: montado no deploy, ou em um caminho
@@ -50,6 +50,37 @@ def _load_raw(path: Path) -> list[dict]:
     return data
 
 
+def _parse_entitlements(entry: dict, *, source: Path) -> PlanEntitlements | None:
+    raw = entry.get("entitlements")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise PlanCatalogError(
+            f"entitlements em {source} deve ser objeto JSON, recebeu {type(raw).__name__}."
+        )
+
+    def _tuple(name: str) -> tuple[str, ...]:
+        value = raw.get(name, [])
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            raise PlanCatalogError(
+                f"entitlements.{name} em {source} deve ser lista de strings."
+            )
+        return tuple(value)
+
+    try:
+        return PlanEntitlements(
+            max_users=raw.get("max_users"),
+            max_active_campaigns=raw.get("max_active_campaigns"),
+            channels=_tuple("channels"),
+            ai_capabilities=_tuple("ai_capabilities"),
+            resources=_tuple("resources"),
+        )
+    except ValueError as exc:
+        raise PlanCatalogError(
+            f"Entitlements invalidos em {source}: {raw!r} — {exc}"
+        ) from exc
+
+
 def _to_plan_definition(entry: dict, *, source: Path) -> PlanDefinition:
     required = {"plan_id", "name", "monthly_price", "included_credits", "extra_credit_unit_price"}
     missing = required - entry.keys()
@@ -58,14 +89,25 @@ def _to_plan_definition(entry: dict, *, source: Path) -> PlanDefinition:
             f"Plano incompleto em {source}: faltam os campos {sorted(missing)} em {entry!r}."
         )
     try:
+        entitlements = _parse_entitlements(entry, source=source)
+        historical_max_users = entry.get("max_users")
+        if (
+            historical_max_users is None
+            and entitlements is not None
+            and entitlements.max_users is not None
+        ):
+            historical_max_users = entitlements.max_users
+
         return PlanDefinition(
             plan_id=entry["plan_id"],
             name=entry["name"],
             monthly_price=Decimal(str(entry["monthly_price"])),
             included_credits=Decimal(str(entry["included_credits"])),
             extra_credit_unit_price=Decimal(str(entry["extra_credit_unit_price"])),
-            max_users=entry.get("max_users"),
+            max_users=historical_max_users,
             currency=entry.get("currency", "BRL"),
+            trial_days=entry.get("trial_days"),
+            entitlements=entitlements,
         )
     except (ValueError, ArithmeticError) as exc:
         raise PlanCatalogError(f"Plano invalido em {source}: {entry!r} — {exc}") from exc
