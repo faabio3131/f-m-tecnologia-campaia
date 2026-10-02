@@ -1,7 +1,7 @@
 # CampaIA — CONTROLE MESTRE DE EXECUÇÃO F0–F20
 
 **Data-base:** 27/09/2026  
-**Status:** G0 `DONE_VERIFIED`; F1/G1 `PARTIAL`; F2/G2 `PARTIAL`; G3 `DONE_VERIFIED`; **F4 `PARTIAL`, G4 `PARTIAL`**. A infraestrutura real de staging foi provisionada e o release pós-merge em `main` concluiu migrations, backend/Web e smokes reais. G4 permanece aberto somente para as evidências restantes do próprio runbook: rollback real de revisão, login Google real no staging e reconciliação da proteção contra exclusão do Cloud SQL. Produção permanece não autorizada.  
+**Status:** G0 `DONE_VERIFIED`; F1/G1 `PARTIAL`; F2/G2 `PARTIAL`; G3 `DONE_VERIFIED`; **F4/G4 `DONE_VERIFIED`**. Staging real foi provisionado, release/migrations/smokes foram executados, rollback de aplicação foi ensaiado e restaurado, Google login real foi comprovado até sessão autenticada e onboarding de tenant, e a `main` pós-merge permanece 3/3 verde. Produção permanece não autorizada.
 **Repositório canônico:** faabio3131/f-m-tecnologia-campaia  
 **Linha de trabalho:** PR #31, branch reconciliation/campaia-final-takeover  
 **Fonte mestra:** “CAMPAIA - CRONOGRAMA MESTRE DE EXECUCAO TOTAL ATE PRONTO COMERCIAL”, v1.0, 27/09/2026.
@@ -36,7 +36,7 @@ F0 → F1/F2 → F3/F4 → F5 → F6/F7 → F8/F9 → F10 → F11 → F12–F14 
 | F1 | G1 | Trial/onboarding/tenant/unidade/usuários | PARTIAL |
 | F2 | G2 | Multi-tenancy/RBAC/step-up/isolamento | PARTIAL |
 | F3 | G3 | Atomicidade/idempotência/concorrência/runtime multi-process | DONE_VERIFIED no Gate G3; resíduos EXTERNAL_INFRASTRUCTURE/HUMAN_DECISION |
-| F4 | G4 | Infra/Cloud SQL/segredos/CI-CD/observabilidade-base | PARTIAL; G4 EXTERNAL_INFRASTRUCTURE |
+| F4 | G4 | Infra/Cloud SQL/segredos/CI-CD/observabilidade-base | DONE_VERIFIED |
 | F5 | G5 | Billing/trial/planos/admin comercial | PARTIAL |
 | F6 | G6 | Brand Kit/assets/storage | TARGET |
 | F7 | G7 | Briefing→IA→policy→preview→approval | PARTIAL |
@@ -292,3 +292,49 @@ Achado de entrada Web: a rota `/` ainda expunha o scaffold técnico WP-01, embor
 Nota: `db_deletion_protection=true` no Terraform controla destruição pelo Terraform; `settings.deletionProtectionEnabled` é uma proteção GCP adicional e distinta. O valor false observado na API não caracteriza, por si só, drift do controle Terraform vigente.
 
 Produção não foi executada.
+
+
+## 14. Fechamento F4 / G4 — 02/10/2026
+
+**F4:** `DONE_VERIFIED`.  
+**G4:** `DONE_VERIFIED`.
+
+**CURRENT final do gate:**
+- repositório canônico `faabio3131/f-m-tecnologia-campaia`;
+- `main` em `5a26f68fb4fada6888fd12a27d8a88bbcb117d9f`;
+- PR #33 mergeada por merge commit;
+- PR #34 mergeada por merge commit;
+- PR #35 mergeada por merge commit;
+- Backend Tests pós-merge da `main` = `success`;
+- Frontend Tests pós-merge da `main` = `success`;
+- F4 Platform CI pós-merge da `main` = `success`.
+
+**Evidências reais que fecham G4:**
+- bootstrap e foundation de staging reais aplicados e reconciliados;
+- Cloud SQL PostgreSQL 16 privado, backup automático e PITR reais;
+- KMS/Secret Manager/Storage/Pub/Sub/Artifact Registry e service accounts reais;
+- GitHub OIDC/WIF e GitHub Environment `staging` reais;
+- release de staging run #36955222281 = `success`;
+- migration gate real = `success`;
+- backend readiness real = HTTP 200;
+- Web real = HTTP 200;
+- rollback real para `campaia-backend-staging-00001-22d` = `success`;
+- smoke durante rollback = HTTP 200;
+- restauração para `campaia-backend-staging-00002-pjr` = `success`;
+- smoke após restauração = HTTP 200;
+- Authorized JavaScript Origin do OAuth Web Client de staging corrigido para a origem real do Cloud Run;
+- service account do backend recebeu `roles/firebaseauth.viewer` em staging, permitindo verificação de revogação do Firebase/Identity Platform sem ampliar para permissões de escrita;
+- login Google real passou da validação de identidade;
+- tentativa sem vínculo retornou 403 fail-closed, conforme arquitetura;
+- onboarding explícito criou tenant + unidade Principal + membership OWNER sem inclusão manual em banco;
+- sessão autenticada real exibiu tenant, unidade, OWNER, 17 permissões e MFA;
+- trilha real registrou `TENANT_ONBOARDING_CREATE`;
+- telas protegidas de Campanhas, Aprovações, Brand Kit, Conexões, Auditoria, Configurações, Organização e Usuários foram acessadas sob sessão real.
+
+**Observações de governança:**
+- produção não foi executada nem autorizada;
+- restore de banco/RPO/RTO continuam pertencendo a F17, conforme fronteira formal;
+- hibernação econômica do Cloud SQL após janelas de homologação é operação de custo, não critério de fechamento de G4;
+- a evidência de onboarding real também elimina o blocker externo de identidade que mantinha G1 aberto, mas a promoção formal de G1 será reconciliada no respectivo WP para evitar mistura de gates.
+
+**Próximo Work Package pelo Cronograma Mestre:** F5 — Billing, Planos, Trial e Operação Comercial.

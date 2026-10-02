@@ -532,3 +532,56 @@ Próxima ação externa: reconciliar Authorized JavaScript Origins do OAuth Web 
 ### 21.3 Divergência de entrada Web
 
 A rota raiz `/` ainda renderizava `CampaIA Web Foundation — WP-01` e declarava autenticação real como não implementada, apesar de `/login` já possuir o fluxo Google real. Isso foi classificado como divergência de superfície, não como ausência da feature. A correção foi aberta na PR #34 para redirecionar a raiz ao login real.
+
+
+## 22. Fechamento do Gate G4 — 02/10/2026
+
+### 22.1 OAuth e identidade real
+
+A origem JavaScript do OAuth Web Client de staging foi ajustada para:
+`https://campaia-web-staging-dt4sxvfxra-rj.a.run.app`.
+
+Após isso, o fluxo deixou de falhar em `origin_mismatch` e passou a alcançar o backend real.
+
+O backend utiliza `firebase_admin.auth.verify_id_token(..., check_revoked=True)`. As tentativas iniciais chegaram a `POST /auth/session` com 401 até a service account de runtime do backend receber `roles/firebaseauth.viewer` em `campaia-staging`.
+
+Após o binding:
+- o token Google/Identity Platform foi aceito;
+- usuário sem membership retornou 403, conforme fail-closed esperado;
+- o onboarding explícito criou tenant, unidade padrão e membership OWNER;
+- a sessão autenticada real foi estabelecida.
+
+### 22.2 Evidência de onboarding real
+
+A jornada real em staging comprovou:
+- autenticação Google;
+- criação explícita de empresa/tenant;
+- unidade `Principal`;
+- membership `OWNER`;
+- sessão real com tenant/unidade/roles/permissões;
+- MFA indicado como habilitado;
+- audit event `TENANT_ONBOARDING_CREATE`;
+- acesso às superfícies autenticadas do produto.
+
+Não houve fixture de tenant, seed manual ou inclusão manual em banco para essa jornada.
+
+### 22.3 Entrada Web
+
+A PR #34 corrige a rota raiz do produto para redirecionar `/` ao login real, removendo a exposição do scaffold técnico WP-01 como entrada principal. CI da PR e CI pós-merge da `main` ficaram verdes.
+
+### 22.4 CURRENT pós-merge
+
+`main`: `5a26f68fb4fada6888fd12a27d8a88bbcb117d9f`.
+
+CI pós-merge:
+- Backend Tests = `success`;
+- Frontend Tests = `success`;
+- F4 Platform CI = `success`.
+
+### 22.5 Gate
+
+**G4 = `DONE_VERIFIED`.**
+
+A exigência do Cronograma Mestre — staging real subir por processo documentado e repetível, sem configuração artesanal por servidor — foi comprovada por infraestrutura real, release real, migration gate, smoke, rollback, restauração, OAuth real e onboarding real.
+
+Produção continua fora de escopo e não foi executada.
