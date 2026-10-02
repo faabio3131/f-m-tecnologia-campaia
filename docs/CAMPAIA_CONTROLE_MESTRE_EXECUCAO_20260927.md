@@ -282,9 +282,12 @@ Evidência real: migration gate = success; backend readiness = HTTP 200; Web = H
 A primeira tentativa de staging (run #36952878196) falhou corretamente no Migration gate por `ModuleNotFoundError: No module named 'api'`. A PR #32 corrigiu o entrypoint para `python3 -m scripts.migrate_postgres up`, adicionou smoke específico e foi validada no CI e no staging real.
 
 Pendências para `DONE_VERIFIED` de G4:
-1. ensaio real do workflow de rollback e retorno controlado à revisão corrente;
-2. login Google real do usuário de teste no staging;
-3. hibernação controlada do Cloud SQL após a janela de homologação.
+1. login Google real do usuário de teste no staging — tentativa real em 02/10/2026 falhou com Google OAuth `Error 400: origin_mismatch`, portanto o Authorized JavaScript Origin do OAuth Client precisa ser reconciliado com a URL exata do Cloud Run Web;
+2. hibernação controlada do Cloud SQL após a janela de homologação.
+
+Rollback real: `DONE_VERIFIED`. O workflow `CAMPAIA Cloud Run Rollback` moveu 100% do tráfego do backend para `campaia-backend-staging-00001-22d`, `/health/ready` permaneceu HTTP 200, e depois restaurou 100% para `campaia-backend-staging-00002-pjr`, novamente com HTTP 200.
+
+Achado de entrada Web: a rota `/` ainda expunha o scaffold técnico WP-01, embora `/login` já contenha a autenticação real. A correção foi aberta separadamente na PR #34 para redirecionar a raiz do produto ao login real.
 
 Nota: `db_deletion_protection=true` no Terraform controla destruição pelo Terraform; `settings.deletionProtectionEnabled` é uma proteção GCP adicional e distinta. O valor false observado na API não caracteriza, por si só, drift do controle Terraform vigente.
 
