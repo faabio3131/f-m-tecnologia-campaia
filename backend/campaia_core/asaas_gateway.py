@@ -215,6 +215,15 @@ class AsaasGateway:
             )
 
         def _do_create() -> ChargeResult:
+            # Crash-recovery fence: the local idempotency transaction cannot atomically
+            # commit together with an external Asaas POST. If a process dies after Asaas
+            # creates the payment but before the local result is persisted, a retry starts
+            # with no local record. Reconcile by the deterministic externalReference before
+            # creating anything new.
+            existing = self._find_payment_by_external_reference(command.idempotency_key)
+            if existing is not None:
+                return existing
+
             customer_id = self._ensure_customer(command.customer_ref, command.customer_document)
             due_date = date.today() + timedelta(days=self.config.due_in_days)
             response = self._client.post(
@@ -237,9 +246,9 @@ class AsaasGateway:
                 mode=self.mode,
             )
 
-        # retry nao duplica cobranca real no Asaas: `execute` so chama `_do_create` uma vez
-        # por (tenant_id, idempotency_key), inclusive entre reinicios do processo quando
-        # `idempotency` for uma implementacao persistida.
+        # A camada local persiste o resultado por (tenant_id, idempotency_key). O lookup
+        # por externalReference acima fecha tambem a janela de crash entre o efeito externo
+        # no Asaas e o commit local do resultado.
         result, _replay = self.idempotency.execute(
             command.tenant_id, command.idempotency_key, _do_create
         )
@@ -251,6 +260,38 @@ class AsaasGateway:
         return map_asaas_status(response.json()["status"])
 
     # ------------------------------------------------------------------ apoio
+
+    def _find_payment_by_external_reference(
+        self, external_reference: str
+    ) -> ChargeResult | None:
+        """Recover a payment created by a previous process before local commit.
+
+        Asaas supports filtering GET /payments by externalReference. Exactly one match is
+        reusable. More than one is a reconciliation divergence and must fail closed rather
+        than silently choosing one of several financial records.
+        """
+        response = self._client.get(
+            "/payments",
+            params={"externalReference": external_reference, "limit": 2},
+        )
+        _raise_for_response(response)
+        data = response.json().get("data", [])
+        if not data:
+            return None
+        if len(data) != 1:
+            raise PaymentGatewayError(
+                PaymentGatewayErrorCode.UNKNOWN,
+                "Mais de uma cobranca Asaas encontrada para a mesma externalReference.",
+                external_reference=external_reference,
+                match_count=len(data),
+            )
+        payment = data[0]
+        return ChargeResult(
+            gateway_charge_id=payment["id"],
+            status=map_asaas_status(payment["status"]),
+            provider=self.provider,
+            mode=self.mode,
+        )
 
     def _ensure_customer(self, customer_ref: str, customer_document: str) -> str:
         """Busca o cliente pelo `externalReference` antes de criar — nunca duplica cliente

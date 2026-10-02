@@ -472,6 +472,124 @@ class TestAsaasWebhookDedupeSurvivesRestart(PersistenceTestCase):
             self._restore_webhook_token(old)
 
 
+class TestBillingPersistence(PersistenceTestCase):
+    """F5: subscription/charge state and gateway idempotency must survive restart.
+
+    A payment webhook can arrive minutes or days after the process that created the charge.
+    Losing either the charge lookup or the gateway idempotency record on restart can silently
+    drop settlement or duplicate an external payment.
+    """
+
+    def _configure_catalog(self) -> tuple[str | None, str]:
+        catalog_path = os.path.join(self._tmpdir.name, "plans.json")
+        with open(catalog_path, "w", encoding="utf-8") as handle:
+            handle.write(
+                '[{"plan_id":"f5-test","name":"F5 Test","monthly_price":"10.00",'
+                '"included_credits":"100","extra_credit_unit_price":"1.00",'
+                '"max_users":5,"currency":"BRL"}]'
+            )
+        old = os.environ.get("CAMPAIA_PLAN_CATALOG_PATH")
+        os.environ["CAMPAIA_PLAN_CATALOG_PATH"] = catalog_path
+        return old, catalog_path
+
+    def _restore_catalog(self, old: str | None) -> None:
+        if old is None:
+            os.environ.pop("CAMPAIA_PLAN_CATALOG_PATH", None)
+        else:
+            os.environ["CAMPAIA_PLAN_CATALOG_PATH"] = old
+
+    def test_subscription_charge_and_webhook_settlement_survive_restart(self) -> None:
+        old_catalog, _ = self._configure_catalog()
+        old_token = os.environ.get("ASAAS_WEBHOOK_TOKEN")
+        os.environ["ASAAS_WEBHOOK_TOKEN"] = "f5-webhook-token"
+        try:
+            c1 = self.new_client()
+            subscription = c1.put(
+                "/billing/subscription",
+                headers={**with_step_up(OWNER), **idem("bill-sub")},
+                json={"plan_id": "f5-test", "customer_document": "11144477735"},
+            )
+            self.assertEqual(subscription.status_code, 200, subscription.text)
+
+            charge = c1.post(
+                "/billing/charges",
+                headers={**with_step_up(OWNER), **idem("bill-charge")},
+                json={"competence": "2026-10"},
+            )
+            self.assertEqual(charge.status_code, 202, charge.text)
+            gateway_charge_id = charge.json()["gateway_charge_id"]
+
+            self.teardown_client(c1)
+
+            c2 = self.new_client()
+            persisted = c2.get("/billing/subscription", headers=OWNER)
+            self.assertEqual(persisted.status_code, 200, persisted.text)
+            self.assertEqual(persisted.json()["plan_id"], "f5-test")
+
+            settled = c2.post(
+                "/webhooks/asaas",
+                headers={"asaas-access-token": "f5-webhook-token"},
+                json={
+                    "id": "evt_f5_restart_settle",
+                    "event": "PAYMENT_RECEIVED",
+                    "payment": {"id": gateway_charge_id, "status": "RECEIVED"},
+                },
+            )
+            self.assertEqual(settled.status_code, 200, settled.text)
+            self.assertTrue(settled.json()["accepted"])
+            self.assertTrue(settled.json()["processed"])
+            self.assertEqual(settled.json()["billing_id"], "sub:demo-tenant:2026-10")
+        finally:
+            self._restore_catalog(old_catalog)
+            if old_token is None:
+                os.environ.pop("ASAAS_WEBHOOK_TOKEN", None)
+            else:
+                os.environ["ASAAS_WEBHOOK_TOKEN"] = old_token
+
+    def test_gateway_idempotency_survives_restart_with_new_http_key(self) -> None:
+        old_catalog, _ = self._configure_catalog()
+        try:
+            c1 = self.new_client()
+            subscription = c1.put(
+                "/billing/subscription",
+                headers={**with_step_up(OWNER), **idem("bill-sub-2")},
+                json={"plan_id": "f5-test", "customer_document": "11144477735"},
+            )
+            self.assertEqual(subscription.status_code, 200, subscription.text)
+
+            first = c1.post(
+                "/billing/charges",
+                headers={**with_step_up(OWNER), **idem("bill-sep")},
+                json={"competence": "2026-09"},
+            )
+            self.assertEqual(first.status_code, 202, first.text)
+            second = c1.post(
+                "/billing/charges",
+                headers={**with_step_up(OWNER), **idem("bill-oct")},
+                json={"competence": "2026-10"},
+            )
+            self.assertEqual(second.status_code, 202, second.text)
+            original_october_gateway_id = second.json()["gateway_charge_id"]
+            self.assertNotEqual(first.json()["gateway_charge_id"], original_october_gateway_id)
+
+            self.teardown_client(c1)
+
+            c2 = self.new_client()
+            retry = c2.post(
+                "/billing/charges",
+                headers={**with_step_up(OWNER), **idem("bill-oct-new-http-key")},
+                json={"competence": "2026-10"},
+            )
+            self.assertEqual(retry.status_code, 202, retry.text)
+            self.assertEqual(
+                retry.json()["gateway_charge_id"],
+                original_october_gateway_id,
+                "same billing cycle must replay durable gateway result after restart",
+            )
+        finally:
+            self._restore_catalog(old_catalog)
+
+
 class TestEphemeralModeUnaffected(unittest.TestCase):
     """The default (no db_path) app must still be fully in-memory and never touch disk --
     two default instances must never share state.
