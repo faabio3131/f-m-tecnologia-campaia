@@ -284,7 +284,8 @@ A primeira tentativa de staging (run #36952878196) falhou corretamente no Migrat
 Pendências para `DONE_VERIFIED` de G4:
 1. ensaio real do workflow de rollback e retorno controlado à revisão corrente;
 2. login Google real do usuário de teste no staging;
-3. reconciliar `settings.deletionProtectionEnabled=false` observado no Cloud SQL com o TARGET Terraform `db_deletion_protection=true`;
-4. hibernação controlada do Cloud SQL após a janela de homologação.
+3. hibernação controlada do Cloud SQL após a janela de homologação.
+
+Nota: `db_deletion_protection=true` no Terraform controla destruição pelo Terraform; `settings.deletionProtectionEnabled` é uma proteção GCP adicional e distinta. O valor false observado na API não caracteriza, por si só, drift do controle Terraform vigente.
 
 Produção não foi executada.
