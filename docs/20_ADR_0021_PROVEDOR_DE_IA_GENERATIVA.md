@@ -2,6 +2,8 @@
 
 **Status:** APROVADA · **Data:** 24/09/2026 · **Aprovador:** Fábio Aluizio da Silva
 
+> **ADENDO CURRENT — 02/10/2026:** a decisão por Google/Gemini permanece vigente, porém as frases históricas abaixo que tratam o adapter real como `TARGET` foram superadas pela implementação posterior. O CURRENT possui `GeminiProvider` real e o runtime seleciona o provider real quando a configuração de plataforma correspondente está presente; sem configuração, dev/teste continua usando simulador de forma explícita. F7 ainda permanece `PARTIAL` porque o fluxo completo de criativos/imagens/preview/custos e resiliência de provider não está fechado.
+
 ## Contexto
 
 `campaia_core/ai_gateway.py` e `campaia_core/agents.py` implementam o motor de agentes (ex.

@@ -5,9 +5,10 @@
 // segredo no bundle, sem credencial em storage do navegador) nao foram
 // violadas no codigo-fonte do scaffold. Logica compartilhada com
 // tests/boundaries.test.ts em scripts/lib/security-boundaries.mjs.
+import { fileURLToPath } from "node:url";
 import { checkSecurityBoundaries } from "./lib/security-boundaries.mjs";
 
-const SRC_ROOT = new URL("../src", import.meta.url).pathname;
+const SRC_ROOT = fileURLToPath(new URL("../src", import.meta.url));
 
 const { violations, scannedFileCount } = checkSecurityBoundaries(SRC_ROOT);
 

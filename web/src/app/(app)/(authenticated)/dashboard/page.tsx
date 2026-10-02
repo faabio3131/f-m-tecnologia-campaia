@@ -15,7 +15,7 @@ export default function DashboardPage() {
     <PageContainer>
       <PageHeader
         title="Dashboard"
-        description="Fundação de autenticação real (Etapa 2 / WP-02 Web). Sem KPIs inventados — os módulos de negócio ainda não foram construídos."
+        description="Visão segura do tenant autenticado. O CampaIA já possui onboarding, organização, Brand Kit, campanhas e aprovações; métricas externas e operação comercial completa continuam em evolução."
       />
       <Card>
         <StatusPanel
@@ -35,11 +35,24 @@ export default function DashboardPage() {
       </Card>
       <Card>
         <StatusPanel
-          title="Próximos módulos (ainda não construídos nesta etapa)"
+          title="Estado funcional atual"
           items={[
-            { label: "Onboarding e Brand Kit", value: "TARGET — WP-04" },
-            { label: "Briefing, estratégia e aprovação", value: "TARGET — WP-05" },
-            { label: "Publicação, métricas, billing", value: "TARGET — Etapas futuras" },
+            {
+              label: "Onboarding, organização e Brand Kit",
+              value: "IMPLEMENTADO — evolução de assets permanece em F6",
+            },
+            {
+              label: "Briefing, estratégia, policy e aprovação",
+              value: "IMPLEMENTADO — criativos/preview completos permanecem em F7",
+            },
+            {
+              label: "Billing",
+              value: "PARCIAL — backend F5 implementado; UI comercial e inadimplência pendentes",
+            },
+            {
+              label: "Publicação e métricas reais",
+              value: "TARGET — dependem dos conectores oficiais F8–F13",
+            },
           ]}
         />
       </Card>

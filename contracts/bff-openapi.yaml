@@ -34,6 +34,7 @@ tags:
   - name: Campanhas
   - name: Governanca
   - name: Metricas
+  - name: Billing
 
 paths:
   /auth/session:
@@ -1070,6 +1071,225 @@ paths:
                     type: array
                     items: { type: string, format: uuid }
 
+
+  /billing/subscription:
+    get:
+      tags: [Billing]
+      summary: Consulta assinatura, trial, plano e entitlements do tenant atual
+      operationId: getBillingSubscription
+      security: [cookieAuth: []]
+      responses:
+        '200':
+          description: Assinatura atual
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingSubscription' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Usuario sem BILLING_VIEW
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Billing]
+      summary: Configura assinatura inicial ou inicia trial segundo o catalogo comercial
+      description: |
+        Nunca ativa assinatura paga apenas por selecao do browser. O plano vem do catalogo
+        server-side; start_trial apenas solicita o trial cuja duracao pertence ao catalogo.
+        Troca de plano usa exclusivamente /billing/subscription/change-plan.
+      operationId: putBillingSubscription
+      security: [cookieAuth: []]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BillingSubscriptionUpsert' }
+      responses:
+        '200':
+          description: Assinatura configurada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingSubscription' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '409':
+          description: Troca de plano exige fluxo explicito
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503':
+          description: Catalogo comercial indisponivel
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /billing/subscription/change-plan:
+    post:
+      tags: [Billing]
+      summary: Solicita upgrade ou downgrade permitido pelo catalogo
+      description: |
+        O plano atual permanece autoritativo ate liquidacao de cobranca correspondente
+        ao plano-alvo e ao proposito PLAN_CHANGE. Regras de transicao e cobranca sao
+        configuracao comercial externa, nunca hardcode por tenant.
+      operationId: changeBillingPlan
+      security: [cookieAuth: []]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BillingPlanChangeRequest' }
+      responses:
+        '200':
+          description: Troca registrada como pendente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingSubscription' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Transicao nao permitida ou assinatura em estado incompativel
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Catalogo comercial indisponivel
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /billing/subscription/cancel:
+    post:
+      tags: [Billing]
+      summary: Cancela assinatura conforme politica explicita do catalogo
+      operationId: cancelBillingSubscription
+      security: [cookieAuth: []]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Assinatura cancelada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingSubscription' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Politica de cancelamento ausente ou incompativel
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+
+  /billing/subscription/reactivate:
+    post:
+      tags: [Billing]
+      summary: Solicita reativacao com novo pagamento obrigatorio
+      description: |
+        Reativacao volta a PENDING_PAYMENT. Entitlement nao e restaurado ate liquidacao
+        de cobranca com proposito REACTIVATION correspondente ao plano vigente.
+      operationId: reactivateBillingSubscription
+      security: [cookieAuth: []]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Reativacao solicitada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingSubscription' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Assinatura ou politica incompativel
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /billing/charges:
+    post:
+      tags: [Billing]
+      summary: Cria cobranca idempotente para uma competencia
+      description: |
+        A cobranca usa plano/proposito autoritativos do servidor. Retry com a mesma
+        Idempotency-Key nao duplica efeito externo. Confirmacao chega pelo webhook.
+      operationId: createBillingCharge
+      security: [cookieAuth: []]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BillingChargeCreate' }
+      responses:
+        '202':
+          description: Cobranca criada ou reencontrada no gateway
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingCharge' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /webhooks/asaas:
+    post:
+      tags: [Billing]
+      summary: Recebe evento de pagamento do Asaas
+      description: |
+        Endpoint provider-to-provider sem sessao de usuario. Autenticidade vem de
+        asaas-access-token; dedupe e rate-limit sao server-side. Pagamento tardio pode
+        ser liquidado financeiramente sem reativar entitlement indevido.
+      operationId: receiveAsaasWebhook
+      security: []
+      parameters:
+        - name: asaas-access-token
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Evento aceito; processed indica se houve liquidacao aplicavel
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingWebhookReceipt' }
+        '401':
+          description: Token de webhook invalido
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingWebhookReceipt' }
+        '429':
+          description: Rate limit por origem excedido
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingWebhookReceipt' }
+
   /campaigns/{campaignId}/insights:
     get:
       tags: [Metricas]
@@ -1199,6 +1419,103 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+
+    BillingSubscriptionUpsert:
+      type: object
+      additionalProperties: false
+      required: [plan_id, customer_document]
+      properties:
+        plan_id: { type: string }
+        customer_document:
+          type: string
+          description: CPF/CNPJ exigido pelo contrato de cobranca; nunca inferido.
+        start_trial:
+          type: boolean
+          default: false
+
+    BillingPlanChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [target_plan_id]
+      properties:
+        target_plan_id: { type: string }
+
+    BillingEntitlements:
+      type: object
+      required: [max_users, max_active_campaigns, channels, ai_capabilities, resources]
+      properties:
+        max_users: { type: [integer, 'null'], minimum: 1 }
+        max_active_campaigns: { type: [integer, 'null'], minimum: 1 }
+        channels: { type: array, items: { type: string } }
+        ai_capabilities: { type: array, items: { type: string } }
+        resources: { type: array, items: { type: string } }
+
+    BillingSubscription:
+      type: object
+      required:
+        [tenant_id, customer_ref, customer_document, plan_id, plan_name, status,
+         entitlement_access_active]
+      properties:
+        tenant_id: { type: string }
+        customer_ref: { type: string }
+        customer_document: { type: string }
+        plan_id: { type: string }
+        plan_name: { type: string }
+        status:
+          type: string
+          enum: [PENDING_PAYMENT, TRIAL, ACTIVE, PAST_DUE, EXPIRED, CANCELED]
+        trial_started_at: { type: [string, 'null'], format: date-time }
+        trial_ends_at: { type: [string, 'null'], format: date-time }
+        activated_at: { type: [string, 'null'], format: date-time }
+        pending_plan_id: { type: [string, 'null'] }
+        pending_plan_name: { type: [string, 'null'] }
+        pending_plan_change_kind: { type: [string, 'null'] }
+        pending_plan_change_billing_mode: { type: [string, 'null'] }
+        canceled_at: { type: [string, 'null'], format: date-time }
+        reactivation_requested_at: { type: [string, 'null'], format: date-time }
+        entitlement_access_active: { type: boolean }
+        entitlements:
+          anyOf:
+            - { $ref: '#/components/schemas/BillingEntitlements' }
+            - { type: 'null' }
+
+    BillingChargeCreate:
+      type: object
+      additionalProperties: false
+      required: [competence]
+      properties:
+        competence: { type: string }
+        extra_credits_used:
+          anyOf:
+            - { type: number, minimum: 0 }
+            - { type: string }
+          default: '0'
+
+    BillingCharge:
+      type: object
+      required:
+        [billing_id, tenant_id, competence, currency, amount, gateway_charge_id, gateway_status]
+      properties:
+        billing_id: { type: string }
+        tenant_id: { type: string }
+        competence: { type: string }
+        currency: { type: string, enum: [BRL] }
+        amount:
+          anyOf:
+            - { type: number }
+            - { type: string }
+        gateway_charge_id: { type: string }
+        gateway_status: { type: string, enum: [PENDING, CONFIRMED, FAILED] }
+
+    BillingWebhookReceipt:
+      type: object
+      required: [accepted]
+      properties:
+        accepted: { type: boolean }
+        processed: { type: boolean }
+        reason: { type: [string, 'null'] }
+        status: { type: [string, 'null'] }
+
     Provider:
       type: string
       enum: [GOOGLE_ADS, META, WHATSAPP]
@@ -1220,9 +1537,12 @@ components:
           description: |
             Taxonomia canonica. Codigos de provedor NUNCA vazam para o cliente.
           enum: [UNAUTHENTICATED, PERMISSION_DENIED, STEP_UP_REQUIRED, APPROVAL_REQUIRED,
-                 VALIDATION_FAILED, INVALID_STATE, CAPABILITY_UNSUPPORTED, BUDGET_LIMIT,
-                 RATE_LIMITED, QUOTA_EXHAUSTED, POLICY_VIOLATION, KILL_SWITCH_ACTIVE,
-                 NOT_FOUND, TRANSIENT, UNKNOWN]
+                 VALIDATION_FAILED, VALIDATION_REJECTED, INVALID_STATE, CAPABILITY_UNSUPPORTED,
+                 BUDGET_LIMIT, RATE_LIMITED, QUOTA_EXHAUSTED, POLICY_VIOLATION,
+                 KILL_SWITCH_ACTIVE, NOT_FOUND, AUTH_EXPIRED, DECLINED, TRANSIENT, UNKNOWN,
+                 BILLING_CATALOG_UNAVAILABLE, BILLING_PLAN_CHANGE_REQUIRES_EXPLICIT_FLOW,
+                 BILLING_PLAN_CHANGE_REJECTED, BILLING_CANCEL_REJECTED,
+                 BILLING_REACTIVATION_REJECTED]
         message: { type: string, description: Texto compreensivel por usuario nao tecnico. }
         details: { type: [object, 'null'] }
         assisted_flow_url:

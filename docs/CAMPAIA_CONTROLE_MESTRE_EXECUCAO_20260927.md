@@ -1,9 +1,9 @@
 # CampaIA — CONTROLE MESTRE DE EXECUÇÃO F0–F20
 
 **Data-base:** 27/09/2026  
-**Status:** G0 `DONE_VERIFIED`; F1/G1 `PARTIAL`; F2/G2 `PARTIAL`; G3 `DONE_VERIFIED`; **F4/G4 `DONE_VERIFIED`**. Staging real foi provisionado, release/migrations/smokes foram executados, rollback de aplicação foi ensaiado e restaurado, Google login real foi comprovado até sessão autenticada e onboarding de tenant, e a `main` pós-merge permanece 3/3 verde. Produção permanece não autorizada.
+**Status CURRENT (02/10/2026):** G0 `DONE_VERIFIED`; F1 `PARTIAL` / G1 `DONE_VERIFIED`; F2/G2 `PARTIAL`; G3 `DONE_VERIFIED`; F4/G4 `DONE_VERIFIED`; F5/G5 `PARTIAL`. A `main@921d7972f4feac187a6c44f66f32acbbc0746e24` contém WP-F05-01/02/03 mergeados e com CI pós-merge verde. Produção permanece não autorizada.
 **Repositório canônico:** faabio3131/f-m-tecnologia-campaia  
-**Linha de trabalho:** PR #31, branch reconciliation/campaia-final-takeover  
+**Linha de trabalho CURRENT:** `main@921d7972f4feac187a6c44f66f32acbbc0746e24`; reconciliação pós-auditoria em `audit/reconcile-current-20261002`.
 **Fonte mestra:** “CAMPAIA - CRONOGRAMA MESTRE DE EXECUCAO TOTAL ATE PRONTO COMERCIAL”, v1.0, 27/09/2026.
 
 ## 1. Ordem de autoridade
@@ -33,7 +33,7 @@ F0 → F1/F2 → F3/F4 → F5 → F6/F7 → F8/F9 → F10 → F11 → F12–F14 
 | Fase | Gate | Escopo principal | Estado base |
 |---|---|---|---|
 | F0 | G0 | CURRENT + SSOT + cobertura + superseded | DONE_VERIFIED |
-| F1 | G1 | Trial/onboarding/tenant/unidade/usuários | PARTIAL |
+| F1 | G1 | Trial/onboarding/tenant/unidade/usuários | F1 PARTIAL / G1 DONE_VERIFIED |
 | F2 | G2 | Multi-tenancy/RBAC/step-up/isolamento | PARTIAL |
 | F3 | G3 | Atomicidade/idempotência/concorrência/runtime multi-process | DONE_VERIFIED no Gate G3; resíduos EXTERNAL_INFRASTRUCTURE/HUMAN_DECISION |
 | F4 | G4 | Infra/Cloud SQL/segredos/CI-CD/observabilidade-base | DONE_VERIFIED |
@@ -338,3 +338,39 @@ Produção não foi executada.
 - a evidência de onboarding real também elimina o blocker externo de identidade que mantinha G1 aberto, mas a promoção formal de G1 será reconciliada no respectivo WP para evitar mistura de gates.
 
 **Próximo Work Package pelo Cronograma Mestre:** F5 — Billing, Planos, Trial e Operação Comercial.
+
+## 15. Reconciliação pós-auditoria — G1 e F5 — 02/10/2026
+
+**CURRENT de referência:** `main@921d7972f4feac187a6c44f66f32acbbc0746e24`.
+
+### G1
+
+**F1:** `PARTIAL`.
+**G1:** `DONE_VERIFIED`.
+
+O critério literal de G1 — novo cliente chegar por fluxo do produto a sessão autenticada em seu próprio tenant — foi comprovado no staging real durante G4: login Google real; 403 fail-closed sem vínculo; onboarding explícito criando tenant + unidade `Principal` + membership `OWNER`; sessão real com tenant/unidade/permissões/MFA; auditoria `TENANT_ONBOARDING_CREATE`; nenhuma inclusão manual em banco.
+
+F1 continua `PARTIAL` porque trial/compra -> entitlement comercial depende de F5.
+
+### G2
+
+**F2/G2 permanecem `PARTIAL`.** Falta E2E externo específico em staging exercitando administração sensível completa: reautenticar com Google -> criar/alterar unidade ou membership/role -> verificar autoridade/revogação e isolamento no ambiente real.
+
+### F5 — WPs integrados
+
+- WP-F05-01: `DONE_VERIFIED` no escopo funcional, PR #37 / merge `b9df47f6...`;
+- WP-F05-02: `DONE_VERIFIED` no escopo funcional, PR #38 / merge `d604215...`;
+- WP-F05-03: `DONE_VERIFIED` no escopo funcional, PR #39 / merge `921d797...`.
+
+Evidências:
+- `docs/evidence/EVIDENCIA_WP_F05_01_PERSISTENCIA_BILLING_20261002.md`;
+- `docs/evidence/EVIDENCIA_WP_F05_02_ENTITLEMENTS_TRIAL_20261002.md`;
+- `docs/evidence/EVIDENCIA_WP_F05_03_TRANSICOES_ASSINATURA_20261002.md`.
+
+A auditoria encontrou pendência transversal: rotas de billing ausentes do OpenAPI/tipos Web. Esta reconciliação corrige o contrato sem reimplementar domínio.
+
+**F5/G5 continuam `PARTIAL`**: política comercial real (`HUMAN_DECISION`), checkout/UI, histórico de faturas, PAST_DUE/grace period/dunning, estorno/reembolso quando definido, Asaas produção e prova real pagamento -> webhook -> entitlement.
+
+### Dívida documental reconciliada
+
+Arquitetura V2, ADR-0021, ADR-0022 e Threat Model receberam adendos CURRENT. PRs históricas #5, #6 e #28 são `SUPERSEDED` pelo takeover/PR #31 e pela `main` atual.

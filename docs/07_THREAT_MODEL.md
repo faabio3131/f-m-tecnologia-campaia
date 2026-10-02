@@ -2,6 +2,8 @@
 
 **Versão:** 0.1 (PROPOSTA) · **Data:** 25/08/2026 · **Método:** STRIDE + categoria financeira própria
 
+> **RECONCILIAÇÃO CURRENT — 02/10/2026.** Esta versão continua como baseline STRIDE, porém algumas assunções foram superadas por decisões posteriores. A superfície comercial principal é Web, não mobile. D-08 já foi resolvida com Google Cloud e staging real. O runtime PostgreSQL CURRENT não usa RLS genérico como segunda camada: usa `tenant_id` derivado da sessão, scoping obrigatório nas queries, ownership imutável e triggers PostgreSQL; RLS genérico foi rejeitado porque stores pré-tenant, como sessões, exigiriam bypasses especiais. O fechamento final deste threat model pertence a **F16/G16**, junto de LGPD/hardening/DAST/pentest, e não mais a G2. G2 permanece focado em IAM/RBAC/step-up e isolamento do produto.
+
 ## 1. Ativos protegidos, em ordem de gravidade
 
 | # | Ativo | Por que importa |
@@ -51,9 +53,9 @@ saídas de LLM · painel administrativo · pipeline de CI/CD · dependências de
 
 ## 5. O que este threat model ainda não cobre
 
-- ameaças específicas da nuvem escolhida (depende de D-08);
+- ameaças específicas do Google Cloud CURRENT e hardening final de IAM/rede/runtime (F16/F17);
 - modelo de ameaças de residência de dados e transferência internacional (depende de D-09);
 - abuso por usuário legítimo do próprio tenant (fraude interna do cliente) — a tratar antes da Fase 9;
 - ameaças ao processo de aprovação externa das plataformas (suspensão de conta, revisão de política).
 
-Status: **PARCIAL**. Fecha no Gate de Segurança (G2), depois das decisões D-08 e D-09.
+Status: **PARTIAL**. Baseline reconciliado; atualização final e fechamento pertencem a F16/G16. D-08 já foi decidida/implementada em staging; itens LGPD e hardening finais permanecem pendentes.
