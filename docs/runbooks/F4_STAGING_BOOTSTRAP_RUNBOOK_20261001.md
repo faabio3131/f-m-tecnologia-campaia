@@ -178,14 +178,38 @@ O OIDC Terraform aceita apenas repo canônico + `main` + Environment `staging`.
 
 A API `identitytoolkit.googleapis.com` faz parte da foundation gerenciada por Terraform.
 A inicialização do Identity Platform é uma operação externa separada e de criação única;
-não deve ser confundida com apenas habilitar a API. Antes da jornada real:
+não deve ser confundida com apenas habilitar a API.
 
-- registrar origem Web real do staging;
-- registrar redirect URI aplicável;
+Procedimento reproduzível para staging:
+
+1. Confirmar que `identitytoolkit.googleapis.com` está habilitada pelo Terraform e que a
+   foundation está sem drift.
+2. Inicializar o Identity Platform no projeto `campaia-staging` somente após autorização
+   expressa do Diretor.
+3. No Google Auth Platform do mesmo projeto, configurar branding/audiência de teste e
+   criar um OAuth Client do tipo Web para o CampaIA staging.
+4. Registrar como Authorized JavaScript Origin a URL HTTPS real do Web Cloud Run.
+5. Configurar o provider `google.com` no Identity Platform com o OAuth Client ID e o
+   Client Secret. O Client Secret nunca entra no Git, Terraform, logs ou documentação.
+6. Adicionar a URL Web real em `authorizedDomains` do Identity Platform.
+7. Registrar apenas as configurações públicas no GitHub Environment `staging`:
+   `NEXT_PUBLIC_GOOGLE_IDENTITY_CLIENT_ID` e
+   `NEXT_PUBLIC_IDENTITY_PLATFORM_PUBLIC_API`.
+8. Adicionar somente contas autorizadas como test users enquanto o OAuth estiver em modo
+   de teste.
+9. Validar via Admin API, sem imprimir o secret, que o provider `google.com` está
+   `enabled=true`, possui `clientId` e possui Client Secret configurado.
+10. Validar no login real do staging que a conta de teste conclui Google -> Identity
+    Platform -> BFF e que uma identidade sem vínculo segue o onboarding comercial
+    server-authoritative.
+
+Também:
 - validar `FIREBASE_PROJECT_ID`;
-- nunca usar fixture/test identity mode.
+- nunca usar fixture/test identity mode em staging/production;
+- registrar redirect URI somente se o fluxo adotado realmente usar redirect.
 
-Custom domain/DNS/TLS, se adotado, deve ser configurado no ambiente e repetido na allowlist/origens do IdP.
+Custom domain/DNS/TLS, se adotado, deve ser configurado no ambiente e repetido na
+allowlist/origens do IdP.
 
 ## 8.1. Operação econômica do staging
 

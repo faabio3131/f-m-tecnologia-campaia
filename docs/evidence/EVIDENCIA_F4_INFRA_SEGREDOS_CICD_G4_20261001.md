@@ -439,3 +439,19 @@ Status permanece:
 
 A infraestrutura base real já existe; o Gate não é promovido antes do release, smoke,
 login e rollback reais.
+
+
+## 19. Hardening da auditoria final pré-main — 01/10/2026
+
+A auditoria final da PR #31 encontrou dois pontos de governança corrigidos antes de
+qualquer merge:
+
+- os workflows de release/rollback agora possuem guard explícito para
+  `refs/heads/main`, além da restrição já existente no WIF;
+- o texto livre `production_confirmation` deixou de ser interpolado diretamente no
+  shell e passa por variável de ambiente, evitando contexto livre dentro do script;
+- o runbook passou a documentar o procedimento reproduzível de Identity Platform,
+  OAuth Web Client, provider `google.com`, authorized domains e variáveis públicas,
+  sem versionar Client Secret.
+
+Nenhum deploy ou merge foi executado por estas correções.

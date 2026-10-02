@@ -30,10 +30,23 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     steps:
-      - name: Production authorization guard
+      - name: Main branch deployment guard
         shell: bash
         run: |
-          if [[ "${{ inputs.environment }}" == "production" &&                 "${{ inputs.production_confirmation }}" != "ROLLBACK_PRODUCTION" ]]; then
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "Cloud rollbacks are allowed only from refs/heads/main." >&2
+            exit 2
+          fi
+
+      - name: Production authorization guard
+        shell: bash
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          PRODUCTION_CONFIRMATION: ${{ inputs.production_confirmation }}
+        run: |
+          set -euo pipefail
+          if [[ "${TARGET_ENVIRONMENT}" == "production" && "${PRODUCTION_CONFIRMATION}" != "ROLLBACK_PRODUCTION" ]]; then
             echo "Production rollback requires explicit confirmation." >&2
             exit 2
           fi

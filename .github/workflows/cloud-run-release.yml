@@ -26,10 +26,23 @@ jobs:
     environment: ${{ inputs.environment }}
 
     steps:
-      - name: Production authorization guard
+      - name: Main branch deployment guard
         shell: bash
         run: |
-          if [[ "${{ inputs.environment }}" == "production" &&                 "${{ inputs.production_confirmation }}" != "DEPLOY_PRODUCTION" ]]; then
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "Cloud deploys are allowed only from refs/heads/main." >&2
+            exit 2
+          fi
+
+      - name: Production authorization guard
+        shell: bash
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          PRODUCTION_CONFIRMATION: ${{ inputs.production_confirmation }}
+        run: |
+          set -euo pipefail
+          if [[ "${TARGET_ENVIRONMENT}" == "production" && "${PRODUCTION_CONFIRMATION}" != "DEPLOY_PRODUCTION" ]]; then
             echo "Production requires explicit confirmation after Director approval." >&2
             exit 2
           fi
