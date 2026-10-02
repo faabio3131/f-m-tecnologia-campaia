@@ -15,6 +15,13 @@ vi.mock("@/providers/AuthProvider", () => ({
   }),
 }));
 
+vi.mock("@/lib/auth/test-identity-client", () => ({
+  TEST_IDENTITY_OPTIONS: [
+    { id: "owner", label: "Entrar como proprietário de teste" },
+  ],
+  isTestIdentityModeEnabled: () => true,
+}));
+
 import LoginPage from "@/app/(app)/login/page";
 
 describe("LoginPage accessibility baseline", () => {
