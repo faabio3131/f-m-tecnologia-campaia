@@ -455,3 +455,80 @@ qualquer merge:
   sem versionar Client Secret.
 
 Nenhum deploy ou merge foi executado por estas correções.
+
+
+## 20. Evidência externa pós-merge — 02/10/2026
+
+PR #32 foi mergeada por merge commit após autorização expressa. HEAD da `main`: `70bb364dd9e1a9054b5e3e8706b0988df8a8ef59`. Backend Tests, Frontend Tests e F4 Platform CI pós-merge = `success`.
+
+Release real de staging: workflow `CAMPAIA Cloud Run Release`, run `36955222281`, environment `staging`, resultado `success`. Produção não foi autorizada nem executada.
+
+Evidências do release:
+- OIDC Google Cloud concluído;
+- build/push backend;
+- migration Job real concluído;
+- Migration gate = success;
+- deploy backend;
+- backend readiness smoke = success;
+- build/push Web;
+- deploy Web;
+- bind da origem Web para backend;
+- final smoke = success.
+
+Verificação pós-workflow:
+- backend `/health/ready` = HTTP 200;
+- Web `/` = HTTP 200;
+- backend revision `campaia-backend-staging-00002-pjr`, 100% tráfego;
+- Web revision `campaia-web-staging-00001-lst`, 100% tráfego.
+
+Cloud SQL real:
+- `campaia-staging-pg`;
+- PostgreSQL 16;
+- `southamerica-east1`;
+- estado RUNNABLE;
+- IPv4 público desabilitado;
+- backup automático habilitado;
+- PITR habilitado;
+- transaction log retention = 7 dias.
+
+KMS real:
+- key ring `campaia-staging-vault`;
+- CryptoKey `tenant-credentials`;
+- rotação de 90 dias configurada.
+
+Nota de semântica: a consulta real do Cloud SQL reportou `settings.deletionProtectionEnabled=false`. Esse campo da API não é o mesmo que o Terraform `deletion_protection=true`, que protege contra destroy pelo Terraform. Portanto o valor da API não é classificado como drift do controle Terraform vigente. A proteção GCP global pode ser avaliada em hardening posterior sem reabrir o fato de que o Terraform está protegido contra destroy.
+
+G4 passa de `EXTERNAL_INFRASTRUCTURE` para `PARTIAL`, mas não recebe `DONE_VERIFIED` antes de rollback real e login Google real em staging. Restore/RPO/RTO continuam F17.
+
+
+## 21. Rollback real e bloqueio OAuth — 02/10/2026
+
+### 21.1 Ensaio real de rollback
+
+Autorização expressa do Diretor: rollback somente em staging e restauração da revisão atual; produção fora de escopo.
+
+- workflow de rollback para `campaia-backend-staging-00001-22d`: run #36957007637 = `success`;
+- tráfego após rollback: 100% na revisão `00001-22d`;
+- smoke `/health/ready` durante rollback: HTTP 200;
+- workflow de restauração para `campaia-backend-staging-00002-pjr`: run #36957132019 = `success`;
+- tráfego final: 100% na revisão `00002-pjr`;
+- smoke após restauração: HTTP 200.
+
+Classificação: requisito de rollback de aplicação do G4 = `DONE_VERIFIED`.
+
+### 21.2 Login Google real
+
+A rota `/login` existe no CURRENT e foi aberta no staging real. Ao tentar autenticar com o usuário Google de homologação, o Google recusou com:
+
+`Error 400: origin_mismatch`
+
+A mensagem do Google indica que a origem JavaScript do staging não está autorizada no OAuth Client usado pelo CampaIA. Isso é evidência externa real e mantém o login Google em `BLOCKED` por configuração OAuth, não por ausência do fluxo no código.
+
+Origem observada no navegador:
+`https://campaia-web-staging-dt4sxvfxra-rj.a.run.app`
+
+Próxima ação externa: reconciliar Authorized JavaScript Origins do OAuth Web Client de staging com essa origem exata e repetir o login real.
+
+### 21.3 Divergência de entrada Web
+
+A rota raiz `/` ainda renderizava `CampaIA Web Foundation — WP-01` e declarava autenticação real como não implementada, apesar de `/login` já possuir o fluxo Google real. Isso foi classificado como divergência de superfície, não como ausência da feature. A correção foi aberta na PR #34 para redirecionar a raiz ao login real.
