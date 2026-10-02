@@ -509,6 +509,7 @@ class AppState:
                 PersistentIdempotencyStore,
                 PersistentSeenEventStore,
                 PersistentTenantAutonomy,
+                PersistentTenantObjectMap,
             )
             from .persistent_state import PersistentOAuthStateStore, PersistentStepUpStore
             from .session import PersistentSessionStore
