@@ -234,6 +234,12 @@ resource "google_pubsub_topic_iam_member" "backend_publish" {
   member  = "serviceAccount:${google_service_account.backend.email}"
 }
 
+resource "google_project_iam_member" "backend_firebase_auth_viewer" {
+  project = var.project_id
+  role    = "roles/firebaseauth.viewer"
+  member  = "serviceAccount:${google_service_account.backend.email}"
+}
+
 resource "google_project_iam_member" "deployer_run_admin" {
   project = var.project_id
   role    = "roles/run.admin"
