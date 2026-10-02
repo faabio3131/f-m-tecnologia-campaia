@@ -84,7 +84,7 @@ jobs:
         shell: bash
         run: |
           JOB="campaia-db-migrate-${{ inputs.environment }}"
-          gcloud run jobs deploy "${JOB}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --image="${{ steps.images.outputs.backend }}"             --service-account="${{ vars.GCP_BACKEND_SERVICE_ACCOUNT }}"             --network="${{ vars.GCP_VPC_NETWORK }}"             --subnet="${{ vars.GCP_VPC_SUBNET }}"             --vpc-egress=private-ranges-only             --set-env-vars="CAMPAIA_ENV=${{ inputs.environment }}"             --set-secrets="CAMPAIA_DATABASE_URL=${{ vars.CAMPAIA_DATABASE_URL_SECRET }}:latest"             --command=python3             --args=scripts/migrate_postgres.py,up             --max-retries=0             --task-timeout=10m             --quiet
+          gcloud run jobs deploy "${JOB}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --image="${{ steps.images.outputs.backend }}"             --service-account="${{ vars.GCP_BACKEND_SERVICE_ACCOUNT }}"             --network="${{ vars.GCP_VPC_NETWORK }}"             --subnet="${{ vars.GCP_VPC_SUBNET }}"             --vpc-egress=private-ranges-only             --set-env-vars="CAMPAIA_ENV=${{ inputs.environment }}"             --set-secrets="CAMPAIA_DATABASE_URL=${{ vars.CAMPAIA_DATABASE_URL_SECRET }}:latest"             --command=python3             --args=-m,scripts.migrate_postgres,up             --max-retries=0             --task-timeout=10m             --quiet
 
       - name: Migration gate
         shell: bash
