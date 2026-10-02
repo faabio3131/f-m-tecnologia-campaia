@@ -197,6 +197,8 @@ def start_trial(subscription: Subscription, *, now: datetime | None = None) -> S
         )
     if subscription.plan.trial_days is None:
         raise ValueError("plano sem trial_days configurado nao pode iniciar trial.")
+    if subscription.plan.entitlements is None:
+        raise ValueError("plano sem entitlements configurados nao pode iniciar trial.")
 
     started_at = now or datetime.now(timezone.utc)
     return replace(
