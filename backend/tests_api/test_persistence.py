@@ -486,7 +486,10 @@ class TestBillingPersistence(PersistenceTestCase):
             handle.write(
                 '[{"plan_id":"f5-test","name":"F5 Test","monthly_price":"10.00",'
                 '"included_credits":"100","extra_credit_unit_price":"1.00",'
-                '"max_users":5,"currency":"BRL"}]'
+                '"max_users":5,"currency":"BRL","trial_days":7,'
+                '"entitlements":{"max_users":5,"max_active_campaigns":10,'
+                '"channels":["GOOGLE_ADS"],"ai_capabilities":["TEXT_STRATEGY"],'
+                '"resources":["BRAND_KIT"]}}]'
             )
         old = os.environ.get("CAMPAIA_PLAN_CATALOG_PATH")
         os.environ["CAMPAIA_PLAN_CATALOG_PATH"] = catalog_path
