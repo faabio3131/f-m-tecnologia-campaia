@@ -1,7 +1,7 @@
 # CampaIA — CONTROLE MESTRE DE EXECUÇÃO F0–F20
 
 **Data-base:** 27/09/2026  
-**Status:** G0 `DONE_VERIFIED`; F1/G1 `PARTIAL`; F2/G2 `PARTIAL`; G3 `DONE_VERIFIED`; **F4 `PARTIAL`, G4 `EXTERNAL_INFRASTRUCTURE`**. A tranche interna de F4 (containers, IaC GCP, KMS envelope, CI/CD, migration gate e runbook) está `DONE_VERIFIED`; G4 permanece aberto até staging real subir do zero. Não implica merge, deploy ou produção.  
+**Status:** G0 `DONE_VERIFIED`; F1/G1 `PARTIAL`; F2/G2 `PARTIAL`; G3 `DONE_VERIFIED`; **F4 `PARTIAL`, G4 `PARTIAL`**. A infraestrutura real de staging foi provisionada e o release pós-merge em `main` concluiu migrations, backend/Web e smokes reais. G4 permanece aberto somente para as evidências restantes do próprio runbook: rollback real de revisão, login Google real no staging e reconciliação da proteção contra exclusão do Cloud SQL. Produção permanece não autorizada.  
 **Repositório canônico:** faabio3131/f-m-tecnologia-campaia  
 **Linha de trabalho:** PR #31, branch reconciliation/campaia-final-takeover  
 **Fonte mestra:** “CAMPAIA - CRONOGRAMA MESTRE DE EXECUCAO TOTAL ATE PRONTO COMERCIAL”, v1.0, 27/09/2026.
@@ -226,3 +226,46 @@ O commit de reconciliação ff1d6d95ec8f5ecdab807cb46e56fce0328d7d08 foi submeti
 **Runbook:** `docs/runbooks/F4_STAGING_BOOTSTRAP_RUNBOOK_20261001.md`.
 
 **Governança:** PR #31 permanece Draft. Nenhum merge, deploy, staging ou produção foi executado.
+
+
+## 13. Atualização F4 / G4 — staging real pós-merge — 02/10/2026
+
+**F4:** `PARTIAL`.  
+**G4:** `PARTIAL`.
+
+**CURRENT confirmado:**
+- repositório canônico `faabio3131/f-m-tecnologia-campaia`;
+- `main` em `70bb364dd9e1a9054b5e3e8706b0988df8a8ef59`, merge commit da PR #32;
+- PR #32 fechada e mergeada;
+- Backend Tests pós-merge = `success`;
+- Frontend Tests pós-merge = `success`;
+- F4 Platform CI pós-merge = `success`;
+- release staging `CAMPAIA Cloud Run Release` run #36955222281 = `success`.
+
+**Evidência externa comprovada:**
+- GitHub Environment `staging` aprovado; deployment marcado `production_environment=false`;
+- build/push backend por SHA imutável;
+- Cloud Run migration Job executado com sucesso;
+- `Migration gate` = `success`;
+- backend revision implantada e readiness smoke = 200;
+- Web revision implantada e HTTP smoke = 200;
+- final smoke = `success`;
+- backend atual: `campaia-backend-staging-00002-pjr`, 100% do tráfego;
+- Web atual: `campaia-web-staging-00001-lst`, 100% do tráfego;
+- Cloud SQL real `campaia-staging-pg`: PostgreSQL 16, `RUNNABLE`, IPv4 público desabilitado, backup automático habilitado, PITR habilitado e transaction log retention = 7 dias;
+- KMS `tenant-credentials` real com rotação de 90 dias configurada.
+
+**Falha real encontrada e corrigida durante o gate:**
+- primeira tentativa de staging, run #36952878196, falhou corretamente no `Migration gate`;
+- causa raiz: `ModuleNotFoundError: No module named 'api'`;
+- PR #32 corrigiu o entrypoint para `python3 -m scripts.migrate_postgres up` e adicionou smoke de container específico;
+- CI da PR #32 e CI pós-merge ficaram verdes;
+- nova tentativa real de staging concluiu o migration gate e release completo.
+
+**Pendências que impedem `DONE_VERIFIED` de G4:**
+1. ensaio real do workflow de rollback para revisão conhecida e restauração controlada da revisão corrente;
+2. login Google real de usuário de teste no staging, conforme runbook de Identity Platform;
+3. reconciliar a proteção contra exclusão do Cloud SQL: a consulta real reportou `settings.deletionProtectionEnabled=false`, enquanto o TARGET Terraform declara `db_deletion_protection=true`; não promover G4 antes de confirmar state/plan e corrigir qualquer drift real;
+4. após a janela de homologação, executar a hibernação controlada do Cloud SQL conforme runbook econômico, sem confundir isso com fechamento do gate.
+
+**Governança:** nenhum deploy de produção foi executado nem autorizado.
