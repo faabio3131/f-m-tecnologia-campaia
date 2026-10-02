@@ -92,6 +92,33 @@ class SubscriptionChargeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             start_trial(pending)
 
+    def test_expired_trial_cannot_restart_without_explicit_commercial_policy(self) -> None:
+        now = datetime(2026, 10, 2, 12, 0, tzinfo=timezone.utc)
+        pending = Subscription(
+            tenant_id="tenant-1",
+            customer_ref="customer-1",
+            customer_document="11144477735",
+            plan=self.commercial_plan(),
+        )
+        trial = start_trial(pending, now=now)
+        expired = refresh_trial_status(trial, now=now + timedelta(days=14))
+        self.assertEqual(expired.status, SubscriptionStatus.EXPIRED)
+        with self.assertRaises(ValueError):
+            start_trial(expired, now=now + timedelta(days=15))
+
+    def test_payment_activation_fails_closed_without_entitlements(self) -> None:
+        pending = Subscription(
+            tenant_id="tenant-1",
+            customer_ref="customer-1",
+            customer_document="11144477735",
+            plan=self.plan(),
+        )
+        with self.assertRaises(ValueError):
+            activate_from_settled_payment(
+                pending,
+                settled_at=datetime(2026, 10, 2, 12, 0, tzinfo=timezone.utc),
+            )
+
     def test_settled_payment_activates_pending_or_expired_subscription(self) -> None:
         settled_at = datetime(2026, 10, 2, 12, 0, tzinfo=timezone.utc)
         pending = Subscription(
