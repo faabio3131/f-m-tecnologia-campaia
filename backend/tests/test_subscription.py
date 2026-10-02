@@ -5,14 +5,24 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from campaia_core.subscription import (
+    CancellationMode,
+    ChargePurpose,
+    PlanChangeBillingMode,
+    PlanChangeKind,
+    PlanChangeRule,
     PlanDefinition,
     PlanEntitlements,
     Subscription,
     SubscriptionStatus,
+    ReactivationBillingMode,
+    ReactivationMode,
     activate_from_settled_payment,
+    cancel_subscription,
     compute_cycle_charge,
     entitlement_access_is_active,
     refresh_trial_status,
+    request_plan_change,
+    request_reactivation,
     start_trial,
 )
 
@@ -223,6 +233,74 @@ class SubscriptionChargeTests(unittest.TestCase):
                 currency="USD",
             )
 
+
+
+    def test_plan_change_is_payment_gated_and_matches_billed_plan(self) -> None:
+        target = PlanDefinition(
+            plan_id="pro",
+            name="Pro",
+            monthly_price=Decimal("299.90"),
+            included_credits=Decimal("200"),
+            extra_credit_unit_price=Decimal("1"),
+            entitlements=PlanEntitlements(max_users=5),
+        )
+        current = PlanDefinition(
+            plan_id="basic",
+            name="Basic",
+            monthly_price=Decimal("99.90"),
+            included_credits=Decimal("10"),
+            extra_credit_unit_price=Decimal("1"),
+            entitlements=PlanEntitlements(max_users=1),
+            plan_changes=(
+                PlanChangeRule(
+                    "pro",
+                    PlanChangeKind.UPGRADE,
+                    billing_mode=PlanChangeBillingMode.TARGET_PLAN_FULL_CYCLE,
+                ),
+            ),
+        )
+        sub = Subscription(
+            tenant_id="tenant-1", customer_ref="customer-1",
+            customer_document="11144477735", plan=current, status=SubscriptionStatus.ACTIVE,
+        )
+        pending = request_plan_change(sub, target)
+        self.assertEqual(pending.plan.plan_id, "basic")
+        self.assertEqual(pending.pending_plan.plan_id, "pro")
+        self.assertTrue(entitlement_access_is_active(pending))
+        with self.assertRaises(ValueError):
+            activate_from_settled_payment(pending, billed_plan_id="basic")
+        active = activate_from_settled_payment(
+            pending, billed_plan_id="pro", billed_purpose=ChargePurpose.PLAN_CHANGE
+        )
+        self.assertEqual(active.plan.plan_id, "pro")
+        self.assertIsNone(active.pending_plan)
+
+    def test_cancel_then_reactivate_requires_new_payment(self) -> None:
+        plan = PlanDefinition(
+            plan_id="commercial", name="Commercial",
+            monthly_price=Decimal("99.90"), included_credits=Decimal("10"),
+            extra_credit_unit_price=Decimal("1"),
+            entitlements=PlanEntitlements(max_users=2),
+            cancellation_mode=CancellationMode.IMMEDIATE,
+            reactivation_mode=ReactivationMode.PAYMENT_REQUIRED,
+            reactivation_billing_mode=ReactivationBillingMode.CURRENT_PLAN_FULL_CYCLE,
+        )
+        sub = Subscription(
+            tenant_id="tenant-1", customer_ref="customer-1",
+            customer_document="11144477735", plan=plan, status=SubscriptionStatus.ACTIVE,
+        )
+        canceled = cancel_subscription(sub)
+        self.assertEqual(canceled.status, SubscriptionStatus.CANCELED)
+        self.assertFalse(entitlement_access_is_active(canceled))
+        pending = request_reactivation(canceled)
+        self.assertEqual(pending.status, SubscriptionStatus.PENDING_PAYMENT)
+        self.assertFalse(entitlement_access_is_active(pending))
+        active = activate_from_settled_payment(
+            pending,
+            billed_plan_id="commercial",
+            billed_purpose=ChargePurpose.REACTIVATION,
+        )
+        self.assertEqual(active.status, SubscriptionStatus.ACTIVE)
 
 if __name__ == "__main__":
     unittest.main()

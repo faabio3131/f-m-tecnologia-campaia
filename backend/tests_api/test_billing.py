@@ -170,6 +170,94 @@ class BillingSubscriptionTests(unittest.TestCase):
         assert r.status_code == 404, r.text
 
 
+
+    def test_upgrade_is_pending_until_target_plan_payment_settles(self) -> None:
+        client = make_client()
+        _put_subscription(client)
+        state = client.app.state.campaia
+        current = state.subscriptions["demo-tenant"]
+        state.subscriptions["demo-tenant"] = replace(
+            current, status=__import__("campaia_core.subscription", fromlist=["SubscriptionStatus"]).SubscriptionStatus.ACTIVE
+        )
+
+        with _with_catalog():
+            changed = client.post(
+                "/billing/subscription/change-plan",
+                headers={**with_step_up(OWNER), **unique_idem()},
+                json={"target_plan_id": "exemplo-pro"},
+            )
+        assert changed.status_code == 200, changed.text
+        body = changed.json()
+        assert body["plan_id"] == "exemplo-essencial"
+        assert body["pending_plan_id"] == "exemplo-pro"
+        assert body["pending_plan_change_kind"] == "UPGRADE"
+        assert body["entitlements"]["max_users"] == 1
+
+        charge = client.post(
+            "/billing/charges",
+            headers={**with_step_up(OWNER), **unique_idem()},
+            json={"competence": "2026-10"},
+        )
+        assert charge.status_code == 202, charge.text
+        gateway_charge_id = charge.json()["gateway_charge_id"]
+
+        old = os.environ.get("ASAAS_WEBHOOK_TOKEN")
+        os.environ["ASAAS_WEBHOOK_TOKEN"] = "expected-token"
+        try:
+            settled = client.post(
+                "/webhooks/asaas",
+                headers={"asaas-access-token": "expected-token"},
+                json={
+                    "id": "evt_upgrade_1",
+                    "event": "PAYMENT_RECEIVED",
+                    "payment": {"id": gateway_charge_id, "status": "RECEIVED"},
+                },
+            )
+            assert settled.status_code == 200, settled.text
+        finally:
+            if old is None:
+                os.environ.pop("ASAAS_WEBHOOK_TOKEN", None)
+            else:
+                os.environ["ASAAS_WEBHOOK_TOKEN"] = old
+
+        after = client.get("/billing/subscription", headers=OWNER).json()
+        assert after["plan_id"] == "exemplo-pro"
+        assert after["pending_plan_id"] is None
+        assert after["entitlements"]["max_users"] == 2
+
+    def test_cancel_and_reactivate_are_idempotent_and_payment_gated(self) -> None:
+        client = make_client()
+        _put_subscription(client)
+        state = client.app.state.campaia
+        current = state.subscriptions["demo-tenant"]
+        status_enum = __import__("campaia_core.subscription", fromlist=["SubscriptionStatus"]).SubscriptionStatus
+        state.subscriptions["demo-tenant"] = replace(current, status=status_enum.ACTIVE)
+
+        headers = {**with_step_up(OWNER), **unique_idem()}
+        first = client.post("/billing/subscription/cancel", headers=headers)
+        replay = client.post("/billing/subscription/cancel", headers=headers)
+        assert first.status_code == 200, first.text
+        assert replay.json() == first.json()
+        assert first.json()["status"] == "CANCELED"
+        assert first.json()["entitlement_access_active"] is False
+
+        reactivated = client.post(
+            "/billing/subscription/reactivate",
+            headers={**with_step_up(OWNER), **unique_idem()},
+        )
+        assert reactivated.status_code == 200, reactivated.text
+        assert reactivated.json()["status"] == "PENDING_PAYMENT"
+        assert reactivated.json()["entitlement_access_active"] is False
+
+    def test_cross_tenant_cannot_mutate_another_subscription_transition(self) -> None:
+        client = make_client()
+        _put_subscription(client, headers=OWNER)
+        response = client.post(
+            "/billing/subscription/cancel",
+            headers={**with_step_up(OTHER_OWNER), **unique_idem()},
+        )
+        assert response.status_code == 404, response.text
+
 class BillingChargeTests(unittest.TestCase):
     def test_charge_without_subscription_is_not_found(self) -> None:
         client = make_client()
@@ -300,6 +388,95 @@ class AsaasWebhookTests(unittest.TestCase):
             assert sub_body["entitlement_access_active"] is True
         finally:
             self._restore_webhook_token(old)
+
+    def test_late_payment_after_cancellation_never_reactivates_entitlement(self) -> None:
+        app, client = self._app_and_client()
+        _put_subscription(client)
+        state = client.app.state.campaia
+        current = state.subscriptions["demo-tenant"]
+        status_enum = __import__(
+            "campaia_core.subscription", fromlist=["SubscriptionStatus"]
+        ).SubscriptionStatus
+        state.subscriptions["demo-tenant"] = replace(current, status=status_enum.ACTIVE)
+
+        charge_response = client.post(
+            "/billing/charges",
+            headers={**with_step_up(OWNER), **unique_idem()},
+            json={"competence": "2026-10"},
+        )
+        gateway_charge_id = charge_response.json()["gateway_charge_id"]
+        canceled = client.post(
+            "/billing/subscription/cancel",
+            headers={**with_step_up(OWNER), **unique_idem()},
+        )
+        assert canceled.status_code == 200, canceled.text
+
+        old = self._set_webhook_token("expected-token")
+        try:
+            settled = client.post(
+                "/webhooks/asaas",
+                headers={"asaas-access-token": "expected-token"},
+                json={
+                    "id": "evt_late_after_cancel",
+                    "event": "PAYMENT_RECEIVED",
+                    "payment": {"id": gateway_charge_id, "status": "RECEIVED"},
+                },
+            )
+            assert settled.status_code == 200, settled.text
+            assert settled.json()["processed"] is True
+        finally:
+            self._restore_webhook_token(old)
+
+        observed = client.get("/billing/subscription", headers=OWNER).json()
+        assert observed["status"] == "CANCELED"
+        assert observed["entitlement_access_active"] is False
+        actions = [event.action for event in state.audit.list_for_tenant("demo-tenant")]
+        assert "BILLING_SUBSCRIPTION_ACTIVATION_SKIPPED" in actions
+
+    def test_old_plan_payment_during_pending_upgrade_does_not_apply_target_plan(self) -> None:
+        app, client = self._app_and_client()
+        _put_subscription(client)
+        state = client.app.state.campaia
+        current = state.subscriptions["demo-tenant"]
+        status_enum = __import__(
+            "campaia_core.subscription", fromlist=["SubscriptionStatus"]
+        ).SubscriptionStatus
+        state.subscriptions["demo-tenant"] = replace(current, status=status_enum.ACTIVE)
+
+        old_charge = client.post(
+            "/billing/charges",
+            headers={**with_step_up(OWNER), **unique_idem()},
+            json={"competence": "2026-10"},
+        )
+        old_gateway_id = old_charge.json()["gateway_charge_id"]
+        with _with_catalog():
+            changed = client.post(
+                "/billing/subscription/change-plan",
+                headers={**with_step_up(OWNER), **unique_idem()},
+                json={"target_plan_id": "exemplo-pro"},
+            )
+        assert changed.status_code == 200, changed.text
+
+        old = self._set_webhook_token("expected-token")
+        try:
+            settled = client.post(
+                "/webhooks/asaas",
+                headers={"asaas-access-token": "expected-token"},
+                json={
+                    "id": "evt_old_plan_during_upgrade",
+                    "event": "PAYMENT_RECEIVED",
+                    "payment": {"id": old_gateway_id, "status": "RECEIVED"},
+                },
+            )
+            assert settled.status_code == 200, settled.text
+            assert settled.json()["processed"] is True
+        finally:
+            self._restore_webhook_token(old)
+
+        observed = client.get("/billing/subscription", headers=OWNER).json()
+        assert observed["plan_id"] == "exemplo-essencial"
+        assert observed["pending_plan_id"] == "exemplo-pro"
+        assert observed["entitlements"]["max_users"] == 1
 
     def test_pending_status_is_accepted_but_not_settled(self) -> None:
         app, client = self._app_and_client()

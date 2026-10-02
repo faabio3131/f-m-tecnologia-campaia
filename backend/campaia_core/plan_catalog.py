@@ -19,7 +19,17 @@ import os
 from decimal import Decimal
 from pathlib import Path
 
-from .subscription import PlanDefinition, PlanEntitlements
+from .subscription import (
+    CancellationMode,
+    PlanChangeActivation,
+    PlanChangeBillingMode,
+    PlanChangeKind,
+    PlanChangeRule,
+    PlanDefinition,
+    PlanEntitlements,
+    ReactivationBillingMode,
+    ReactivationMode,
+)
 
 #: Variavel de ambiente que aponta para o arquivo real de planos (dado de configuracao,
 #: tipicamente gerido fora do repositorio de codigo — ex.: montado no deploy, ou em um caminho
@@ -81,6 +91,28 @@ def _parse_entitlements(entry: dict, *, source: Path) -> PlanEntitlements | None
         ) from exc
 
 
+def _parse_plan_changes(entry: dict, *, source: Path) -> tuple[PlanChangeRule, ...]:
+    raw = entry.get("plan_changes", [])
+    if not isinstance(raw, list):
+        raise PlanCatalogError(f"plan_changes em {source} deve ser lista.")
+    rules: list[PlanChangeRule] = []
+    try:
+        for item in raw:
+            if not isinstance(item, dict):
+                raise PlanCatalogError(f"plan_changes em {source} deve conter objetos.")
+            rules.append(
+                PlanChangeRule(
+                    target_plan_id=item["target_plan_id"],
+                    kind=PlanChangeKind(item["kind"]),
+                    activation=PlanChangeActivation(item.get("activation", "SETTLED_PAYMENT")),
+                    billing_mode=PlanChangeBillingMode(item["billing_mode"]),
+                )
+            )
+    except (KeyError, ValueError) as exc:
+        raise PlanCatalogError(f"plan_changes invalido em {source}: {raw!r} — {exc}") from exc
+    return tuple(rules)
+
+
 def _to_plan_definition(entry: dict, *, source: Path) -> PlanDefinition:
     required = {"plan_id", "name", "monthly_price", "included_credits", "extra_credit_unit_price"}
     missing = required - entry.keys()
@@ -108,6 +140,22 @@ def _to_plan_definition(entry: dict, *, source: Path) -> PlanDefinition:
             currency=entry.get("currency", "BRL"),
             trial_days=entry.get("trial_days"),
             entitlements=entitlements,
+            plan_changes=_parse_plan_changes(entry, source=source),
+            cancellation_mode=(
+                CancellationMode(entry["cancellation_mode"])
+                if entry.get("cancellation_mode") is not None
+                else None
+            ),
+            reactivation_mode=(
+                ReactivationMode(entry["reactivation_mode"])
+                if entry.get("reactivation_mode") is not None
+                else None
+            ),
+            reactivation_billing_mode=(
+                ReactivationBillingMode(entry["reactivation_billing_mode"])
+                if entry.get("reactivation_billing_mode") is not None
+                else None
+            ),
         )
     except (ValueError, ArithmeticError) as exc:
         raise PlanCatalogError(f"Plano invalido em {source}: {entry!r} — {exc}") from exc
@@ -142,6 +190,14 @@ def load_plan_catalog(path: str | os.PathLike | None = None) -> dict[str, PlanDe
 
     if not catalog:
         raise PlanCatalogError(f"Catalogo de planos em {source} esta vazio.")
+
+    for plan in catalog.values():
+        for rule in plan.plan_changes:
+            if rule.target_plan_id not in catalog:
+                raise PlanCatalogError(
+                    f"plan_changes do plano '{plan.plan_id}' aponta para "
+                    f"target_plan_id inexistente '{rule.target_plan_id}' em {source}."
+                )
 
     return catalog
 

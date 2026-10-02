@@ -9,12 +9,52 @@
     "max_users": 1,
     "currency": "BRL",
     "trial_days": 7,
+    "cancellation_mode": "IMMEDIATE",
+    "reactivation_mode": "PAYMENT_REQUIRED",
+    "reactivation_billing_mode": "CURRENT_PLAN_FULL_CYCLE",
+    "plan_changes": [
+      {
+        "target_plan_id": "exemplo-pro",
+        "kind": "UPGRADE",
+        "activation": "SETTLED_PAYMENT",
+        "billing_mode": "TARGET_PLAN_FULL_CYCLE"
+      }
+    ],
     "entitlements": {
       "max_users": 1,
       "max_active_campaigns": 1,
       "channels": ["EXEMPLO_CHANNEL"],
       "ai_capabilities": ["EXEMPLO_AI"],
       "resources": ["EXEMPLO_RESOURCE"]
+    }
+  },
+  {
+    "_comment": "EXEMPLO fictício para exercitar downgrade. Não é oferta comercial real.",
+    "plan_id": "exemplo-pro",
+    "name": "Exemplo Pro",
+    "monthly_price": 2.00,
+    "included_credits": 2,
+    "extra_credit_unit_price": 1.00,
+    "max_users": 2,
+    "currency": "BRL",
+    "trial_days": 7,
+    "cancellation_mode": "IMMEDIATE",
+    "reactivation_mode": "PAYMENT_REQUIRED",
+    "reactivation_billing_mode": "CURRENT_PLAN_FULL_CYCLE",
+    "plan_changes": [
+      {
+        "target_plan_id": "exemplo-essencial",
+        "kind": "DOWNGRADE",
+        "activation": "SETTLED_PAYMENT",
+        "billing_mode": "TARGET_PLAN_FULL_CYCLE"
+      }
+    ],
+    "entitlements": {
+      "max_users": 2,
+      "max_active_campaigns": 2,
+      "channels": ["EXEMPLO_CHANNEL", "EXEMPLO_CHANNEL_2"],
+      "ai_capabilities": ["EXEMPLO_AI", "EXEMPLO_AI_2"],
+      "resources": ["EXEMPLO_RESOURCE", "EXEMPLO_RESOURCE_2"]
     }
   }
 ]
