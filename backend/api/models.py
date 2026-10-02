@@ -492,6 +492,17 @@ class BillingSubscriptionUpsert(ApiModel):
     #: CPF ou CNPJ do cliente cobrado — obrigatorio, mesma exigencia do dominio
     #: (subscription.Subscription, payment_gateway.ChargeCommand).
     customer_document: str
+    #: Trial e opt-in explicito. False cria assinatura PENDING_PAYMENT.
+    #: A duracao nunca vem do cliente; vem do catalogo comercial do plano.
+    start_trial: bool = False
+
+
+class BillingEntitlementsResponse(BaseModel):
+    max_users: int | None
+    max_active_campaigns: int | None
+    channels: list[str]
+    ai_capabilities: list[str]
+    resources: list[str]
 
 
 class BillingSubscriptionResponse(BaseModel):
@@ -501,6 +512,11 @@ class BillingSubscriptionResponse(BaseModel):
     plan_id: str
     plan_name: str
     status: str
+    trial_started_at: datetime | None = None
+    trial_ends_at: datetime | None = None
+    activated_at: datetime | None = None
+    entitlement_access_active: bool
+    entitlements: BillingEntitlementsResponse | None = None
 
 
 class BillingChargeCreate(ApiModel):
