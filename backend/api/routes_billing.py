@@ -101,7 +101,18 @@ def _require_subscription(state: AppState, tenant_id: str) -> Subscription:
             "Nenhuma assinatura configurada para este tenant. Configure uma via "
             "PUT /billing/subscription antes de gerar uma cobranca.",
         )
-    return subscription
+
+    refreshed = refresh_trial_status(subscription, now=datetime.now(timezone.utc))
+    if refreshed != subscription:
+        state.subscriptions[tenant_id] = refreshed
+        state.audit.append(
+            tenant_id=tenant_id,
+            actor="system",
+            actor_kind="SYSTEM",
+            action="BILLING_TRIAL_EXPIRED",
+            target=refreshed.plan.plan_id,
+        )
+    return refreshed
 
 
 async def put_subscription(request: Request) -> JSONResponse:
