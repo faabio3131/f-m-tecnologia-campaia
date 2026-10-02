@@ -579,6 +579,50 @@ class PersistentTenantAutonomy:
         return self.get(key, sentinel) is not sentinel
 
 
+class PersistentTenantObjectMap:
+    """Live persistent mapping for tenant-owned domain records keyed by arbitrary ids.
+
+    Billing uses tenant ids as subscription keys and gateway payment ids as charge keys.
+    The value itself is the authority for tenant ownership; every write requires a non-empty
+    `tenant_id` attribute and RecordTable enforces that an existing id cannot be silently
+    reassigned to another tenant.
+    """
+
+    def __init__(self, table: RecordTable) -> None:
+        self._table = table
+
+    def get(self, key: str, default=None):
+        value = self._table.get(key)
+        return default if value is None else value
+
+    def __getitem__(self, key: str):
+        value = self._table.get(key)
+        if value is None:
+            raise KeyError(key)
+        return value
+
+    def __setitem__(self, key: str, value) -> None:
+        tenant_id = getattr(value, "tenant_id", None)
+        if not tenant_id:
+            raise ValueError("PersistentTenantObjectMap values require tenant_id")
+        self._table.put(key, tenant_id, value)
+
+    def __delitem__(self, key: str) -> None:
+        self._table.delete(key)
+
+    def __contains__(self, key: str) -> bool:
+        return self._table.get(key) is not None
+
+    def __iter__(self):
+        return (row_id for row_id, _tenant_id, _obj in self._table.all_rows())
+
+    def __len__(self) -> int:
+        return len(self._table.all_rows())
+
+    def values(self):
+        return [obj for _row_id, _tenant_id, obj in self._table.all_rows()]
+
+
 class PersistentIdempotencyStore:
     """SQLite-backed drop-in for ``campaia_core.infra.IdempotencyStore``'s public interface.
 
