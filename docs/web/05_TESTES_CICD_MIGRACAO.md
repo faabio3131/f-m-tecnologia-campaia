@@ -1,6 +1,6 @@
 # CampaIA — Ponto Zero Web · 05. Testes, Gates, CI/CD/Implantação TARGET, Migração e Preservação
 
-**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019, 19/09/2026) — implementação (WP-01 em diante) ainda não iniciada.
+**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019, 19/09/2026) — **WP-01 implementado e validado** (fundação do frontend Web, ver `docs/web/08_CERTIFICACAO_WP01_FUNDACAO_WEB.md`); WP-02 em diante ainda não iniciados.
 
 ---
 
@@ -61,7 +61,11 @@ Números confirmados por execução real nesta sessão (ver `07_CERTIFICACAO_PON
 ## 4. CI/CD e Implantação TARGET (desenhado, não executado)
 
 ### 4.1 CURRENT do CI
-`FATO CONFIRMADO`: 1 workflow (`backend-tests.yml`) — instala dependências, roda as 2 suítes de teste, valida AsyncAPI. Sem lint, sem typecheck, sem build de frontend (não existe frontend), sem deploy.
+`FATO CONFIRMADO` (reconfirmado na execução do WP-01): 2 workflows.
+- `backend-tests.yml` — instala dependências, roda as 2 suítes de teste do backend, valida AsyncAPI. Inalterado por esta missão.
+- `frontend-tests.yml` (**novo, WP-01**) — instala dependências de `web/` via `npm ci`, roda lint, typecheck (`next typegen` + `tsc --noEmit` estrito), verificação de drift do contrato OpenAPI, verificação das fronteiras de segurança do WP-01, testes unitários/componente/acessibilidade (Vitest), build de produção (Next.js) e smoke E2E (Playwright, desktop + mobile). Sem deploy.
+
+Sem lint/typecheck/testes/build do frontend antes desta missão — WP-01 fecha essa lacuna especificamente para a fundação, dentro do seu escopo (nenhuma funcionalidade de negócio, nenhuma chamada real ao BFF).
 
 ### 4.2 TARGET de ambientes
 | Ambiente | Finalidade | Status |

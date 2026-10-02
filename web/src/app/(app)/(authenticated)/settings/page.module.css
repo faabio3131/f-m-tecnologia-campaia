@@ -1,0 +1,11 @@
+.sectionTitle {
+  margin: 0 0 var(--campaia-space-1);
+  font-size: var(--campaia-font-size-lg);
+  color: var(--campaia-color-text);
+}
+
+.sectionDescription {
+  margin: 0 0 var(--campaia-space-4);
+  color: var(--campaia-color-text-muted);
+  max-width: 640px;
+}

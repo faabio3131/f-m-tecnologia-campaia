@@ -48,7 +48,7 @@ def _authorize_billing(request: Request, permission: Permission):
     fixture = require_auth(request)
     note_step_up_header(request, fixture)
     state = get_state(request)
-    principal = build_domain_principal(state, fixture)
+    principal = build_domain_principal(request, state, fixture)
     resource = Resource(tenant_id=fixture.tenant_id)
     decision = authorize(principal, permission, resource, now=datetime.now(timezone.utc))
     if not decision.allowed:

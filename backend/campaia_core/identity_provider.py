@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Protocol
 
 
@@ -34,11 +35,22 @@ class IdentityError(Exception):
 @dataclass(frozen=True, slots=True)
 class VerifiedIdentity:
     """Resultado de uma verificacao bem-sucedida. Prova QUEM (claims do Google), nunca
-    tenant/papel -- isso e responsabilidade exclusiva do diretorio interno do CampaIA."""
+    tenant/papel -- isso e responsabilidade exclusiva do diretorio interno do CampaIA.
+
+    SECURITY FIX (Fase 3, achado 2, 27/09/2026 -- auditoria independente): `auth_time`
+    e' o instante (claim `auth_time` do Google/Firebase, nunca `iat`/expiracao do JWT,
+    nunca o horario da requisicao) em que o usuario REALMENTE se autenticou junto ao
+    provedor de identidade -- e' o que prova frescor de uma reautenticacao de step-up
+    (`api/deps.py::_is_genuine_step_up`), nao so que o token e' criptograficamente
+    valido. Um ID token pode continuar valido por muito tempo depois do login original
+    (renovacao silenciosa de sessao no lado do provedor); sem checar `auth_time`, um
+    step-up "aceito" nao provava reautenticacao recente nenhuma, so posse de UM token
+    valido qualquer."""
 
     subject: str
     email: str
     email_verified: bool
+    auth_time: datetime
 
 
 class IdTokenVerifier(Protocol):
@@ -101,10 +113,20 @@ class FirebaseIdTokenVerifier:
         if not email:
             raise IdentityError("ID token verificado nao contem claim 'email'.")
 
+        # SECURITY FIX (achado 2): `auth_time` e' a claim padrao OIDC/Firebase para "quando
+        # o usuario se autenticou de verdade" -- ausente so em token malformado/de outro
+        # emissor que nao a preencha; fail-closed (nunca substituida por `iat`/hora da
+        # requisicao, que so provam quando o TOKEN foi emitido/recebido, nao quando o
+        # usuario provou a propria identidade).
+        auth_time_claim = decoded.get("auth_time")
+        if auth_time_claim is None:
+            raise IdentityError("ID token verificado nao contem claim 'auth_time'.")
+
         return VerifiedIdentity(
             subject=str(decoded["sub"]),
             email=str(email),
             email_verified=bool(decoded.get("email_verified", False)),
+            auth_time=datetime.fromtimestamp(int(auth_time_claim), tz=timezone.utc),
         )
 
 

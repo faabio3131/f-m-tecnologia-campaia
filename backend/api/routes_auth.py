@@ -19,10 +19,16 @@ from starlette.responses import JSONResponse, Response
 
 from campaia_core.identity_provider import IdentityError
 
-from .deps import get_state
+from .deps import get_state, require_session_record, session_key_for
 from .errors import ApiError
 from .helpers import parse_body
-from .models import SessionLoginRequest, SessionLoginResponse
+from .models import (
+    MembershipItem,
+    MembershipsResponse,
+    SessionLoginRequest,
+    SessionLoginResponse,
+    SwitchMembershipRequest,
+)
 from .session import (
     SESSION_COOKIE_NAME,
     clear_session_cookie,
@@ -65,8 +71,8 @@ async def login(request: Request) -> JSONResponse:
             "UNAUTHENTICATED", "O provedor de identidade nao confirma este e-mail como verificado."
         )
 
-    principal = state.identity_directory.resolve(identity.email)
-    if principal is None:
+    memberships = state.identity_directory.resolve_all(identity.email, subject=identity.subject)
+    if not memberships:
         # Fail-closed por decisao do Diretor (24/09/2026): identidade do Google provada,
         # mas sem vinculo interno no CampaIA -- NUNCA autoprovisiona tenant/usuario.
         # Autoprovisionamento e decisao de produto separada, fora do escopo do WP-02.
@@ -76,8 +82,19 @@ async def login(request: Request) -> JSONResponse:
             "nenhum tenant do CampaIA.",
         )
 
+    # WP-03 (25/09/2026): login sempre entra pelo primeiro vinculo cadastrado (mesmo
+    # comportamento de sempre quando ha' so 1); os demais ficam disponiveis para troca via
+    # POST /auth/session/switch, sem precisar de novo login.
+    principal = memberships[0]
     now = datetime.now(timezone.utc)
-    record = state.sessions.create(principal, now=now)
+    # IDENTITY HARDENING (27/09/2026 -- correcao final pre-Google-Ads): `identity.subject`
+    # (o `sub` do provedor, verificado por `state.id_token_verifier` acima) capturado no
+    # login -- usado depois por `api/deps.py::_is_genuine_step_up` como o binding de
+    # identidade preferido para step-up (mais estavel que e-mail, que em tese pode ser
+    # reciclado/ter variacao de caixa entre provedores).
+    record = state.sessions.create(
+        principal, now=now, available_principals=memberships, subject=identity.subject
+    )
 
     response = JSONResponse(
         _serialize_session(principal, csrf_token=record.csrf_secret).model_dump()
@@ -120,3 +137,94 @@ async def logout(request: Request) -> Response:
     response = Response(status_code=204)
     clear_session_cookie(response)
     return response
+
+
+async def list_memberships(request: Request) -> JSONResponse:
+    """WP-03 (25/09/2026): lista os vinculos (tenant/unidade/papeis) da sessao real
+    atual -- nunca do e-mail "ao vivo" (ver docstring de SessionRecord.available_principals
+    em api/session.py). Fixture de bearer token (dev/teste) e recusado aqui via
+    `require_session_record` -- essa rota so faz sentido para sessao real."""
+    record = require_session_record(request)
+    items = [
+        MembershipItem(
+            user_id=membership.user_id,
+            tenant_id=membership.tenant_id,
+            business_unit_id=membership.business_unit_id,
+            roles=sorted(r.value for r in membership.roles),
+            active=membership.user_id == record.principal.user_id,
+        )
+        for membership in record.available_principals
+    ]
+    return JSONResponse(MembershipsResponse(memberships=items).model_dump())
+
+
+async def switch_membership(request: Request) -> JSONResponse:
+    """WP-03 (25/09/2026): troca o vinculo ATIVO da sessao para outro vinculo real da
+    MESMA identidade -- nunca aceita um tenant_id livre do corpo da requisicao (so um
+    `user_id` que precisa bater com um dos `available_principals` capturados no login).
+    Mesma sessao/cookie/csrf_secret depois da troca (ver
+    SessionStore.switch_principal) -- so o principal ativo muda. `require_session_record`
+    ja valida CSRF (metodo mutante) antes de chegarmos aqui.
+
+    SECURITY FIX (Fase 3, achado 3, 27/09/2026 -- auditoria independente): `step_up_at`
+    (campaia_core.permissions.REQUIRES_STEP_UP) e' chaveado por
+    `(tenant_id, user_id, session_key)` em AppState (Fase C3) -- so isso ja bastava para
+    o step-up de A nao valer para B na primeira troca (user_id diferente). Mas ao voltar
+    de B para A DENTRO da mesma sessao, o par (tenant_id, user_id) de A volta a ser
+    identico ao de antes, e o step-up antigo de A ressuscitava sem reautenticacao nova --
+    contra a regra exigida: QUALQUER troca de vinculo invalida TODO step-up daquela
+    sessao. Por isso esta rota chama explicitamente
+    `state.invalidate_step_up_for_session` a CADA troca bem-sucedida, antes de devolver a
+    resposta -- nao e' mais um efeito colateral implicito do modelo de chaves, e' uma
+    acao deliberada.
+    """
+    record = require_session_record(request)
+    body = await parse_body(request, SwitchMembershipRequest)
+    state = get_state(request)
+
+    target = next(
+        (m for m in record.available_principals if m.user_id == body.user_id), None
+    )
+    if target is None:
+        # Achado de fm-security-review (25/09/2026): uma tentativa de trocar para um
+        # vinculo que nao pertence a esta identidade e' um sinal relevante (poderia ser
+        # erro de UI ou tentativa de sondagem) -- fica no audit log mesmo assim, com o
+        # tenant/ator ORIGINAIS (a troca nunca chegou a acontecer).
+        state.audit.append(
+            tenant_id=record.principal.tenant_id,
+            actor=record.principal.user_id,
+            action="SESSION_SWITCH_REJECTED",
+            target=body.user_id,
+            details={"reason": "membership_not_owned_by_identity"},
+        )
+        raise ApiError(
+            "PERMISSION_DENIED",
+            "O vinculo solicitado nao pertence a esta identidade.",
+        )
+
+    updated = state.sessions.switch_principal(record.session_id, target)
+    if updated is None:
+        # So acontece se a sessao expirou/foi invalidada entre require_session_record e
+        # aqui (janela de corrida real, ainda que estreita) -- fail-closed, nunca finge
+        # sucesso.
+        raise ApiError("UNAUTHENTICATED", "Sessao invalida ou expirada.")
+
+    # SECURITY FIX (achado 3): toda troca de vinculo invalida TODO step-up desta sessao,
+    # inclusive o do vinculo ao qual ela volta depois (ver docstring acima).
+    state.invalidate_step_up_for_session(session_key_for(request))
+
+    state.audit.append(
+        tenant_id=updated.principal.tenant_id,
+        actor=updated.principal.user_id,
+        action="SESSION_SWITCH",
+        target=updated.principal.user_id,
+        details={
+            "from_tenant_id": record.principal.tenant_id,
+            "from_user_id": record.principal.user_id,
+            "to_tenant_id": updated.principal.tenant_id,
+        },
+    )
+
+    return JSONResponse(
+        _serialize_session(updated.principal, csrf_token=updated.csrf_secret).model_dump()
+    )

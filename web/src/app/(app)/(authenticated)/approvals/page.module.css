@@ -1,0 +1,28 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-3);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-2);
+}
+
+.itemTitle {
+  margin: 0;
+  font-weight: 600;
+  color: var(--campaia-color-text);
+}
+
+.itemDetail {
+  margin: 0;
+  color: var(--campaia-color-text-muted);
+  font-size: var(--campaia-font-size-sm);
+}
+
+.actions {
+  display: flex;
+  gap: var(--campaia-space-2);
+}

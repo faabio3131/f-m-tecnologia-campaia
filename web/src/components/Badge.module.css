@@ -1,0 +1,27 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--campaia-space-1) var(--campaia-space-3);
+  border-radius: 999px;
+  font-size: var(--campaia-font-size-sm);
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.neutral {
+  background: var(--campaia-color-bg);
+  border-color: var(--campaia-color-border);
+  color: var(--campaia-color-text-muted);
+}
+
+.accent {
+  background: color-mix(in srgb, var(--campaia-color-accent) 16%, transparent);
+  border-color: var(--campaia-color-accent);
+  color: var(--campaia-color-accent);
+}
+
+.warning {
+  background: var(--campaia-color-warning-bg);
+  border-color: var(--campaia-color-warning-border);
+  color: var(--campaia-color-warning-text);
+}

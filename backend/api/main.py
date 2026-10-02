@@ -10,6 +10,8 @@ so this app mirrors the routing/response shape a FastAPI app would have.
 
 from __future__ import annotations
 
+import os
+
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -20,7 +22,7 @@ from campaia_core.errors import CampaiaError
 from .errors import ApiError, from_domain_error
 from .routes_approvals import create_approval, decide_approval, list_approvals
 from .routes_audit import list_audit_events
-from .routes_auth import get_session, login, logout
+from .routes_auth import get_session, list_memberships, login, logout, switch_membership
 from .routes_autonomy import get_autonomy, put_autonomy
 from .routes_billing import asaas_webhook, create_charge, get_subscription, put_subscription
 from .routes_brand import create_brand_profile, list_brand_profiles
@@ -35,15 +37,36 @@ from .routes_campaigns import (
     pause_campaign,
     publish_campaign,
     regenerate_plan,
+    resume_campaign,
     validate_campaign,
 )
 from .routes_connections import (
     connection_capabilities,
+    dev_attach_credential,
     list_connections,
+    oauth_callback,
     oauth_start,
     revoke_connection,
 )
+from .routes_health import health, liveness, readiness
 from .routes_me import get_me
+from .routes_onboarding import (
+    accept_invitation,
+    create_invitation,
+    create_tenant,
+    deactivate_member,
+    list_invitations,
+    list_members,
+    reactivate_member,
+)
+from .routes_organization_admin import (
+    create_business_unit,
+    deactivate_business_unit,
+    list_business_units,
+    reactivate_business_unit,
+    rename_business_unit,
+    update_membership_access,
+)
 from .state import AppState
 
 
@@ -60,22 +83,64 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> JSONRespo
 
 
 routes = [
+    # Fase 3, item 5 (achado 23, 26/09/2026): probe de liveness sem autenticacao --
+    # deliberadamente fora de contracts/bff-openapi.yaml, mesmo precedente de /test-idp/*
+    # (real, porem fora do contrato BFF client-facing).
+    Route("/health", health, methods=["GET"]),
+    Route("/health/live", liveness, methods=["GET"]),
+    Route("/health/ready", readiness, methods=["GET"]),
+
     # Item 1.3/WP-02 (24/09/2026): sessao real. Sem require_auth -- e o proprio endpoint
     # que estabelece/encerra a sessao que require_auth depois consome. GET devolve o
     # csrf_token da sessao atual (recuperacao apos reload, achado de fm-security-review).
     Route("/auth/session", login, methods=["POST"]),
     Route("/auth/session", get_session, methods=["GET"]),
     Route("/auth/session", logout, methods=["DELETE"]),
+    Route("/auth/session/switch", switch_membership, methods=["POST"]),
+
+    # F1 commercial onboarding: explicit product action after verified identity. These
+    # public endpoints do NOT autoprovision on login; both enforce same-origin and verify
+    # the Google/OIDC identity before creating/accepting any membership.
+    Route("/onboarding/tenant", create_tenant, methods=["POST"]),
+    Route("/onboarding/invitations/accept", accept_invitation, methods=["POST"]),
 
     Route("/me", get_me, methods=["GET"]),
+    Route("/me/memberships", list_memberships, methods=["GET"]),
+    Route("/memberships", list_members, methods=["GET"]),
+    Route("/member-invitations", list_invitations, methods=["GET"]),
+    Route("/member-invitations", create_invitation, methods=["POST"]),
+    Route("/memberships/{membershipId}/deactivate", deactivate_member, methods=["POST"]),
+    Route("/memberships/{membershipId}/reactivate", reactivate_member, methods=["POST"]),
+    Route("/memberships/{membershipId}", update_membership_access, methods=["PATCH"]),
+    Route("/business-units", list_business_units, methods=["GET"]),
+    Route("/business-units", create_business_unit, methods=["POST"]),
+    Route("/business-units/{businessUnitId}", rename_business_unit, methods=["PATCH"]),
+    Route(
+        "/business-units/{businessUnitId}/deactivate",
+        deactivate_business_unit,
+        methods=["POST"],
+    ),
+    Route(
+        "/business-units/{businessUnitId}/reactivate",
+        reactivate_business_unit,
+        methods=["POST"],
+    ),
 
     Route("/brand-profiles", list_brand_profiles, methods=["GET"]),
     Route("/brand-profiles", create_brand_profile, methods=["POST"]),
 
     Route("/connections", list_connections, methods=["GET"]),
     Route("/connections/oauth/start", oauth_start, methods=["POST"]),
+    Route("/connections/oauth/callback", oauth_callback, methods=["POST"]),
     Route("/connections/{connectionId}", revoke_connection, methods=["DELETE"]),
     Route("/connections/{connectionId}/capabilities", connection_capabilities, methods=["GET"]),
+    # Fase 3, achado 4 (27/09/2026): dev/test-only, nunca documentada no contrato
+    # OpenAPI publico, fail-closed fora de test/dev-local (ver dev_attach_credential).
+    Route(
+        "/connections/{connectionId}/dev-attach-credential",
+        dev_attach_credential,
+        methods=["POST"],
+    ),
 
     Route("/briefs", create_brief, methods=["POST"]),
 
@@ -86,6 +151,9 @@ routes = [
     Route("/campaigns/{campaignId}/validate", validate_campaign, methods=["POST"]),
     Route("/campaigns/{campaignId}/publish", publish_campaign, methods=["POST"]),
     Route("/campaigns/{campaignId}/pause", pause_campaign, methods=["POST"]),
+    # Fase 4, item A (achado 25, 26/09/2026): dominio ja modelava PAUSED -> ACTIVE
+    # (campaia_core/states.py) -- so faltava exposicao via API.
+    Route("/campaigns/{campaignId}/resume", resume_campaign, methods=["POST"]),
     Route("/campaigns/{campaignId}/budget", patch_budget, methods=["PATCH"]),
     Route("/campaigns/{campaignId}/insights", get_insights, methods=["GET"]),
 
@@ -116,20 +184,22 @@ exception_handlers = {
 }
 
 
-def create_app(db_path: str | None = None, env: str | None = None) -> Starlette:
-    """``db_path=None`` (the default) is pure in-memory state, byte-for-byte identical to
-    this app before persistence existed -- every pre-existing test relies on that. Passing
-    a real path backs campaigns, approvals, connections, brand profiles, the audit log,
-    idempotency records, and tenant autonomy settings with a SQLite file at that path (see
-    api/db.py and api/state.py's AppState.__post_init__), so state survives a process
-    restart when the same path is reused.
+def create_app(
+    db_path: str | None = None,
+    env: str | None = None,
+    database_url: str | None = None,
+) -> Starlette:
+    """Create the BFF with ephemeral, SQLite, or PostgreSQL persistence.
 
-    ``env=None`` (the default) lets `AppState` read `CAMPAIA_ENV` itself, defaulting to
-    the fail-closed "production" value (item 1.3/WP-02: no dev auth fixture). Test/local
-    dev call sites pass ``env="test"``/``"dev-local"`` explicitly.
+    Production selects PostgreSQL with CAMPAIA_DATABASE_URL. The application never
+    auto-creates its PostgreSQL schema; deployment automation must run versioned
+    migrations before starting the new revision.
     """
+    if database_url is None:
+        database_url = os.environ.get("CAMPAIA_DATABASE_URL")
+
     app = Starlette(routes=routes, exception_handlers=exception_handlers)
-    kwargs = {"db_path": db_path}
+    kwargs = {"db_path": db_path, "database_url": database_url}
     if env is not None:
         kwargs["env"] = env
     app.state.campaia = AppState(**kwargs)

@@ -16,7 +16,7 @@ from .models import BrandProfileCreate
 def _authorize_brand(request: Request, permission: Permission):
     fixture = require_auth(request)
     state = get_state(request)
-    principal = build_domain_principal(state, fixture)
+    principal = build_domain_principal(request, state, fixture)
     resource = Resource(tenant_id=fixture.tenant_id, business_unit_id=fixture.business_unit_id)
     decision = authorize(principal, permission, resource, now=datetime.now(timezone.utc))
     if not decision.allowed:

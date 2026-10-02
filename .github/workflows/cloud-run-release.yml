@@ -1,0 +1,138 @@
+name: CAMPAIA Cloud Run Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target GitHub Environment"
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      production_confirmation:
+        description: "For production only, type DEPLOY_PRODUCTION after Director approval"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  release:
+    name: Build, migrate, deploy and smoke
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Main branch deployment guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "Cloud deploys are allowed only from refs/heads/main." >&2
+            exit 2
+          fi
+
+      - name: Production authorization guard
+        shell: bash
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          PRODUCTION_CONFIRMATION: ${{ inputs.production_confirmation }}
+        run: |
+          set -euo pipefail
+          if [[ "${TARGET_ENVIRONMENT}" == "production" && "${PRODUCTION_CONFIRMATION}" != "DEPLOY_PRODUCTION" ]]; then
+            echo "Production requires explicit confirmation after Director approval." >&2
+            exit 2
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud with OIDC
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Configure Artifact Registry Docker auth
+        shell: bash
+        run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
+
+      - name: Define immutable image references
+        id: images
+        shell: bash
+        run: |
+          ROOT="${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/campaia"
+          echo "backend=${ROOT}/backend:${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
+          echo "web=${ROOT}/web:${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build and push backend
+        shell: bash
+        run: |
+          docker build --pull -t "${{ steps.images.outputs.backend }}" backend
+          docker push "${{ steps.images.outputs.backend }}"
+
+      - name: Deploy migration job
+        shell: bash
+        run: |
+          JOB="campaia-db-migrate-${{ inputs.environment }}"
+          gcloud run jobs deploy "${JOB}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --image="${{ steps.images.outputs.backend }}"             --service-account="${{ vars.GCP_BACKEND_SERVICE_ACCOUNT }}"             --network="${{ vars.GCP_VPC_NETWORK }}"             --subnet="${{ vars.GCP_VPC_SUBNET }}"             --vpc-egress=private-ranges-only             --set-env-vars="CAMPAIA_ENV=${{ inputs.environment }}"             --set-secrets="CAMPAIA_DATABASE_URL=${{ vars.CAMPAIA_DATABASE_URL_SECRET }}:latest"             --command=python3             --args=scripts/migrate_postgres.py,up             --max-retries=0             --task-timeout=10m             --quiet
+
+      - name: Migration gate
+        shell: bash
+        run: |
+          gcloud run jobs execute "campaia-db-migrate-${{ inputs.environment }}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --wait
+
+      - name: Deploy backend revision
+        shell: bash
+        run: |
+          SERVICE="campaia-backend-${{ inputs.environment }}"
+          gcloud run deploy "${SERVICE}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --image="${{ steps.images.outputs.backend }}"             --service-account="${{ vars.GCP_BACKEND_SERVICE_ACCOUNT }}"             --network="${{ vars.GCP_VPC_NETWORK }}"             --subnet="${{ vars.GCP_VPC_SUBNET }}"             --vpc-egress=private-ranges-only             --set-env-vars="CAMPAIA_ENV=${{ inputs.environment }},CAMPAIA_VAULT_KMS_KEY_NAME=${{ vars.CAMPAIA_VAULT_KMS_KEY_NAME }},FIREBASE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}"             --set-secrets="CAMPAIA_DATABASE_URL=${{ vars.CAMPAIA_DATABASE_URL_SECRET }}:latest"             --min="${{ vars.GCP_CLOUD_RUN_MIN_INSTANCES }}"             --max="${{ vars.GCP_CLOUD_RUN_MAX_INSTANCES }}"             --allow-unauthenticated             --quiet
+
+      - name: Resolve backend URL
+        id: backend
+        shell: bash
+        run: |
+          URL="$(gcloud run services describe "campaia-backend-${{ inputs.environment }}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --format='value(status.url)')"
+          test -n "${URL}"
+          echo "url=${URL}" >> "${GITHUB_OUTPUT}"
+
+      - name: Backend readiness smoke
+        shell: bash
+        run: curl --fail --retry 6 --retry-delay 5 "${{ steps.backend.outputs.url }}/health/ready"
+
+      - name: Build and push web
+        shell: bash
+        run: |
+          docker build --pull             --build-arg CAMPAIA_BFF_ORIGIN="${{ steps.backend.outputs.url }}"             --build-arg NEXT_PUBLIC_GOOGLE_IDENTITY_CLIENT_ID="${{ vars.NEXT_PUBLIC_GOOGLE_IDENTITY_CLIENT_ID }}"             --build-arg NEXT_PUBLIC_IDENTITY_PLATFORM_PUBLIC_API="${{ vars.NEXT_PUBLIC_IDENTITY_PLATFORM_PUBLIC_API }}"             --build-arg NEXT_PUBLIC_CAMPAIA_IDENTITY_MODE=google             -t "${{ steps.images.outputs.web }}" web
+          docker push "${{ steps.images.outputs.web }}"
+
+      - name: Deploy web revision
+        shell: bash
+        run: |
+          SERVICE="campaia-web-${{ inputs.environment }}"
+          gcloud run deploy "${SERVICE}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --image="${{ steps.images.outputs.web }}"             --service-account="${{ vars.GCP_WEB_SERVICE_ACCOUNT }}"             --min="${{ vars.GCP_CLOUD_RUN_MIN_INSTANCES }}"             --max="${{ vars.GCP_CLOUD_RUN_MAX_INSTANCES }}"             --allow-unauthenticated             --quiet
+
+      - name: Resolve web URL and bind backend origin
+        id: web
+        shell: bash
+        run: |
+          WEB_URL="$(gcloud run services describe "campaia-web-${{ inputs.environment }}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --format='value(status.url)')"
+          test -n "${WEB_URL}"
+          echo "url=${WEB_URL}" >> "${GITHUB_OUTPUT}"
+
+          gcloud run services update "campaia-backend-${{ inputs.environment }}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --update-env-vars="CAMPAIA_ALLOWED_ORIGINS=${WEB_URL}"             --quiet
+
+      - name: Final smoke
+        shell: bash
+        run: |
+          curl --fail --retry 6 --retry-delay 5 "${{ steps.backend.outputs.url }}/health/ready"
+          curl --fail --retry 6 --retry-delay 5 "${{ steps.web.outputs.url }}/"

@@ -41,7 +41,7 @@ def _authorize(request: Request, permission: Permission):
     fixture = require_auth(request)
     state = get_state(request)
     note_step_up_header(request, fixture)
-    principal = build_domain_principal(state, fixture)
+    principal = build_domain_principal(request, state, fixture)
     resource = Resource(tenant_id=fixture.tenant_id, business_unit_id=fixture.business_unit_id)
     decision = authorize(principal, permission, resource, now=datetime.now(timezone.utc))
     if not decision.allowed:
@@ -73,44 +73,36 @@ async def put_autonomy(request: Request) -> JSONResponse:
     require_step_up(request, fixture)
     idem_key = require_idempotency_key(request)
     body = await parse_body(request, AutonomyUpdateRequest)
+    key = f"http:put_autonomy:{idem_key}"
 
-    # Contract requires approval_id for /autonomy PUT (achado 12): exactly like publish
-    # and patch_budget, the level change must reference an already-APPROVED
-    # ApprovalRequest belonging to this tenant before it is applied.
-    approval = state.approvals.get(fixture.tenant_id, body.approval_id)
-    if approval is None:
-        raise ApiError("APPROVAL_REQUIRED", "approval_id not found for this tenant.")
-    if approval.status != "APPROVED":
-        raise ApiError("APPROVAL_REQUIRED", "Approval has not been granted.")
+    existing = state.idempotency.get(fixture.tenant_id, key)
+    if existing is not None:
+        return JSONResponse(existing.result)
 
-    current = state.tenant_autonomy.get(fixture.tenant_id, AutonomySettings())
     try:
         requested_level = AutonomyLevel(body.level)
     except ValueError:
         raise ApiError("VALIDATION_FAILED", f"Invalid autonomy level: {body.level}.")
 
-    try:
-        updated = AutonomySettings(
-            level=requested_level,
-            max_level_allowed=current.max_level_allowed,
-            max_budget_change_pct=current.max_budget_change_pct,
-        )
-    except ValueError as exc:
-        # AutonomySettings.__post_init__ refuses level > max_level_allowed -- this is the
-        # domain's own anti-self-promotion guard (I-11), not re-implemented here.
-        raise ApiError("VALIDATION_FAILED", str(exc))
-
-    # Idempotency check happens BEFORE the mutation, same pattern as publish_campaign.
-    existing = state.idempotency.get(fixture.tenant_id, f"http:put_autonomy:{idem_key}")
-    if existing is not None:
-        return json_response(
-            _serialize(
-                state.tenant_autonomy.get(fixture.tenant_id, AutonomySettings()),
-                updated_at=state.tenant_autonomy_updated_at.get(fixture.tenant_id, datetime.now(timezone.utc)),
-            )
-        )
-
     def _do_update():
+        approval = state.approvals.get(fixture.tenant_id, body.approval_id)
+        if approval is None:
+            raise ApiError("APPROVAL_REQUIRED", "approval_id not found for this tenant.")
+        if approval.status != "APPROVED":
+            raise ApiError("APPROVAL_REQUIRED", "Approval has not been granted.")
+
+        current = state.tenant_autonomy.get(
+            fixture.tenant_id, AutonomySettings()
+        )
+        try:
+            updated = AutonomySettings(
+                level=requested_level,
+                max_level_allowed=current.max_level_allowed,
+                max_budget_change_pct=current.max_budget_change_pct,
+            )
+        except ValueError as exc:
+            raise ApiError("VALIDATION_FAILED", str(exc))
+
         now = datetime.now(timezone.utc)
         state.tenant_autonomy[fixture.tenant_id] = updated
         state.tenant_autonomy_updated_at[fixture.tenant_id] = now
@@ -119,14 +111,16 @@ async def put_autonomy(request: Request) -> JSONResponse:
             actor=fixture.user_id,
             action="AUTONOMY_CHANGE",
             target=fixture.tenant_id,
-            details={"new_level": int(requested_level), "approval_id": body.approval_id},
+            details={
+                "new_level": int(requested_level),
+                "approval_id": body.approval_id,
+            },
         )
-        return True
+        approval.status = "APPLIED"
+        return _serialize(updated, updated_at=now).model_dump(mode="json")
 
-    state.idempotency.execute(fixture.tenant_id, f"http:put_autonomy:{idem_key}", _do_update)
-    return json_response(
-        _serialize(
-            state.tenant_autonomy[fixture.tenant_id],
-            updated_at=state.tenant_autonomy_updated_at[fixture.tenant_id],
-        )
+    result, _replay = state.idempotency.execute(
+        fixture.tenant_id, key, _do_update
     )
+    return JSONResponse(result)
+

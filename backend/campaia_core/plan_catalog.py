@@ -64,6 +64,7 @@ def _to_plan_definition(entry: dict, *, source: Path) -> PlanDefinition:
             monthly_price=Decimal(str(entry["monthly_price"])),
             included_credits=Decimal(str(entry["included_credits"])),
             extra_credit_unit_price=Decimal(str(entry["extra_credit_unit_price"])),
+            max_users=entry.get("max_users"),
             currency=entry.get("currency", "BRL"),
         )
     except (ValueError, ArithmeticError) as exc:

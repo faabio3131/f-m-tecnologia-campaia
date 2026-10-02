@@ -1,0 +1,25 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--campaia-space-2);
+  padding: var(--campaia-space-5);
+  border: 1px solid var(--campaia-color-warning-border);
+  background: var(--campaia-color-warning-bg);
+  border-radius: var(--campaia-radius-md);
+}
+
+.title {
+  margin: 0;
+  color: var(--campaia-color-warning-text);
+  font-size: var(--campaia-font-size-md);
+}
+
+.description {
+  margin: 0;
+  color: var(--campaia-color-warning-text);
+}
+
+.action {
+  margin-top: var(--campaia-space-2);
+}

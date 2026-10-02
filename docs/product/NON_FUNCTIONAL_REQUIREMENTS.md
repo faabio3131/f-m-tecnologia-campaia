@@ -1,3 +1,5 @@
+> **STATUS VIGENTE: PARTIAL (27/09/2026).** Os NFRs seguem como TARGET normativo, mas afirmações históricas que conflitem com ADRs posteriores estão **SUPERSEDED**. Em especial, autenticação/sessão segue ADR-0018 + ADR-0022 (OIDC gerenciado, sessão server-side por cookie seguro, CSRF e step-up), não JWT em `localStorage`; Web é a linha comercial e mobile permanece em quarentena. Estado comprovado e Work Packages: `docs/CAMPAIA_MATRIZ_MESTRE_COBERTURA_20260927.md`.
+
 # CampaIA — NON-FUNCTIONAL REQUIREMENTS
 
 **Data:** 26 de agosto de 2026  

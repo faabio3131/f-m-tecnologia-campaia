@@ -1,0 +1,76 @@
+name: CAMPAIA Cloud Run Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        required: true
+        type: choice
+        options: [staging, production]
+      service:
+        description: "backend or web"
+        required: true
+        type: choice
+        options: [backend, web]
+      revision:
+        description: "Known-good Cloud Run revision"
+        required: true
+        type: string
+      production_confirmation:
+        description: "For production only, type ROLLBACK_PRODUCTION after Director approval"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Main branch deployment guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "Cloud rollbacks are allowed only from refs/heads/main." >&2
+            exit 2
+          fi
+
+      - name: Production authorization guard
+        shell: bash
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          PRODUCTION_CONFIRMATION: ${{ inputs.production_confirmation }}
+        run: |
+          set -euo pipefail
+          if [[ "${TARGET_ENVIRONMENT}" == "production" && "${PRODUCTION_CONFIRMATION}" != "ROLLBACK_PRODUCTION" ]]; then
+            echo "Production rollback requires explicit confirmation." >&2
+            exit 2
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud with OIDC
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Move traffic to known-good revision
+        shell: bash
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+          SERVICE: campaia-${{ inputs.service }}-${{ inputs.environment }}
+          REVISION: ${{ inputs.revision }}
+        run: infra/scripts/rollback-cloud-run.sh

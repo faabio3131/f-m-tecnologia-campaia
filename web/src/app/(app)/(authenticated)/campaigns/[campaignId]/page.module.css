@@ -1,0 +1,37 @@
+.sectionTitle {
+  margin: 0 0 var(--campaia-space-3);
+  font-size: var(--campaia-font-size-lg);
+  color: var(--campaia-color-text);
+}
+
+.muted {
+  color: var(--campaia-color-text-muted);
+  margin: 0 0 var(--campaia-space-3);
+}
+
+.itemDetail {
+  color: var(--campaia-color-text-muted);
+  font-size: var(--campaia-font-size-sm);
+  margin: 0 0 var(--campaia-space-3);
+}
+
+.planOutput {
+  background: var(--campaia-color-bg);
+  border: 1px solid var(--campaia-color-border);
+  border-radius: var(--campaia-radius-sm);
+  padding: var(--campaia-space-3);
+  font-size: var(--campaia-font-size-sm);
+  overflow-x: auto;
+  margin: 0 0 var(--campaia-space-3);
+}
+
+.decisionBox {
+  margin-bottom: var(--campaia-space-3);
+}
+
+.findingsList {
+  margin: var(--campaia-space-2) 0 0;
+  padding-left: var(--campaia-space-4);
+  font-size: var(--campaia-font-size-sm);
+  color: var(--campaia-color-text-muted);
+}

@@ -21,7 +21,8 @@ from typing import TYPE_CHECKING, Any
 
 from campaia_core.autonomy import AutonomySettings
 from campaia_core.budget import BudgetEngine, BudgetLimits
-from campaia_core.connectors import ConnectionMode
+from campaia_core.connectors import ConnectionMode, SecretRef
+from campaia_core.credential_vault import CredentialCipher
 from campaia_core.policy import PolicyDecision
 from campaia_core.states import Campaign
 
@@ -73,6 +74,40 @@ def _wrap_loaded(table: "RecordTable | None", id_: str, tenant_id: str, obj: Any
     return wrapped
 
 
+def _live_get(
+    table: "RecordTable | None",
+    items: dict[str, Any],
+    id_: str,
+    tenant_id: str,
+):
+    if table is None:
+        item = items.get(id_)
+        if item is None or getattr(item, "tenant_id", None) != tenant_id:
+            return None
+        return item
+    obj = table.get_for_tenant(id_, tenant_id)
+    if obj is None or getattr(obj, "tenant_id", None) != tenant_id:
+        return None
+    wrapped = _wrap_loaded(table, id_, tenant_id, obj)
+    items[id_] = wrapped
+    return wrapped
+
+
+def _live_list(
+    table: "RecordTable | None",
+    items: dict[str, Any],
+    tenant_id: str,
+) -> list[Any]:
+    if table is None:
+        return [item for item in items.values() if getattr(item, "tenant_id", None) == tenant_id]
+    result = []
+    for id_, row_tenant_id, obj in table.rows_for_tenant(tenant_id):
+        wrapped = _wrap_loaded(table, id_, row_tenant_id, obj)
+        items[id_] = wrapped
+        result.append(wrapped)
+    return result
+
+
 # --------------------------------------------------------------------------- brand profiles
 
 
@@ -92,12 +127,9 @@ class BrandProfileRepository:
     def __init__(self, table: "RecordTable | None" = None) -> None:
         self._table = table
         self._items: dict[str, BrandProfile] = {}
-        if table is not None:
-            for id_, tenant_id, obj in table.all_rows():
-                self._items[id_] = _wrap_loaded(table, id_, tenant_id, obj)
 
     def list_for_tenant(self, tenant_id: str) -> list[BrandProfile]:
-        return [p for p in self._items.values() if p.tenant_id == tenant_id]
+        return _live_list(self._table, self._items, tenant_id)
 
     def create(self, tenant_id: str, **fields: Any) -> BrandProfile:
         profile = BrandProfile(
@@ -108,10 +140,7 @@ class BrandProfileRepository:
         return profile
 
     def get(self, tenant_id: str, brand_profile_id: str) -> BrandProfile | None:
-        item = self._items.get(brand_profile_id)
-        if item is None or item.tenant_id != tenant_id:
-            return None
-        return item
+        return _live_get(self._table, self._items, brand_profile_id, tenant_id)
 
 
 # --------------------------------------------------------------------------- connections
@@ -130,24 +159,23 @@ class Connection:
     api_version: str = "sim-1"
     last_synced_at: datetime = field(default_factory=now_utc)
     mode: ConnectionMode = ConnectionMode.SIMULATOR
+    # Decisao do Diretor (27/09/2026, SaaS multi-tenant): a credencial real do tenant
+    # nunca fica em variavel de ambiente nem em campo em claro aqui -- so a referencia
+    # opaca ao cofre (ver VaultRepository abaixo). None enquanto a conexao for so
+    # metadado simulado (nenhum token real foi obtido ainda para ela).
+    secret_ref: str | None = None
 
 
 class ConnectionRepository:
     def __init__(self, table: "RecordTable | None" = None) -> None:
         self._table = table
         self._items: dict[str, Connection] = {}
-        if table is not None:
-            for id_, tenant_id, obj in table.all_rows():
-                self._items[id_] = _wrap_loaded(table, id_, tenant_id, obj)
 
     def list_for_tenant(self, tenant_id: str) -> list[Connection]:
-        return [c for c in self._items.values() if c.tenant_id == tenant_id]
+        return _live_list(self._table, self._items, tenant_id)
 
     def get(self, tenant_id: str, connection_id: str) -> Connection | None:
-        item = self._items.get(connection_id)
-        if item is None or item.tenant_id != tenant_id:
-            return None
-        return item
+        return _live_get(self._table, self._items, connection_id, tenant_id)
 
     def create(self, tenant_id: str, **fields: Any) -> Connection:
         conn = Connection(connection_id=new_id("conn"), tenant_id=tenant_id, **fields)
@@ -161,6 +189,95 @@ class ConnectionRepository:
             return None
         conn.status = "REVOKED"
         return conn
+
+
+# --------------------------------------------------------------------------- credential vault
+
+
+@dataclass
+class _VaultRow:
+    """Uma linha do cofre: ciphertext opaco, nunca o segredo em claro.
+
+    `tenant_id` fica na linha (nao so implicito pela tabela) porque `resolve()` compara
+    explicitamente contra o tenant do chamador antes de decifrar -- um handle vazado ou
+    adivinhado de outro tenant nunca decifra, mesmo que o SQLite guarde tudo num so
+    arquivo (isolamento e por logica, nao por arquivo separado).
+    """
+
+    secret_id: str
+    tenant_id: str
+    provider: str
+    external_account_id: str
+    ciphertext: str
+
+
+class VaultAccessDenied(Exception):
+    """A `SecretRef` existe, mas pertence a outro tenant. Nunca decifra nesse caso --
+    cross-tenant access e STOP condition (Ordem Mestra, secao de multi-tenancy)."""
+
+
+class VaultRepository:
+    """Armazenamento (SQLite quando persistente, dict em memoria em ambiente efemero)
+    das linhas cifradas do cofre. A cifragem em si vive em `credential_vault.py`; este
+    repositorio so guarda/recupera o ciphertext ja pronto, e aplica o guard de tenant.
+    """
+
+    def __init__(self, table: "RecordTable | None" = None) -> None:
+        self._table = table
+        self._items: dict[str, _VaultRow] = {}
+        if table is not None:
+            for id_, tenant_id, obj in table.all_rows():
+                self._items[id_] = obj
+
+    def store(
+        self,
+        tenant_id: str,
+        *,
+        provider: str,
+        external_account_id: str,
+        payload: dict,
+        cipher: CredentialCipher,
+    ) -> SecretRef:
+        secret_id = new_id("sec")
+        row = _VaultRow(
+            secret_id=secret_id,
+            tenant_id=tenant_id,
+            provider=provider,
+            external_account_id=external_account_id,
+            ciphertext=cipher.encrypt_payload(payload),
+        )
+        if self._table is not None:
+            self._table.put(secret_id, tenant_id, row)
+        self._items[secret_id] = row
+        return SecretRef(handle=f"vault://{provider}/{secret_id}")
+
+    def resolve(self, tenant_id: str, secret_ref: SecretRef, *, cipher: CredentialCipher) -> dict:
+        secret_id = secret_ref.handle.rsplit("/", 1)[-1]
+        row = (
+            self._table.get_for_tenant(secret_id, tenant_id)
+            if self._table is not None
+            else self._items.get(secret_id)
+        )
+        if row is None:
+            raise KeyError("Credencial nao encontrada no cofre.")
+        if row.tenant_id != tenant_id:
+            raise VaultAccessDenied(
+                "SecretRef pertence a outro tenant. Acesso recusado."
+            )
+        return cipher.decrypt_payload(row.ciphertext)
+
+    def revoke(self, tenant_id: str, secret_ref: SecretRef) -> None:
+        secret_id = secret_ref.handle.rsplit("/", 1)[-1]
+        row = (
+            self._table.get_for_tenant(secret_id, tenant_id)
+            if self._table is not None
+            else self._items.get(secret_id)
+        )
+        if row is None or row.tenant_id != tenant_id:
+            return
+        self._items.pop(secret_id, None)
+        if self._table is not None:
+            self._table.delete_for_tenant(secret_id, tenant_id)
 
 
 # --------------------------------------------------------------------------- campaigns
@@ -217,18 +334,12 @@ class CampaignRepository:
     def __init__(self, table: "RecordTable | None" = None) -> None:
         self._table = table
         self._items: dict[str, CampaignRecord] = {}
-        if table is not None:
-            for id_, tenant_id, obj in table.all_rows():
-                self._items[id_] = _wrap_loaded(table, id_, tenant_id, obj)
 
     def list_for_tenant(self, tenant_id: str) -> list[CampaignRecord]:
-        return [c for c in self._items.values() if c.tenant_id == tenant_id]
+        return _live_list(self._table, self._items, tenant_id)
 
     def get(self, tenant_id: str, campaign_id: str) -> CampaignRecord | None:
-        item = self._items.get(campaign_id)
-        if item is None or item.tenant_id != tenant_id:
-            return None
-        return item
+        return _live_get(self._table, self._items, campaign_id, tenant_id)
 
     def create(self, tenant_id: str, *, brief: dict, business_unit_id: str | None,
                 created_by: str | None) -> CampaignRecord:
@@ -276,7 +387,18 @@ class ApprovalRequest:
     # "the plan version this approval was actually about", not a live lookup that could
     # drift if the plan is regenerated after the approval is created.
     plan_version: int = 0
-    # Contract enum: PENDING | APPROVED | REJECTED | CHANGES_REQUESTED | EXPIRED (achado 9/10).
+    # Contract enum: PENDING | APPROVED | REJECTED | CHANGES_REQUESTED | EXPIRED |
+    # APPLIED (achado 9/10, APPLIED added achado 19, Fase 3 desta missao de
+    # reconciliacao). ACHADO 19, reproduzido por execucao real nesta sessao: uma
+    # ApprovalRequest com status APPROVED nunca era marcada como consumida apos ser
+    # usada para de fato aplicar a mudanca que autorizava (PATCH /campaigns/{id}/budget,
+    # PUT /autonomy) -- o mesmo approval_id, reutilizado com uma Idempotency-Key NOVA,
+    # autorizava indefinidamente novas mudancas independentes sem nova decisao humana.
+    # APPLIED fecha essa lacuna: uma vez usada para aplicar a mudanca real, a aprovacao
+    # nunca mais volta a satisfazer `status == "APPROVED"` para uma tentativa nova. Um
+    # replay legitimo da MESMA Idempotency-Key continua funcionando -- ver o gate de
+    # idempotencia HTTP movido para antes da checagem de status em
+    # routes_campaigns.py::patch_budget/publish_campaign e routes_autonomy.py::put_autonomy.
     status: str = "PENDING"
     decided_by: set[str] = field(default_factory=set)
     requires_dual_approval: bool = False
@@ -293,18 +415,12 @@ class ApprovalRepository:
     def __init__(self, table: "RecordTable | None" = None) -> None:
         self._table = table
         self._items: dict[str, ApprovalRequest] = {}
-        if table is not None:
-            for id_, tenant_id, obj in table.all_rows():
-                self._items[id_] = _wrap_loaded(table, id_, tenant_id, obj)
 
     def list_for_tenant(self, tenant_id: str) -> list[ApprovalRequest]:
-        return [a for a in self._items.values() if a.tenant_id == tenant_id]
+        return _live_list(self._table, self._items, tenant_id)
 
     def get(self, tenant_id: str, approval_id: str) -> ApprovalRequest | None:
-        item = self._items.get(approval_id)
-        if item is None or item.tenant_id != tenant_id:
-            return None
-        return item
+        return _live_get(self._table, self._items, approval_id, tenant_id)
 
     def create(self, tenant_id: str, **fields: Any) -> ApprovalRequest:
         approval = ApprovalRequest(approval_id=new_id("appr"), tenant_id=tenant_id, **fields)
@@ -340,7 +456,7 @@ class AuditLog:
         # Audit events are append-only -- never mutated in place after creation by any
         # route handler -- so loaded rows are used exactly as decoded, with no
         # notify-wrapping needed (there is nothing for a wrapper to ever notice change).
-        self._items: list[AuditEvent] = [obj for _id, _tenant_id, obj in table.all_rows()] if table is not None else []
+        self._items: list[AuditEvent] = []
 
     def append(
         self,
@@ -369,4 +485,6 @@ class AuditLog:
         return event
 
     def list_for_tenant(self, tenant_id: str) -> list[AuditEvent]:
+        if self._table is not None:
+            return [obj for _id, _tenant_id, obj in self._table.rows_for_tenant(tenant_id)]
         return [e for e in self._items if e.tenant_id == tenant_id]

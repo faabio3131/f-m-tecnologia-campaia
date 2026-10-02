@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     # `from __future__ import annotations` faz toda anotacao de tipo ser string.
     from .identity_directory import IdentityDirectory
     from .session import SessionStore
+    from campaia_core.credential_vault import CredentialCipher
 
 from campaia_core.agents import AGENTS, AgentRunner
 from campaia_core.ai_gateway import AIGateway, AIProvider
@@ -38,12 +39,14 @@ from campaia_core.permissions import Principal, Role
 from campaia_core.rate_limit import FixedWindowRateLimiter
 from campaia_core.subscription import Subscription, SubscriptionCharge
 
+from .organization import OrganizationRepository
 from .repositories import (
     ApprovalRepository,
     AuditLog,
     BrandProfileRepository,
     CampaignRepository,
     ConnectionRepository,
+    VaultRepository,
 )
 
 
@@ -57,6 +60,15 @@ class TokenPrincipal:
 
     user_id: str
     tenant_id: str
+    #: SECURITY FIX (Fase 3, achado 1, 27/09/2026 -- auditoria independente): e-mail
+    #: verificado desta identidade (o mesmo usado por `state.identity_directory` para
+    #: resolver este vinculo -- ver identity_directory.py). Campo obrigatorio (sem
+    #: default) de proposito: e' contra ELE que `api/deps.py::_is_genuine_step_up`
+    #: correlaciona o ID token real apresentado no header `X-Step-Up-Token`, para provar
+    #: que quem esta' se reautenticando e' de fato o dono desta sessao/vinculo -- nao so
+    #: um token real de QUALQUER usuario. Sem este campo, essa correlacao nao existia
+    #: (achado real: um token valido de outro usuario elevava a sessao de qualquer um).
+    email: str
     roles: frozenset[Role]
     business_unit_id: str | None = None
     mfa_enabled: bool = True
@@ -72,6 +84,61 @@ class TokenPrincipal:
             mfa_enabled=self.mfa_enabled,
             step_up_at=step_up_at,
         )
+
+
+@dataclass(frozen=True)
+class PendingOAuthState:
+    """WP-04 (26/09/2026): registro em memoria do `state` devolvido por
+    POST /connections/oauth/start, ate' ser resgatado pelo callback simulado. Nunca uma
+    credencial real -- so o suficiente para amarrar o resgate ao mesmo tenant que
+    iniciou o fluxo e ao provider escolhido, com expiracao curta (uso pontual, nao uma
+    sessao).
+
+    PREPARACAO para OAuth real (27/09/2026 -- correcao final pre-Google-Ads, NAO
+    implementada nesta tarefa): um provider real (Google/Meta) redireciona o navegador
+    de volta para `redirect_uri?code=...&state=...` -- NUNCA reenvia `X-Step-Up-Token`
+    nem qualquer outro header que este backend tenha mandado no Start (o navegador do
+    usuario e' quem faz essa requisicao de callback, nao este backend, e o provider nao
+    conhece nem devolve headers arbitrarios do Start). Por isso um OAuth callback real
+    JAMAIS podera' exigir `X-Step-Up-Token` (rota `require_step_up`) -- a prova de que o
+    fluxo comecou sob step-up valido, e de que quem esta' voltando e' a MESMA
+    identidade/sessao que iniciou, precisa estar amarrada a este `state` desde o Start,
+    nao a um header que o provider nunca envia. Os tres campos abaixo (`user_id`,
+    `session_key`, `step_up_verified_at`) existem para isso -- capturados no Start,
+    nunca reconstruidos ou confiados no Callback. O callback futuro devera' validar
+    `state` + esse binding de sessao/identidade (nunca um header do provider); NENHUMA
+    logica de validacao nova foi adicionada ao callback simulado atual por esta
+    preparacao -- so' o registro dos dados que essa validacao futura vai precisar.
+    """
+
+    tenant_id: str
+    provider: str
+    created_at: datetime
+    #: Identidade (achado 1, mesma disciplina de `TokenPrincipal.email`/step-up) que
+    #: iniciou o fluxo -- o callback futuro so' podera' resgatar este `state` para a
+    #: MESMA identidade, nunca para outro usuario que descubra/adivinhe o valor do
+    #: `state` (que ja e' de uso unico e curto TTL, mas isolamento por identidade e'
+    #: defesa adicional, mesmo racional do achado 1 do step-up).
+    user_id: str
+    #: Mesma nocao de `api/deps.py::session_key_for` -- amarra o resgate a MESMA
+    #: sessao/credencial que iniciou o fluxo (nunca sobrevive a logout->login ou troca
+    #: de vinculo, mesma disciplina do step-up -- achados C3/3).
+    session_key: str
+    #: Instante do step-up persistido (`AppState.step_up_at`) que estava valido NO
+    #: MOMENTO do Start -- a prova de step-up que um callback real tera' que checar,
+    #: em vez de um `X-Step-Up-Token` que o provider nunca reenvia. `None` significaria
+    #: que o Start ocorreu sem step-up valido (hoje isso e' impossivel: `oauth_start`
+    #: exige `Permission.CONNECTION_MANAGE`, que ja esta' em `REQUIRES_STEP_UP` -- este
+    #: campo so' documenta explicitamente essa prova para o callback futuro, nunca a
+    #: cria).
+    step_up_verified_at: datetime | None
+
+
+#: Quanto tempo um `state` de OAuth pendente fica valido para resgate -- generoso o
+#: bastante para o usuario escolher a conta no provedor (real ou simulado), curto o
+#: bastante para nao acumular estado indefinidamente nem virar uma janela de replay
+#: longa.
+OAUTH_PENDING_STATE_TTL = timedelta(minutes=10)
 
 
 #: Item 1.3/WP-02 (24/09/2026): ambientes onde o fixture de bearer token de dev pode
@@ -90,30 +157,35 @@ def _seed_tokens() -> dict[str, TokenPrincipal]:
         "demo-owner-token": TokenPrincipal(
             user_id="user-owner-1",
             tenant_id="demo-tenant",
+            email="owner@demo-tenant.campaia.test",
             roles=frozenset({Role.OWNER}),
             business_unit_id="bu-1",
         ),
         "demo-marketer-token": TokenPrincipal(
             user_id="user-marketer-1",
             tenant_id="demo-tenant",
+            email="marketer@demo-tenant.campaia.test",
             roles=frozenset({Role.MARKETER}),
             business_unit_id="bu-1",
         ),
         "demo-approver-token": TokenPrincipal(
             user_id="user-approver-1",
             tenant_id="demo-tenant",
+            email="approver@demo-tenant.campaia.test",
             roles=frozenset({Role.APPROVER}),
             business_unit_id="bu-1",
         ),
         "demo-finance-token": TokenPrincipal(
             user_id="user-finance-1",
             tenant_id="demo-tenant",
+            email="finance@demo-tenant.campaia.test",
             roles=frozenset({Role.FINANCE}),
             business_unit_id="bu-1",
         ),
         "demo-viewer-token": TokenPrincipal(
             user_id="user-viewer-1",
             tenant_id="demo-tenant",
+            email="viewer@demo-tenant.campaia.test",
             roles=frozenset({Role.VIEWER}),
             business_unit_id="bu-1",
         ),
@@ -121,6 +193,7 @@ def _seed_tokens() -> dict[str, TokenPrincipal]:
         "other-owner-token": TokenPrincipal(
             user_id="user-owner-2",
             tenant_id="other-tenant",
+            email="owner@other-tenant.campaia.test",
             roles=frozenset({Role.OWNER}),
             business_unit_id="bu-2",
         ),
@@ -138,14 +211,39 @@ def _default_id_token_verifier() -> IdTokenVerifier:
     return AlwaysRejectIdTokenVerifier()
 
 
-def _default_identity_directory(env: str):
+def _default_identity_directory(env: str, organizations: OrganizationRepository):
     # Import tardio: identity_directory.py importa TokenPrincipal deste modulo -- import
     # no topo do arquivo criaria ciclo (mesmo padrao ja usado para gemini_provider abaixo).
-    from .identity_directory import InMemoryIdentityDirectory, seed_dev_identity_directory
+    from .identity_directory import (
+        CompositeIdentityDirectory,
+        OrganizationIdentityDirectory,
+        seed_dev_identity_directory,
+    )
 
+    commercial = OrganizationIdentityDirectory(organizations)
     if env in DEV_AUTH_FIXTURE_ALLOWED_ENVS:
-        return seed_dev_identity_directory()
-    return InMemoryIdentityDirectory()
+        return CompositeIdentityDirectory(seed_dev_identity_directory(), commercial)
+    return commercial
+
+
+def _default_plan_user_limits() -> dict[str, int]:
+    """Load max_users from the SAME external plan catalog used by billing.
+
+    F1 freezes the mechanism; F5 still owns the real commercial numbers. No catalog
+    configured means no plan cap is active yet. If a catalog IS configured, its normal
+    fail-closed loader validates it and max_users is read from PlanDefinition -- never
+    from a second env var or a product constant.
+    """
+    from campaia_core.plan_catalog import CATALOG_PATH_ENV_VAR, load_plan_catalog
+
+    if not os.environ.get(CATALOG_PATH_ENV_VAR):
+        return {}
+    catalog = load_plan_catalog()
+    return {
+        plan_id: plan.max_users
+        for plan_id, plan in catalog.items()
+        if plan.max_users is not None
+    }
 
 
 def _default_session_store():
@@ -172,6 +270,34 @@ def _default_billing_gateway() -> PaymentGatewayConnector:
 
 def _default_asaas_webhook_receiver() -> AsaasWebhookReceiver:
     return AsaasWebhookReceiver(token_resolver=lambda: os.environ.get("ASAAS_WEBHOOK_TOKEN"))
+
+
+def _default_vault_cipher(env: str):
+    """Select the vault crypto backend without ever defaulting to a production root key.
+
+    F4 production/staging uses Google Cloud KMS envelope encryption. The legacy Fernet
+    environment key remains supported only for test/dev-local compatibility and is
+    explicitly rejected in staging/production.
+    """
+    kms_key_name = os.environ.get("CAMPAIA_VAULT_KMS_KEY_NAME")
+    raw_key = os.environ.get("CAMPAIA_VAULT_KEY")
+
+    if kms_key_name:
+        from .kms_vault import KmsEnvelopeCredentialCipher
+
+        return KmsEnvelopeCredentialCipher(kms_key_name)
+
+    if raw_key:
+        if env not in DEV_AUTH_FIXTURE_ALLOWED_ENVS:
+            raise RuntimeError(
+                "CAMPAIA_VAULT_KEY legacy nao e permitido em staging/production. "
+                "Configure CAMPAIA_VAULT_KMS_KEY_NAME e use Cloud KMS envelope encryption."
+            )
+        from campaia_core.credential_vault import CredentialCipher
+
+        return CredentialCipher.from_env_value(raw_key)
+
+    return None
 
 
 def _default_ai_provider() -> AIProvider:
@@ -244,6 +370,8 @@ class AppState:
     #: the ephemeral defaults wholesale instead, which is also what keeps this field's
     #: presence a no-op for every pre-existing (persistence-unaware) caller of AppState().
     db_path: str | None = None
+    #: F3 production adapter. SQLite remains a compatibility backend for local/test use.
+    database_url: str | None = None
 
     #: Item 1.3/WP-02 (24/09/2026). "production" (o default quando a variavel de ambiente
     #: nao esta setada) e o ambiente mais restritivo -- nunca populado com fixture de auth
@@ -256,20 +384,39 @@ class AppState:
     #: __post_init__); populado por fora disso em qualquer outro ambiente faz a
     #: inicializacao recusar (RuntimeError), nunca so ignorar silenciosamente.
     tokens: dict[str, TokenPrincipal] = field(default_factory=dict)
-    # Step-up tokens are accepted at face value in this sandbox (no real re-auth flow) --
-    # we still track a per-(tenant,user) "recent step-up" timestamp so that
-    # campaia_core.permissions.authorize's STEP_UP_MAX_AGE window is honoured for real
-    # rather than just checking header presence and ignoring the domain's own guard.
-    step_up_at: dict[tuple[str, str], datetime] = field(default_factory=dict)
+    # SECURITY FIX (Fase C2/C3, 27/09/2026 -- auditoria independente): chaveado por
+    # (tenant_id, user_id, session_key), nao so (tenant_id, user_id) -- um step-up nao
+    # pode sobreviver a logout->login (sessao nova) nem a troca de tenant/unidade dentro
+    # da mesma sessao (ver api/deps.py::session_key_for). Fora de test/dev-local, o
+    # header tambem precisa ser um ID token real verificado, nunca "qualquer valor
+    # nao-vazio" -- ver api/deps.py::_is_genuine_step_up.
+    step_up_at: dict[tuple[str, str, str], datetime] = field(default_factory=dict)
 
     idempotency: IdempotencyStore = field(default_factory=IdempotencyStore)
     capabilities: CapabilityRegistry = field(default_factory=_seed_capabilities)
 
+    #: WP-04 (26/09/2026): `state` de OAuth emitido por POST /connections/oauth/start,
+    #: guardado ate' o callback simulado (POST /connections/oauth/callback) resgatar --
+    #: uso unico (removido no resgate), amarrado ao tenant que iniciou o fluxo, nunca
+    #: aceito de um tenant diferente. Em memoria, mesma disciplina de `step_up_at`.
+    oauth_pending_states: dict[str, "PendingOAuthState"] = field(default_factory=dict)
+
     brand_profiles: BrandProfileRepository = field(default_factory=BrandProfileRepository)
     connections: ConnectionRepository = field(default_factory=ConnectionRepository)
+    #: Cofre real de credenciais de terceiro, por tenant. Em staging/producao a
+    #: criptografia e resolvida em __post_init__ a partir de CAMPAIA_VAULT_KMS_KEY_NAME;
+    #: a chave Fernet em env fica restrita a test/dev-local.
+    vault: VaultRepository = field(default_factory=VaultRepository)
+    vault_cipher: object | None = None
     campaigns: CampaignRepository = field(default_factory=CampaignRepository)
     approvals: ApprovalRepository = field(default_factory=ApprovalRepository)
     audit: AuditLog = field(default_factory=AuditLog)
+    #: F1 commercial onboarding aggregate. Nova FM/FM are never seeded here; both are
+    #: ordinary tenants created by the same product flow when used for homologation.
+    organizations: OrganizationRepository = field(default_factory=OrganizationRepository)
+    #: F1 decision approved 27/09/2026: user caps come from PlanDefinition.max_users in
+    #: the external plan catalog, never hardcoded. Real commercial numbers remain F5.
+    plan_user_limits: dict[str, int] = field(default_factory=_default_plan_user_limits)
 
     #: Tenant-level autonomy settings (GET/PUT /autonomy). Per-campaign AutonomySettings
     #: also exists on CampaignRecord for policy evaluation; this is the tenant default.
@@ -319,6 +466,11 @@ class AppState:
     allowed_origins: frozenset[str] = field(default_factory=_default_allowed_origins)
 
     def __post_init__(self) -> None:
+        # vault_cipher depende do ambiente efetivo passado a AppState; resolver aqui evita
+        # default_factory consultar CAMPAIA_ENV antes de considerar env="test"/"dev-local".
+        if self.vault_cipher is None:
+            self.vault_cipher = _default_vault_cipher(self.env)
+
         # Fixture de bearer token de dev/teste: so populado automaticamente quando `env`
         # permite; populado por qualquer outro meio fora desses ambientes recusa a
         # inicializacao (fail-closed por construcao -- exigencia literal do WP-02, nunca
@@ -333,61 +485,165 @@ class AppState:
                 f"fixture de auth nunca pode ficar disponivel em preview/staging/produção, "
                 f"mesmo por engano de configuracao."
             )
-        if self.identity_directory is None:
-            self.identity_directory = _default_identity_directory(self.env)
+        # Exactly one persistent backend may be active.
+        if self.db_path is not None and self.database_url is not None:
+            raise RuntimeError(
+                "Configure only one persistence backend: db_path or database_url."
+            )
 
-        #: Handle to the open SQLite connection when db_path is set, else None. Not a
-        #: dataclass field (nothing outside this method needs to construct one) -- kept
-        #: only so callers that DO want to close it explicitly (see tests_api's
-        #: teardown_client, and the reference persistence tests) have somewhere to reach
-        #: it via app.state.campaia.db, and so __del__ on the Database can run its
-        #: best-effort close when this AppState (and everything holding its repositories)
-        #: is garbage collected.
         self.db = None
-        if self.db_path is not None:
+        self._persistent_step_up_store = None
+        self._persistent_oauth_state_store = None
+
+        if self.database_url is not None:
+            from .postgres import PostgresDatabase
+
+            self.db = PostgresDatabase(self.database_url)
+        elif self.db_path is not None:
+            from .db import Database
+
+            self.db = Database(self.db_path)
+
+        if self.db is not None:
             from .db import (
-                Database,
                 PersistentIdempotencyStore,
                 PersistentSeenEventStore,
                 PersistentTenantAutonomy,
             )
+            from .persistent_state import PersistentOAuthStateStore, PersistentStepUpStore
+            from .session import PersistentSessionStore
 
-            self.db = Database(self.db_path)
-            # Every field replaced below is a plain in-memory default_factory value at
-            # this point (dataclass field defaults always run before __post_init__ and
-            # can't see db_path) -- swapping them out here, before anything has read or
-            # written through them, is what makes db_path=None (the default) leave this
-            # method a no-op past this point and every existing caller of AppState()
-            # completely unaffected.
             self.brand_profiles = BrandProfileRepository(self.db.table("brand_profiles"))
             self.connections = ConnectionRepository(self.db.table("connections"))
+            self.vault = VaultRepository(self.db.table("credential_vault"))
             self.campaigns = CampaignRepository(self.db.table("campaigns"))
             self.approvals = ApprovalRepository(self.db.table("approvals"))
             self.audit = AuditLog(self.db.table("audit_events"))
+            self.organizations = OrganizationRepository(self.db.table("organizations"))
             self.idempotency = PersistentIdempotencyStore(self.db.table("idempotency"))
-            self.tenant_autonomy = PersistentTenantAutonomy(self.db.table("tenant_autonomy"))
+            self.sessions = PersistentSessionStore(self.db.table("sessions"))
+            self._persistent_step_up_store = PersistentStepUpStore(
+                self.db.table("step_up_states")
+            )
+            self._persistent_oauth_state_store = PersistentOAuthStateStore(
+                self.db.table("oauth_pending_states")
+            )
+            self.tenant_autonomy = PersistentTenantAutonomy(
+                self.db.table("tenant_autonomy")
+            )
             self.tenant_autonomy_updated_at = PersistentTenantAutonomy(
                 self.db.table("tenant_autonomy_updated_at")
             )
-            # Item 1.1 do cronograma mestre (24/09/2026): o dedupe do webhook do Asaas
-            # tambem precisa sobreviver a um reinicio de processo entre duas entregas do
-            # mesmo evento -- token_resolver preservado do factory default, so o seen_store
-            # troca para a implementacao persistida.
             self.asaas_webhook = AsaasWebhookReceiver(
                 token_resolver=self.asaas_webhook.token_resolver,
-                seen_store=PersistentSeenEventStore(self.db.table("asaas_webhook_seen_events")),
+                seen_store=PersistentSeenEventStore(
+                    self.db.table("asaas_webhook_seen_events")
+                ),
             )
-            # capabilities and tokens are deliberately NOT persisted: both are
-            # process-startup fixture/seed data (a hardcoded Capability Matrix and a
-            # hardcoded dev bearer-token map), never mutated by any route handler, so
-            # there is nothing about them a restart could lose.
+            if self.database_url is not None:
+                from .postgres import PostgresFixedWindowRateLimiter
+
+                self.asaas_webhook_rate_limiter = PostgresFixedWindowRateLimiter(
+                    self.db,
+                    scope="asaas-webhook",
+                    max_requests=ASAAS_WEBHOOK_RATE_LIMIT_MAX_REQUESTS,
+                    window=ASAAS_WEBHOOK_RATE_LIMIT_WINDOW,
+                )
+            # capabilities and dev/test tokens remain startup fixtures, never persisted.
+
+        # The identity directory must be created AFTER persistence is selected so the
+        # commercial directory observes the final OrganizationRepository instance.
+        if self.identity_directory is None:
+            self.identity_directory = _default_identity_directory(self.env, self.organizations)
 
         self.ai_gateway.providers.append(self.ai_provider)
         self.agent_runner = AgentRunner(gateway=self.ai_gateway)
         self.agent_runner.register_schemas()
 
-    def record_step_up(self, tenant_id: str, user_id: str, *, at: datetime) -> None:
-        self.step_up_at[(tenant_id, user_id)] = at
+    def lock_runtime_scope(self, scope: str) -> None:
+        """Lock a mutable scope inside the active persistent transaction."""
+        if self.db is not None:
+            self.db.lock_key(f"runtime:{scope}")
 
-    def last_step_up(self, tenant_id: str, user_id: str) -> datetime | None:
-        return self.step_up_at.get((tenant_id, user_id))
+    def record_step_up(
+        self, tenant_id: str, user_id: str, session_key: str, *, at: datetime
+    ) -> None:
+        if self._persistent_step_up_store is not None:
+            self._persistent_step_up_store.put(
+                tenant_id, user_id, session_key, at=at
+            )
+            return
+        self.step_up_at[(tenant_id, user_id, session_key)] = at
+
+    def last_step_up(self, tenant_id: str, user_id: str, session_key: str) -> datetime | None:
+        if self._persistent_step_up_store is not None:
+            return self._persistent_step_up_store.get(tenant_id, user_id, session_key)
+        return self.step_up_at.get((tenant_id, user_id, session_key))
+
+    def invalidate_step_up_for_session(self, session_key: str) -> None:
+        """SECURITY FIX (Fase 3, achado 3, 27/09/2026 -- auditoria independente): chamado
+        por `api/routes_auth.py::switch_membership` a CADA troca de vinculo ativo dentro
+        da mesma sessao. Remove TODO step-up registrado para `session_key`, qualquer que
+        seja o (tenant_id, user_id) sob o qual foi gravado -- nao so o do vinculo que
+        estava ativo antes da troca.
+
+        Achado real: chavear `step_up_at` por (tenant_id, user_id, session_key) ja evita
+        que o step-up de A "vaze" para B na mesma sessao (B tem um user_id diferente, a
+        chave nao bate) -- mas ao voltar de B para A DENTRO da mesma sessao, o par
+        (tenant_id, user_id) de A volta a ser identico ao que foi gravado antes da
+        primeira troca, e o step-up antigo de A "ressuscitava" sem nenhuma reautenticacao
+        nova. A regra exigida e' categorica: QUALQUER troca de tenant/unidade invalida
+        TODO step-up daquela sessao, mesmo o de vinculos aos quais ela volta depois.
+        """
+        if self._persistent_step_up_store is not None:
+            self._persistent_step_up_store.invalidate_session(session_key)
+            return
+        stale_keys = [key for key in self.step_up_at if key[2] == session_key]
+        for key in stale_keys:
+            del self.step_up_at[key]
+
+    def start_oauth_state(
+        self,
+        state_token: str,
+        *,
+        tenant_id: str,
+        provider: str,
+        now: datetime,
+        user_id: str,
+        session_key: str,
+        step_up_verified_at: datetime | None,
+    ) -> None:
+        pending = PendingOAuthState(
+            tenant_id=tenant_id,
+            provider=provider,
+            created_at=now,
+            user_id=user_id,
+            session_key=session_key,
+            step_up_verified_at=step_up_verified_at,
+        )
+        if self._persistent_oauth_state_store is not None:
+            self._persistent_oauth_state_store.put(state_token, tenant_id, pending)
+            return
+        self.oauth_pending_states[state_token] = pending
+
+    def redeem_oauth_state(
+        self, state_token: str, *, tenant_id: str, now: datetime
+    ) -> PendingOAuthState | None:
+        """Resgate de UNICO uso: sempre remove o registro, mesmo quando a validacao
+        falha (nunca deixa um `state` invalido/expirado/de outro tenant disponivel para
+        uma segunda tentativa -- fail-closed, sem replay)."""
+        if self._persistent_oauth_state_store is not None:
+            return self._persistent_oauth_state_store.redeem(
+                state_token,
+                tenant_id=tenant_id,
+                now=now,
+                ttl=OAUTH_PENDING_STATE_TTL,
+            )
+        pending = self.oauth_pending_states.pop(state_token, None)
+        if pending is None:
+            return None
+        if pending.tenant_id != tenant_id:
+            return None
+        if (now - pending.created_at) > OAUTH_PENDING_STATE_TTL:
+            return None
+        return pending

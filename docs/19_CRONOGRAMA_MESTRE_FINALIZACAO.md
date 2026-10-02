@@ -1,3 +1,5 @@
+> **STATUS VIGENTE: SUPERSEDED (27/09/2026).** Este cronograma de 24/09/2026 é preservado somente como histórico. Foi substituído pelo **Cronograma Mestre de Execução Total do CampaIA até Pronto Comercial, v1.0, 27/09/2026**, que governa as fases **F0–F20 / Gates G0–G20**. Não usar as antigas "3 etapas" nem os "3 prompts de execução" deste arquivo como ordem atual. O CURRENT técnico deve ser reconstruído na PR #31 e reconciliado com `docs/CAMPAIA_CONTROLE_MESTRE_EXECUCAO_20260927.md` e `docs/CAMPAIA_MATRIZ_MESTRE_COBERTURA_20260927.md`.
+
 # CampaIA — Cronograma Mestre de Finalização (backend → web → produção)
 
 **Data:** 24/09/2026 · **Base:** estado real confirmado nesta data — `01_PAINEL_EXECUCAO_v20_VIGENTE.md`,

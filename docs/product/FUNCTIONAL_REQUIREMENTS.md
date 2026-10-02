@@ -1,3 +1,5 @@
+> **STATUS VIGENTE: PARTIAL (27/09/2026).** Este arquivo permanece como catálogo normativo F1–F10, porém a frase histórica "IMPLEMENTADO — AGUARDANDO VALIDAÇÃO DO DIRETOR" está **SUPERSEDED quanto ao estado de implementação**. Um requisito aprovado não é prova de código pronto. O estado técnico de cada requisito deve ser obtido da PR #31 e da `docs/CAMPAIA_MATRIZ_MESTRE_COBERTURA_20260927.md`.
+
 # CampaIA — REQUISITOS FUNCIONAIS
 **Campanhas inteligentes. Resultados reais.**
 

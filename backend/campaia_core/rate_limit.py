@@ -3,12 +3,13 @@
 Cronograma mestre, Etapa 1, item 1.2 (24/09/2026): `/webhooks/asaas` e o unico endpoint
 deste app sem autenticacao de usuario (quem chama e o Asaas, nao um Bearer token de sessao)
 -- exatamente por isso e o unico alvo publico de flood/DoS de aplicacao sem essa defesa.
-Janela fixa por chave (aqui, IP de origem): simples, sem estado externo, proporcional ao
-tamanho atual do sistema (um processo, sem fila/worker pool) -- mesma disciplina de
-proporcionalidade ja usada em `PersistentIdempotencyStore`/`PersistentSeenEventStore`.
+Janela fixa por chave (aqui, IP de origem). Esta classe permanece o fallback in-memory
+para testes/dev/SQLite. Em runtime PostgreSQL, F3 a substitui por
+`api.postgres.PostgresFixedWindowRateLimiter`, compartilhado entre replicas.
 
-Nao e defesa contra um atacante distribuido (muitos IPs); e defesa contra excesso de volume
-de uma unica origem, que e a ameaca proporcional a este estagio do produto.
+Nenhuma das duas variantes e uma defesa completa contra DDoS distribuido; a camada de
+rede/WAF e responsabilidade de F4. O objetivo aqui e impedir que o limite de aplicacao
+seja multiplicado pelo numero de replicas.
 """
 
 from __future__ import annotations

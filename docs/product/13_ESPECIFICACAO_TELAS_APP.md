@@ -1,3 +1,5 @@
+> **STATUS VIGENTE: SUPERSEDED quanto ao enquadramento "mobile-only"; PARTIAL como referência funcional (27/09/2026).** A ADR-0016 aprovada tornou o CampaIA **Web-first** e manteve o mobile em quarentena. Jornadas, campos, estados e regras deste arquivo continuam sendo insumo funcional quando não conflitarem com decisões posteriores; frases como "Dashboard web fora de escopo/Fase 12" não prevalecem. A cobertura Web atual está em `docs/CAMPAIA_MATRIZ_MESTRE_COBERTURA_20260927.md`.
+
 # CampaIA — ESPECIFICAÇÃO DAS TELAS DO APP (B8)
 **Campanhas inteligentes. Resultados reais.**
 

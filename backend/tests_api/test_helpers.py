@@ -69,12 +69,19 @@ def publish_ready_campaign(client, headers=OWNER) -> tuple[dict, dict, dict]:
     r = client.post(f"/campaigns/{cid}/plan/regenerate", headers={**headers, **unique_idem()})
     assert r.status_code == 202, r.text
 
-    r = client.post(f"/campaigns/{cid}/validate", headers=headers)
+    r = client.post(
+        f"/campaigns/{cid}/validate",
+        headers={**headers, **unique_idem()},
+    )
     assert r.status_code == 200, r.text
     decision = r.json()
     assert decision["outcome"] == "APPROVABLE", decision
 
-    r = client.post("/approvals", headers=headers, json={"campaign_id": cid, "kind": "PUBLISH"})
+    r = client.post(
+        "/approvals",
+        headers={**headers, **unique_idem()},
+        json={"campaign_id": cid, "kind": "PUBLISH"},
+    )
     assert r.status_code == 201, r.text
     approval = r.json()
 

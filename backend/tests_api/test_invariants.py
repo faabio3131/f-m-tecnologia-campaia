@@ -154,6 +154,29 @@ class TestIdempotencyKeyRequired(unittest.TestCase):
         self.assertEqual(r.status_code, 422, r.text)
         self.assertEqual(r.json()["code"], "VALIDATION_FAILED")
 
+    def test_validate_without_idempotency_key_rejected(self):
+        client = make_client()
+        camp = create_campaign(client)
+        cid = camp["id"]
+        client.post(
+            f"/campaigns/{cid}/plan/regenerate",
+            headers={**OWNER, **unique_idem()},
+        )
+        r = client.post(f"/campaigns/{cid}/validate", headers=OWNER)
+        self.assertEqual(r.status_code, 422, r.text)
+        self.assertEqual(r.json()["code"], "VALIDATION_FAILED")
+
+    def test_create_approval_without_idempotency_key_rejected(self):
+        client = make_client()
+        camp = create_campaign(client)
+        r = client.post(
+            "/approvals",
+            headers=OWNER,
+            json={"campaign_id": camp["id"], "kind": "PUBLISH"},
+        )
+        self.assertEqual(r.status_code, 422, r.text)
+        self.assertEqual(r.json()["code"], "VALIDATION_FAILED")
+
     def test_create_brief_without_idempotency_key_rejected(self):
         client = make_client()
         r = client.post("/briefs", headers=OWNER, json=DEFAULT_BRIEF)
@@ -201,6 +224,36 @@ class TestIdempotencyReplay(unittest.TestCase):
         r1 = client.post(f"/campaigns/{cid}/pause", headers={**OWNER, **headers})
         r2 = client.post(f"/campaigns/{cid}/pause", headers={**OWNER, **headers})
         self.assertEqual(r1.status_code, r2.status_code)
+
+    def test_repeating_a_successful_pause_key_does_not_duplicate_the_audit_event(self):
+        """ACHADO 26 (Fase 4, item A, 26/09/2026, REPRODUZIDO por execucao real): antes
+        desta correcao, o audit.append de CAMPAIGN_PAUSE rodava fora do fecho protegido por
+        `idempotency.execute()`, entao um replay legitimo da MESMA Idempotency-Key contra
+        uma pausa que JA teve sucesso duplicava o evento de auditoria (2 chamadas -> 2
+        eventos CAMPAIGN_PAUSE), sem nenhuma mutacao real correspondente na segunda
+        chamada. `test_repeating_pause_key_is_idempotent` acima nunca pegou isso porque so
+        exercita DRAFT (que falha nas duas chamadas, nunca chega a pausar de verdade)."""
+        client = make_client()
+        camp, decision, approval = publish_ready_campaign(client)
+        cid = camp["id"]
+        r = client.post(
+            f"/campaigns/{cid}/publish",
+            headers={**with_step_up(OWNER), **idem(f"pub-{cid}")},
+            json={"policy_decision_id": decision["policy_decision_id"], "approval_id": approval["id"]},
+        )
+        self.assertEqual(r.json()["state"], "ACTIVE")
+
+        headers = {**OWNER, **idem(f"pause-real-{cid}")}
+        r1 = client.post(f"/campaigns/{cid}/pause", headers=headers)
+        r2 = client.post(f"/campaigns/{cid}/pause", headers=headers)
+        self.assertEqual(r1.status_code, 202, r1.text)
+        self.assertEqual(r2.status_code, 202, r2.text)
+
+        audit = client.get("/audit-events", headers=OWNER).json()
+        pause_events = [
+            e for e in audit["items"] if e["action"] == "CAMPAIGN_PAUSE" and e["target"] == cid
+        ]
+        self.assertEqual(len(pause_events), 1)
 
     def test_repeating_create_brief_key_does_not_duplicate(self):
         client = make_client()
@@ -262,7 +315,7 @@ class TestStepUpRequired(unittest.TestCase):
     def test_approval_decision_without_step_up_is_403(self):
         client = make_client()
         camp = create_campaign(client)
-        r = client.post("/approvals", headers=OWNER, json={"campaign_id": camp["id"], "kind": "PUBLISH"})
+        r = client.post("/approvals", headers={**OWNER, **unique_idem()}, json={"campaign_id": camp["id"], "kind": "PUBLISH"})
         approval = r.json()
         r = client.post(
             f"/approvals/{approval['id']}/decision",
@@ -313,9 +366,11 @@ class TestPublishRequiresPolicyAndApproval(unittest.TestCase):
         camp = create_campaign(client)
         cid = camp["id"]
         client.post(f"/campaigns/{cid}/plan/regenerate", headers={**OWNER, **unique_idem()})
-        decision = client.post(f"/campaigns/{cid}/validate", headers=OWNER).json()
+        decision = client.post(f"/campaigns/{cid}/validate", headers={**OWNER, **unique_idem()}).json()
         approval = client.post(
-            "/approvals", headers=OWNER, json={"campaign_id": cid, "kind": "PUBLISH"}
+            "/approvals",
+            headers={**OWNER, **unique_idem()},
+            json={"campaign_id": cid, "kind": "PUBLISH"},
         ).json()
         # Never decided -- still PENDING.
         headers = {**with_step_up(OWNER), **idem("publish-pending-1")}
@@ -393,6 +448,43 @@ class TestCrossTenantIsolation(unittest.TestCase):
         # this sandbox) -- assert isolation against the connections list instead.
         r = client.get("/connections", headers=OTHER_OWNER)
         self.assertEqual(r.json(), [])
+
+    def test_other_tenant_cannot_delete_or_read_capabilities_of_first_tenants_real_connection(
+        self,
+    ):
+        """Fase 3, item 6 da missao de reconciliacao/takeover (26/09/2026, mineracao de
+        testes da PR#6): a asserção acima nunca exercita DELETE/GET capabilities contra uma
+        Connection real e persistida de outro tenant -- fecha essa lacuna aqui com uma
+        conexao real (criada diretamente pelo domain state, mesma tecnica que
+        test_account_scope_only_pauses_matching_connection ja usa, evitando um round-trip
+        de OAuth completo que nao importa para esta asserção).
+
+        REPRODUZIDO antes de portar (script ad-hoc contra TestClient nesta sessao): o
+        CURRENT ja devolve 404 NOT_FOUND para ambas as chamadas -- nenhum bug encontrado,
+        apenas uma lacuna real de cobertura de regressao (resistencia a enumeracao: 404,
+        nunca 403, para nao revelar a outro tenant se o id existe)."""
+        client = make_client()
+        conn = client.app.state.campaia.connections.create(
+            "demo-tenant", provider="GOOGLE_ADS", external_account_id="acct-x2", display_name="X2"
+        )
+
+        r = client.delete(
+            f"/connections/{conn.connection_id}",
+            headers={**with_step_up(OTHER_OWNER), **idem("cross-tenant-conn-delete")},
+        )
+        self.assertEqual(r.status_code, 404, r.text)
+        self.assertEqual(r.json()["code"], "NOT_FOUND")
+
+        r = client.get(f"/connections/{conn.connection_id}/capabilities", headers=OTHER_OWNER)
+        self.assertEqual(r.status_code, 404, r.text)
+        self.assertEqual(r.json()["code"], "NOT_FOUND")
+
+        # A conexao real do dono continua intacta e visivel.
+        r = client.get("/connections", headers=OWNER)
+        self.assertEqual(r.status_code, 200)
+        owned = [c for c in r.json() if c["id"] == conn.connection_id]
+        self.assertEqual(len(owned), 1)
+        self.assertEqual(owned[0]["status"], "ACTIVE")
 
 
 class TestKillSwitchNeverWidensEffect(unittest.TestCase):

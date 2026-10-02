@@ -170,7 +170,7 @@ class TestSmokeEndpoints(unittest.TestCase):
         camp = create_campaign(client)
         cid = camp["id"]
         client.post(f"/campaigns/{cid}/plan/regenerate", headers={**OWNER, **unique_idem()})
-        r = client.post(f"/campaigns/{cid}/validate", headers=OWNER)
+        r = client.post(f"/campaigns/{cid}/validate", headers={**OWNER, **unique_idem()})
         self.assertEqual(r.status_code, 200, r.text)
         self.assertIn(r.json()["outcome"], ("APPROVABLE", "BLOCKED", "NEEDS_CHANGES"))
 
@@ -228,7 +228,12 @@ class TestSmokeEndpoints(unittest.TestCase):
         # DRAFT campaign is not pausable so it is simply skipped, not an error.
         self.assertEqual(r.json()["affected_campaign_ids"], [])
 
-    def test_kill_switch_global_scope_crosses_tenants(self):
+    def test_kill_switch_global_scope_is_fail_closed_without_platform_admin(self):
+        """SECURITY FIX (Fase C1, 27/09/2026): esta prova era invertida -- provava que
+        OTHER_OWNER (outro tenant) conseguia pausar a campanha de OWNER via scope=GLOBAL,
+        tratando isso como comportamento correto. Nao existe autoridade de PLATFORM_ADMIN
+        neste sistema; ate existir, GLOBAL tem que ser recusado para qualquer chamador
+        comum de tenant, e a campanha do outro tenant tem que continuar intocada."""
         client = make_client()
         from tests_api.test_helpers import OTHER_OWNER, publish_ready_campaign
 
@@ -246,8 +251,13 @@ class TestSmokeEndpoints(unittest.TestCase):
             headers={**OTHER_OWNER, **unique_idem()},
             json={"scope": "GLOBAL", "reason": "global incident"},
         )
-        self.assertEqual(r.status_code, 202, r.text)
-        self.assertIn(camp["id"], r.json()["affected_campaign_ids"])
+        self.assertEqual(r.status_code, 403, r.text)
+        self.assertEqual(r.json()["code"], "PERMISSION_DENIED")
+
+        # A campanha do OWNER (outro tenant) tem que continuar publicada, nunca pausada
+        # por um chamador sem autoridade de plataforma.
+        check = client.get(f"/campaigns/{camp['id']}", headers=OWNER)
+        self.assertEqual(check.json()["state"], "ACTIVE")
 
     def test_insights_is_honest_placeholder(self):
         client = make_client()
@@ -282,7 +292,7 @@ class TestSmokeEndpoints(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json(), [])
 
-        r = client.post("/approvals", headers=OWNER, json={"campaign_id": camp["id"], "kind": "PUBLISH"})
+        r = client.post("/approvals", headers={**OWNER, **unique_idem()}, json={"campaign_id": camp["id"], "kind": "PUBLISH"})
         self.assertEqual(r.status_code, 201, r.text)
         approval = r.json()
         self.assertIn("id", approval)
@@ -298,7 +308,7 @@ class TestSmokeEndpoints(unittest.TestCase):
         client = make_client()
         camp = create_campaign(client)
         approval = client.post(
-            "/approvals", headers=OWNER, json={"campaign_id": camp["id"], "kind": "PUBLISH"}
+            "/approvals", headers={**OWNER, **unique_idem()}, json={"campaign_id": camp["id"], "kind": "PUBLISH"}
         ).json()
         r = client.post(
             f"/approvals/{approval['id']}/decision",
@@ -312,7 +322,7 @@ class TestSmokeEndpoints(unittest.TestCase):
         client = make_client()
         camp = create_campaign(client)
         approval = client.post(
-            "/approvals", headers=OWNER, json={"campaign_id": camp["id"], "kind": "PUBLISH"}
+            "/approvals", headers={**OWNER, **unique_idem()}, json={"campaign_id": camp["id"], "kind": "PUBLISH"}
         ).json()
         r = client.post(
             f"/approvals/{approval['id']}/decision",
@@ -326,7 +336,7 @@ class TestSmokeEndpoints(unittest.TestCase):
         client = make_client()
         camp = create_campaign(client)
         approval = client.post(
-            "/approvals", headers=OWNER, json={"campaign_id": camp["id"], "kind": "PUBLISH"}
+            "/approvals", headers={**OWNER, **unique_idem()}, json={"campaign_id": camp["id"], "kind": "PUBLISH"}
         ).json()
         r = client.post(
             f"/approvals/{approval['id']}/decision",
@@ -349,7 +359,7 @@ class TestSmokeEndpoints(unittest.TestCase):
 
         camp = create_campaign(client)
         approval = client.post(
-            "/approvals", headers=OWNER, json={"campaign_id": camp["id"], "kind": "AUTONOMY_CHANGE"}
+            "/approvals", headers={**OWNER, **unique_idem()}, json={"campaign_id": camp["id"], "kind": "AUTONOMY_CHANGE"}
         ).json()
         client.post(
             f"/approvals/{approval['id']}/decision",
@@ -366,7 +376,7 @@ class TestSmokeEndpoints(unittest.TestCase):
 
         # Above the contracted ceiling (max_level_allowed defaults to APROVADO=1) must fail.
         approval2 = client.post(
-            "/approvals", headers=OWNER, json={"campaign_id": camp["id"], "kind": "AUTONOMY_CHANGE"}
+            "/approvals", headers={**OWNER, **unique_idem()}, json={"campaign_id": camp["id"], "kind": "AUTONOMY_CHANGE"}
         ).json()
         client.post(
             f"/approvals/{approval2['id']}/decision",
@@ -394,7 +404,7 @@ class TestSmokeEndpoints(unittest.TestCase):
         client = make_client()
         camp = create_campaign(client)
         approval = client.post(
-            "/approvals", headers=OWNER, json={"campaign_id": camp["id"], "kind": "AUTONOMY_CHANGE"}
+            "/approvals", headers={**OWNER, **unique_idem()}, json={"campaign_id": camp["id"], "kind": "AUTONOMY_CHANGE"}
         ).json()
         r = client.put(
             "/autonomy",
@@ -436,7 +446,7 @@ class TestSmokeEndpoints(unittest.TestCase):
         camp = create_campaign(client)
         cid = camp["id"]
         approval = client.post(
-            "/approvals", headers=OWNER, json={"campaign_id": cid, "kind": "BUDGET_CHANGE"}
+            "/approvals", headers={**OWNER, **unique_idem()}, json={"campaign_id": cid, "kind": "BUDGET_CHANGE"}
         ).json()
         client.post(
             f"/approvals/{approval['id']}/decision",
@@ -459,7 +469,7 @@ class TestSmokeEndpoints(unittest.TestCase):
         camp = create_campaign(client)
         cid = camp["id"]
         approval = client.post(
-            "/approvals", headers=OWNER, json={"campaign_id": cid, "kind": "BUDGET_CHANGE"}
+            "/approvals", headers={**OWNER, **unique_idem()}, json={"campaign_id": cid, "kind": "BUDGET_CHANGE"}
         ).json()
         client.post(
             f"/approvals/{approval['id']}/decision",
@@ -478,7 +488,7 @@ class TestSmokeEndpoints(unittest.TestCase):
         camp = create_campaign(client)
         cid = camp["id"]
         approval = client.post(
-            "/approvals", headers=OWNER, json={"campaign_id": cid, "kind": "BUDGET_CHANGE"}
+            "/approvals", headers={**OWNER, **unique_idem()}, json={"campaign_id": cid, "kind": "BUDGET_CHANGE"}
         ).json()
         client.post(
             f"/approvals/{approval['id']}/decision",
@@ -498,7 +508,7 @@ class TestSmokeEndpoints(unittest.TestCase):
         camp = create_campaign(client)
         cid = camp["id"]
         approval = client.post(
-            "/approvals", headers=OWNER, json={"campaign_id": cid, "kind": "BUDGET_CHANGE"}
+            "/approvals", headers={**OWNER, **unique_idem()}, json={"campaign_id": cid, "kind": "BUDGET_CHANGE"}
         ).json()
         client.post(
             f"/approvals/{approval['id']}/decision",

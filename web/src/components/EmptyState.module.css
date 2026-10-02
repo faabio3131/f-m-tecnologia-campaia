@@ -1,0 +1,24 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--campaia-space-2);
+  padding: var(--campaia-space-6) var(--campaia-space-4);
+  text-align: left;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--campaia-font-size-lg);
+  color: var(--campaia-color-text);
+}
+
+.description {
+  margin: 0;
+  color: var(--campaia-color-text-muted);
+  max-width: 480px;
+}
+
+.action {
+  margin-top: var(--campaia-space-2);
+}

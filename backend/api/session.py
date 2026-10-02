@@ -19,10 +19,13 @@ import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 from urllib.parse import urlsplit
 
 from .state import TokenPrincipal
+
+if TYPE_CHECKING:
+    from .db import RecordTable
 
 SESSION_COOKIE_NAME = "campaia_session"
 CSRF_HEADER_NAME = "x-csrf-token"
@@ -106,6 +109,23 @@ class SessionRecord:
     principal: TokenPrincipal
     created_at: datetime
     expires_at: datetime
+    #: WP-03 (25/09/2026): TODOS os vinculos (tenant/unidade) da identidade que fez login,
+    #: capturados no momento do login (`state.identity_directory.resolve_all(email)`) --
+    #: nunca reconsultado ao vivo a cada troca, mesma disciplina de nao-renovacao silenciosa
+    #: ja usada para `roles`/TTL da sessao (ver docstring do modulo). Sempre inclui
+    #: `principal`. Vinculo unico (caso comum ate aqui) -> tupla de 1 elemento.
+    available_principals: tuple[TokenPrincipal, ...] = ()
+    #: IDENTITY HARDENING (27/09/2026 -- correcao final pre-Google-Ads): `subject`
+    #: (`VerifiedIdentity.subject`, o `sub` do provedor OIDC/Firebase) capturado no
+    #: momento do login -- nunca reconsultado. E-mail pode, em tese, ser reciclado ou ter
+    #: variacao de caixa entre provedores; `subject` e' o identificador que o proprio
+    #: provedor garante estavel e unico por conta. `None` so' quando a sessao nao veio de
+    #: um login real com identidade verificada (nao deveria acontecer no caminho real,
+    #: mas o campo e' opcional para nao quebrar nenhum `SessionRecord` construido em
+    #: outro lugar). E-mail continua guardado em `principal`/no diretorio -- nao removido,
+    #: so' deixou de ser o unico criterio de binding criptografico quando `subject` esta'
+    #: disponivel (ver `api/deps.py::_is_genuine_step_up`).
+    subject: str | None = None
 
     def is_expired(self, *, now: datetime) -> bool:
         return now >= self.expires_at
@@ -117,9 +137,20 @@ class SessionRecord:
 
 
 class SessionStore(Protocol):
-    def create(self, principal: TokenPrincipal, *, now: datetime) -> SessionRecord: ...
+    def create(
+        self,
+        principal: TokenPrincipal,
+        *,
+        now: datetime,
+        available_principals: tuple[TokenPrincipal, ...] = (),
+        subject: str | None = None,
+    ) -> SessionRecord: ...
     def get(self, session_id: str) -> SessionRecord | None: ...
     def invalidate(self, session_id: str) -> None: ...
+    def invalidate_membership(self, membership_id: str) -> None: ...
+    def switch_principal(
+        self, session_id: str, principal: TokenPrincipal
+    ) -> SessionRecord | None: ...
 
 
 class InMemorySessionStore:
@@ -129,7 +160,14 @@ class InMemorySessionStore:
         self._sessions: dict[str, SessionRecord] = {}
         self._ttl = ttl if ttl is not None else _session_ttl()
 
-    def create(self, principal: TokenPrincipal, *, now: datetime) -> SessionRecord:
+    def create(
+        self,
+        principal: TokenPrincipal,
+        *,
+        now: datetime,
+        available_principals: tuple[TokenPrincipal, ...] = (),
+        subject: str | None = None,
+    ) -> SessionRecord:
         # session_id sempre novo -- nunca reaproveita um id pre-login (protecao contra
         # session fixation, exigencia literal da NFR 4.1 e do WP-02).
         record = SessionRecord(
@@ -138,6 +176,8 @@ class InMemorySessionStore:
             principal=principal,
             created_at=now,
             expires_at=now + self._ttl,
+            available_principals=available_principals or (principal,),
+            subject=subject,
         )
         self._sessions[record.session_id] = record
         return record
@@ -147,6 +187,108 @@ class InMemorySessionStore:
 
     def invalidate(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
+
+    def invalidate_membership(self, membership_id: str) -> None:
+        """Immediately revoke every session that captured this membership.
+
+        SessionRecord.available_principals is intentionally a login-time snapshot; when
+        F1 deactivates a membership, every session that could switch into that membership
+        must therefore be destroyed, not merely the session where it is currently active.
+        """
+        stale = [
+            session_id
+            for session_id, record in self._sessions.items()
+            if any(p.user_id == membership_id for p in record.available_principals)
+        ]
+        for session_id in stale:
+            self._sessions.pop(session_id, None)
+
+    def switch_principal(
+        self, session_id: str, principal: TokenPrincipal
+    ) -> SessionRecord | None:
+        """Troca o vinculo ATIVO de uma sessao ja existente, preservando `session_id`,
+        `csrf_secret` e `subject` (mesma sessao/identidade autenticada, so muda o
+        tenant/unidade ativo -- o cliente nao precisa de um novo `csrf_token`, e a
+        identidade que provou `subject` no login continua a mesma). Quem chama e'
+        responsavel por confirmar que `principal` pertence de fato a
+        `record.available_principals` (ver api/routes_auth.py::switch_membership) --
+        este metodo nao valida isso sozinho, so troca o que recebe."""
+        current = self._sessions.get(session_id)
+        if current is None:
+            return None
+        updated = SessionRecord(
+            session_id=current.session_id,
+            csrf_secret=current.csrf_secret,
+            principal=principal,
+            created_at=current.created_at,
+            expires_at=current.expires_at,
+            available_principals=current.available_principals,
+            subject=current.subject,
+        )
+        self._sessions[session_id] = updated
+        return updated
+
+
+class PersistentSessionStore:
+    """Database-backed server session store shared by all application replicas."""
+
+    def __init__(self, table: "RecordTable", *, ttl: timedelta | None = None) -> None:
+        self._table = table
+        self._ttl = ttl if ttl is not None else _session_ttl()
+
+    def create(
+        self,
+        principal: TokenPrincipal,
+        *,
+        now: datetime,
+        available_principals: tuple[TokenPrincipal, ...] = (),
+        subject: str | None = None,
+    ) -> SessionRecord:
+        record = SessionRecord(
+            session_id=secrets.token_urlsafe(32),
+            csrf_secret=secrets.token_urlsafe(32),
+            principal=principal,
+            created_at=now,
+            expires_at=now + self._ttl,
+            available_principals=available_principals or (principal,),
+            subject=subject,
+        )
+        self._table.put(record.session_id, principal.tenant_id, record)
+        return record
+
+    def get(self, session_id: str) -> SessionRecord | None:
+        return self._table.get(session_id)
+
+    def invalidate(self, session_id: str) -> None:
+        self._table.delete(session_id)
+
+    def invalidate_membership(self, membership_id: str) -> None:
+        with self._table.transaction():
+            for session_id, _tenant_id, record in self._table.all_rows():
+                if any(
+                    principal.user_id == membership_id
+                    for principal in record.available_principals
+                ):
+                    self._table.delete(session_id)
+
+    def switch_principal(
+        self, session_id: str, principal: TokenPrincipal
+    ) -> SessionRecord | None:
+        with self._table.transaction():
+            current = self._table.get(session_id)
+            if current is None:
+                return None
+            updated = SessionRecord(
+                session_id=current.session_id,
+                csrf_secret=current.csrf_secret,
+                principal=principal,
+                created_at=current.created_at,
+                expires_at=current.expires_at,
+                available_principals=current.available_principals,
+                subject=current.subject,
+            )
+            self._table.put(session_id, principal.tenant_id, updated)
+            return updated
 
 
 def set_session_cookie(response, session_id: str, *, max_age_seconds: int) -> None:
@@ -171,6 +313,7 @@ __all__ = [
     "DEFAULT_SESSION_TTL",
     "SESSION_COOKIE_NAME",
     "InMemorySessionStore",
+    "PersistentSessionStore",
     "SessionRecord",
     "SessionStore",
     "clear_session_cookie",

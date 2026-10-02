@@ -1,0 +1,37 @@
+.wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--campaia-space-4);
+}
+
+.spinner {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 3px solid var(--campaia-color-border);
+  border-top-color: var(--campaia-color-primary);
+  animation: campaia-spin var(--campaia-motion-duration, 150ms) linear infinite;
+  animation-duration: 800ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@keyframes campaia-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

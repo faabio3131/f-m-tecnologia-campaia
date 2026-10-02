@@ -1,0 +1,52 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--campaia-space-4);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-2);
+}
+
+.providerName {
+  margin: 0;
+  font-weight: 600;
+  font-size: var(--campaia-font-size-lg);
+  color: var(--campaia-color-text);
+}
+
+.status {
+  margin: 0;
+  color: var(--campaia-color-accent);
+  font-size: var(--campaia-font-size-sm);
+}
+
+.statusMuted {
+  margin: 0;
+  color: var(--campaia-color-text-muted);
+  font-size: var(--campaia-font-size-sm);
+}
+
+.confirmBox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-2);
+  padding: var(--campaia-space-3);
+  border: 1px solid var(--campaia-color-warning-border);
+  background: var(--campaia-color-warning-bg);
+  border-radius: var(--campaia-radius-sm);
+}
+
+.confirmText {
+  margin: 0;
+  font-size: var(--campaia-font-size-sm);
+  color: var(--campaia-color-warning-text);
+  word-break: break-all;
+}
+
+.confirmActions {
+  display: flex;
+  gap: var(--campaia-space-2);
+}

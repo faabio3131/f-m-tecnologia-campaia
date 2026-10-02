@@ -48,7 +48,7 @@ def _authorize(request: Request, permission: Permission, *, amount: Decimal | No
     fixture = require_auth(request)
     state = get_state(request)
     note_step_up_header(request, fixture)
-    principal = build_domain_principal(state, fixture)
+    principal = build_domain_principal(request, state, fixture)
     resource = Resource(tenant_id=fixture.tenant_id, business_unit_id=fixture.business_unit_id)
     decision = authorize(principal, permission, resource, now=datetime.now(timezone.utc), amount=amount)
     if not decision.allowed:
@@ -211,18 +211,19 @@ async def get_plan(request: Request) -> JSONResponse:
 async def regenerate_plan(request: Request) -> JSONResponse:
     fixture, state, principal = _authorize(request, Permission.CAMPAIGN_EDIT)
     idem_key = require_idempotency_key(request)
-    record = _get_campaign_or_404(
-        state, fixture.tenant_id, request.path_params["campaignId"], principal=principal
-    )
+    campaign_id = request.path_params["campaignId"]
 
     def _do_regenerate():
+        record = _get_campaign_or_404(
+            state, fixture.tenant_id, campaign_id, principal=principal
+        )
         plan = _run_strategist(state, fixture, record)
         record.plan = plan
         record.plan_version += 1
-
         if record.campaign.state is CampaignState.DRAFT:
-            record.campaign.transition_to(CampaignState.STRATEGY_READY, reason="plan:regenerated")
-
+            record.campaign.transition_to(
+                CampaignState.STRATEGY_READY, reason="plan:regenerated"
+            )
         state.audit.append(
             tenant_id=fixture.tenant_id,
             actor=fixture.user_id,
@@ -231,13 +232,14 @@ async def regenerate_plan(request: Request) -> JSONResponse:
             details={"plan_version": record.plan_version},
         )
         return PlanResponse(
-            campaign_id=record.campaign_id, plan_version=record.plan_version, plan=record.plan
+            campaign_id=record.campaign_id,
+            plan_version=record.plan_version,
+            plan=record.plan,
         ).model_dump(mode="json")
 
     result, _replay = state.idempotency.execute(
         fixture.tenant_id, f"http:regenerate_plan:{idem_key}", _do_regenerate
     )
-    # Contract: 202 Accepted -- plan (re)generation is treated as async (achado 4).
     return JSONResponse(result, status_code=202)
 
 
@@ -246,56 +248,74 @@ async def regenerate_plan(request: Request) -> JSONResponse:
 
 async def validate_campaign(request: Request) -> JSONResponse:
     fixture, state, principal = _authorize(request, Permission.CAMPAIGN_EDIT)
-    record = _get_campaign_or_404(
-        state, fixture.tenant_id, request.path_params["campaignId"], principal=principal
-    )
+    idem_key = require_idempotency_key(request)
+    campaign_id = request.path_params["campaignId"]
+    key = f"http:validate_campaign:{idem_key}"
 
-    if record.campaign.state in (CampaignState.DRAFT,):
-        # Advance the local state machine through the pre-validation states so /validate
-        # reflects "this campaign is ready to be judged", mirroring the campaign lifecycle
-        # documented in states.py (DRAFT -> STRATEGY_READY -> ASSETS_READY -> VALIDATED).
-        record.campaign.transition_to(CampaignState.STRATEGY_READY, reason="validate:auto")
-    if record.campaign.state is CampaignState.STRATEGY_READY:
-        record.campaign.transition_to(CampaignState.ASSETS_READY, reason="validate:auto")
+    existing = state.idempotency.get(fixture.tenant_id, key)
+    if existing is not None:
+        return JSONResponse(existing.result)
 
-    channel_support = {
-        ch: state.capabilities.is_supported(
-            "SIMULATOR", f"PUBLISH:{ch}", country="BR", api_version="sim-1"
+    def _do_validate():
+        record = _get_campaign_or_404(
+            state, fixture.tenant_id, campaign_id, principal=principal
         )
-        for ch in record.planned_channels
-    }
 
-    engine = PolicyEngine()
-    req = PolicyRequest(
-        tenant_id=fixture.tenant_id,
-        campaign_id=record.campaign_id,
-        plan_version=record.plan_version,
-        action=ActionKind.FIRST_PUBLISH,
-        autonomy=record.autonomy,
-        budget=record.budget,
-        # Validate against the daily cap, not the total budget: PolicyEngine checks
-        # requested_amount against both available_total and available_today (budget.py),
-        # and the amount that will actually be committed on day one of publishing is
-        # bounded by the daily cap, not the full campaign lifetime budget.
-        requested_amount=Decimal(str(record.brief.get("daily_cap", "0"))),
-        channel_support=channel_support,
-        brand_restrictions=tuple(),
-        plan_text=str(record.plan.get("output", "")) if record.plan else "",
+        if record.campaign.state is CampaignState.DRAFT:
+            record.campaign.transition_to(
+                CampaignState.STRATEGY_READY, reason="validate:auto"
+            )
+        if record.campaign.state is CampaignState.STRATEGY_READY:
+            record.campaign.transition_to(
+                CampaignState.ASSETS_READY, reason="validate:auto"
+            )
+
+        channel_support = {
+            ch: state.capabilities.is_supported(
+                "SIMULATOR",
+                f"PUBLISH:{ch}",
+                country="BR",
+                api_version="sim-1",
+            )
+            for ch in record.planned_channels
+        }
+        engine = PolicyEngine()
+        req = PolicyRequest(
+            tenant_id=fixture.tenant_id,
+            campaign_id=record.campaign_id,
+            plan_version=record.plan_version,
+            action=ActionKind.FIRST_PUBLISH,
+            autonomy=record.autonomy,
+            budget=record.budget,
+            requested_amount=Decimal(str(record.brief.get("daily_cap", "0"))),
+            channel_support=channel_support,
+            brand_restrictions=tuple(),
+            plan_text=str(record.plan.get("output", "")) if record.plan else "",
+        )
+        decision = engine.evaluate(req, now=datetime.now(timezone.utc))
+        record.last_policy_decision = decision
+
+        if (
+            decision.outcome.value == "APPROVABLE"
+            and record.campaign.state is CampaignState.ASSETS_READY
+        ):
+            record.campaign.transition_to(
+                CampaignState.VALIDATED, reason="validate:approvable"
+            )
+
+        state.audit.append(
+            tenant_id=fixture.tenant_id,
+            actor=fixture.user_id,
+            action="CAMPAIGN_VALIDATE",
+            target=record.campaign_id,
+            policy_decision_id=decision.policy_decision_id,
+        )
+        return serialize_policy_decision(decision).model_dump(mode="json")
+
+    result, _replay = state.idempotency.execute(
+        fixture.tenant_id, key, _do_validate
     )
-    decision = engine.evaluate(req, now=datetime.now(timezone.utc))
-    record.last_policy_decision = decision
-
-    if decision.outcome.value == "APPROVABLE" and record.campaign.state is CampaignState.ASSETS_READY:
-        record.campaign.transition_to(CampaignState.VALIDATED, reason="validate:approvable")
-
-    state.audit.append(
-        tenant_id=fixture.tenant_id,
-        actor=fixture.user_id,
-        action="CAMPAIGN_VALIDATE",
-        target=record.campaign_id,
-        policy_decision_id=decision.policy_decision_id,
-    )
-    return json_response(serialize_policy_decision(decision))
+    return JSONResponse(result)
 
 
 # --------------------------------------------------------------------------- publish
@@ -305,74 +325,80 @@ async def publish_campaign(request: Request) -> JSONResponse:
     fixture, state, principal = _authorize(request, Permission.CAMPAIGN_PUBLISH)
     require_step_up(request, fixture)
     idem_key = require_idempotency_key(request)
-    record = _get_campaign_or_404(
-        state, fixture.tenant_id, request.path_params["campaignId"], principal=principal
-    )
+    campaign_id = request.path_params["campaignId"]
     body = await parse_body(request, PublishRequest)
+    key = f"http:publish:{idem_key}"
 
-    decision = record.last_policy_decision
-    if decision is None or decision.policy_decision_id != body.policy_decision_id:
-        raise ApiError(
-            "APPROVAL_REQUIRED",
-            "policy_decision_id does not match the campaign's current policy decision. "
-            "Call /validate again.",
-        )
-
-    approval = state.approvals.get(fixture.tenant_id, body.approval_id)
-    if approval is None or approval.campaign_id != record.campaign_id:
-        raise ApiError("APPROVAL_REQUIRED", "approval_id not found for this campaign.")
-    if approval.status != "APPROVED":
-        raise ApiError("APPROVAL_REQUIRED", "Approval has not been granted.")
-    if approval.requires_dual_approval:
-        from campaia_core.permissions import dual_approval_complete
-
-        if not dual_approval_complete(frozenset(approval.decided_by)):
-            raise ApiError("APPROVAL_REQUIRED", "Dual approval is required and not yet complete.")
-
-    # Idempotency check happens BEFORE any state-machine mutation: on replay, the
-    # campaign has already moved past APPROVED (e.g. to ACTIVE) from the first call, so
-    # the "must be APPROVED" gate below must never run again for a replayed key -- only
-    # for a genuinely new attempt. This is what makes repeating the same Idempotency-Key
-    # return the original result instead of re-executing (invariant #3 in the task spec).
-    existing = state.idempotency.get(fixture.tenant_id, f"http:publish:{idem_key}")
+    # Fast replay path: never revalida estado mutado por uma chamada anterior.
+    existing = state.idempotency.get(fixture.tenant_id, key)
     if existing is not None:
-        return json_response(serialize_campaign(record), status_code=202)
-
-    # Walk the state machine forward to APPROVED using the already-recorded, already-
-    # decided approval -- mirroring what a full approvals UI would have already driven.
-    # PublicationSaga.run() itself only accepts campaigns in APPROVED (it transitions
-    # APPROVED -> PUBLISHING under its own guard), so this has to land exactly there.
-    try:
-        if record.campaign.state is CampaignState.VALIDATED:
-            record.campaign.transition_to(CampaignState.AWAITING_APPROVAL, reason="publish:auto")
-        if record.campaign.state is CampaignState.AWAITING_APPROVAL:
-            record.campaign.transition_to(CampaignState.APPROVED, reason="publish:auto")
-    except InvalidStateTransition as exc:
-        raise from_domain_error(exc)
-
-    if record.campaign.state is not CampaignState.APPROVED:
-        raise ApiError(
-            "INVALID_STATE",
-            f"Campaign must be APPROVED to publish; current state is "
-            f"{record.campaign.state.value}.",
-        )
-
-    external_account_id = body.external_account_id or (
-        state.connections.get(fixture.tenant_id, record.connection_id).external_account_id
-        if record.connection_id
-        else "sandbox-account"
-    )
-
-    connector = ProviderSimulator()
-    saga = PublicationSaga(
-        tenant_id=fixture.tenant_id,
-        connector=connector,
-        budget=record.budget,
-        idempotency=state.idempotency,
-        compensation_policy=CompensationPolicy.PAUSE_ALL,
-    )
+        return JSONResponse(existing.result, status_code=202)
 
     def _do_publish():
+        # F3: rele recurso/approval dentro da unidade transacional. Antes de 01/10/2026,
+        # VALIDATED -> AWAITING_APPROVAL -> APPROVED era persistido ANTES de
+        # idempotency.execute(); uma falha posterior na Saga deixava estado parcial.
+        record = _get_campaign_or_404(
+            state, fixture.tenant_id, campaign_id, principal=principal
+        )
+        decision = record.last_policy_decision
+        if decision is None or decision.policy_decision_id != body.policy_decision_id:
+            raise ApiError(
+                "APPROVAL_REQUIRED",
+                "policy_decision_id does not match the campaign's current policy decision. "
+                "Call /validate again.",
+            )
+
+        approval = state.approvals.get(fixture.tenant_id, body.approval_id)
+        if approval is None or approval.campaign_id != record.campaign_id:
+            raise ApiError("APPROVAL_REQUIRED", "approval_id not found for this campaign.")
+        if approval.status != "APPROVED":
+            raise ApiError("APPROVAL_REQUIRED", "Approval has not been granted.")
+        if approval.requires_dual_approval:
+            from campaia_core.permissions import dual_approval_complete
+
+            if not dual_approval_complete(frozenset(approval.decided_by)):
+                raise ApiError(
+                    "APPROVAL_REQUIRED", "Dual approval is required and not yet complete."
+                )
+
+        try:
+            if record.campaign.state is CampaignState.VALIDATED:
+                record.campaign.transition_to(
+                    CampaignState.AWAITING_APPROVAL, reason="publish:auto"
+                )
+            if record.campaign.state is CampaignState.AWAITING_APPROVAL:
+                record.campaign.transition_to(
+                    CampaignState.APPROVED, reason="publish:auto"
+                )
+        except InvalidStateTransition as exc:
+            raise from_domain_error(exc)
+
+        if record.campaign.state is not CampaignState.APPROVED:
+            raise ApiError(
+                "INVALID_STATE",
+                f"Campaign must be APPROVED to publish; current state is "
+                f"{record.campaign.state.value}.",
+            )
+
+        connection = (
+            state.connections.get(fixture.tenant_id, record.connection_id)
+            if record.connection_id
+            else None
+        )
+        external_account_id = body.external_account_id or (
+            connection.external_account_id if connection is not None else "sandbox-account"
+        )
+
+        connector = ProviderSimulator()
+        saga = PublicationSaga(
+            tenant_id=fixture.tenant_id,
+            connector=connector,
+            budget=record.budget,
+            idempotency=state.idempotency,
+            compensation_policy=CompensationPolicy.PAUSE_ALL,
+        )
+
         try:
             outcome = saga.run(
                 record.campaign,
@@ -383,56 +409,57 @@ async def publish_campaign(request: Request) -> JSONResponse:
                 now=datetime.now(timezone.utc),
                 external_account_id=external_account_id,
                 command_id=idem_key,
-                # Split the DAILY cap across channels, not the lifetime total: the Saga
-                # reserves this amount immediately (budget.py.reserve checks it against
-                # both available_total AND available_today), so using the total budget
-                # here would nearly always blow the daily cap and fail every channel.
                 budget_per_channel=(
-                    record.budget.limits.daily_cap / max(len(record.planned_channels), 1)
+                    record.budget.limits.daily_cap
+                    / max(len(record.planned_channels), 1)
                 ),
             )
         except (CampaiaError, ConnectorError) as exc:
             raise from_domain_error(exc)
-        return outcome
 
-    # Idempotency at the HTTP boundary: repeating the same Idempotency-Key returns the
-    # original saga outcome instead of re-running the saga (which itself is also
-    # idempotent per-channel via campaia_core.infra.IdempotencyStore).
+        approval.status = "APPLIED"
+
+        now = datetime.now(timezone.utc)
+        for step in outcome.steps:
+            if step.external_resource_id:
+                sync_status = (
+                    "CONFIRMED"
+                    if step.channel in outcome.confirmed_channels
+                    else "PENDING"
+                )
+                record.external_resources[step.channel] = ExternalResourceState(
+                    channel=step.channel,
+                    external_resource_id=step.external_resource_id,
+                    sync_status=sync_status,
+                    last_synced_at=now,
+                )
+        if outcome.confirmed_channels:
+            record.last_synced_at = now
+
+        state.audit.append(
+            tenant_id=fixture.tenant_id,
+            actor=fixture.user_id,
+            action="CAMPAIGN_PUBLISH",
+            target=record.campaign_id,
+            policy_decision_id=decision.policy_decision_id,
+            details={
+                "saga_id": outcome.saga_id,
+                "confirmed": outcome.confirmed_channels,
+                "failed": outcome.failed_channels,
+            },
+        )
+        return serialize_campaign(record).model_dump(mode="json")
+
     try:
-        outcome, _replay = state.idempotency.execute(fixture.tenant_id, f"http:publish:{idem_key}", _do_publish)
+        result, _replay = state.idempotency.execute(
+            fixture.tenant_id, key, _do_publish
+        )
     except ApiError:
         raise
     except (CampaiaError, ConnectorError) as exc:
         raise from_domain_error(exc)
 
-    now = datetime.now(timezone.utc)
-    for step in outcome.steps:
-        if step.external_resource_id:
-            # sync_status: CONFIRMED once the channel is in outcome.confirmed_channels,
-            # else PENDING. There is no per-channel DIVERGENT detection anywhere in the
-            # domain layer yet, so DIVERGENT is never produced here (documented gap).
-            sync_status = "CONFIRMED" if step.channel in outcome.confirmed_channels else "PENDING"
-            record.external_resources[step.channel] = ExternalResourceState(
-                channel=step.channel,
-                external_resource_id=step.external_resource_id,
-                sync_status=sync_status,
-                # No per-channel reconciliation timestamp exists in the domain layer --
-                # reusing the moment this channel's resource id was recorded as its own
-                # last_synced_at (documented simplification, see repositories.CampaignRecord).
-                last_synced_at=now,
-            )
-    if outcome.confirmed_channels:
-        record.last_synced_at = now
-
-    state.audit.append(
-        tenant_id=fixture.tenant_id,
-        actor=fixture.user_id,
-        action="CAMPAIGN_PUBLISH",
-        target=record.campaign_id,
-        policy_decision_id=decision.policy_decision_id,
-        details={"saga_id": outcome.saga_id, "confirmed": outcome.confirmed_channels, "failed": outcome.failed_channels},
-    )
-    return json_response(serialize_campaign(record), status_code=202)
+    return JSONResponse(result, status_code=202)
 
 
 # --------------------------------------------------------------------------- pause
@@ -441,11 +468,12 @@ async def publish_campaign(request: Request) -> JSONResponse:
 async def pause_campaign(request: Request) -> JSONResponse:
     fixture, state, principal = _authorize(request, Permission.CAMPAIGN_EDIT)
     idem_key = require_idempotency_key(request)
-    record = _get_campaign_or_404(
-        state, fixture.tenant_id, request.path_params["campaignId"], principal=principal
-    )
+    campaign_id = request.path_params["campaignId"]
 
     def _do_pause():
+        record = _get_campaign_or_404(
+            state, fixture.tenant_id, campaign_id, principal=principal
+        )
         try:
             record.campaign.transition_to(CampaignState.PAUSED, reason=f"pause:{idem_key}")
         except InvalidStateTransition as exc:
@@ -466,19 +494,108 @@ async def pause_campaign(request: Request) -> JSONResponse:
                     plan_version=record.plan_version,
                 )
             )
+        # ACHADO 26 (Fase 4, item A, 26/09/2026, REPRODUZIDO por execucao real ao escrever
+        # o teste de replay de resume_campaign abaixo): o audit.append precisa estar DENTRO
+        # do fecho protegido por `idempotency.execute()`, nao depois -- antes desta correcao,
+        # ele rodava incondicionalmente a cada chamada HTTP, inclusive em replays legitimos
+        # da MESMA Idempotency-Key, duplicando o evento CAMPAIGN_PAUSE na trilha de
+        # auditoria sem nenhuma mutacao real correspondente. Confirmado por execucao real:
+        # duas chamadas com a mesma chave -> dois eventos CAMPAIGN_PAUSE, antes da correcao.
+        state.audit.append(
+            tenant_id=fixture.tenant_id, actor=fixture.user_id, action="CAMPAIGN_PAUSE", target=record.campaign_id
+        )
         return serialize_campaign(record).model_dump(mode="json")
 
     try:
-        result, _replay = state.idempotency.execute(fixture.tenant_id, idem_key, _do_pause)
+        # SECURITY FIX (Fase C4, 27/09/2026 -- auditoria independente): chave crua, sem
+        # namespace de operacao -- a MESMA Idempotency-Key usada aqui e em outra
+        # mutacao (ex.: resume_campaign, patch_budget) colidiria no mesmo store
+        # (tenant_id, chave), fazendo uma operacao devolver o resultado cacheado da
+        # outra por engano. Todo outro endpoint mutante ja usa `http:<operacao>:<chave>`
+        # -- este e resume_campaign/revoke_connection eram as 3 exececoes reais.
+        result, _replay = state.idempotency.execute(
+            fixture.tenant_id, f"http:pause_campaign:{idem_key}", _do_pause
+        )
     except ApiError:
         raise
     except CampaiaError as exc:
         raise from_domain_error(exc)
 
-    state.audit.append(
-        tenant_id=fixture.tenant_id, actor=fixture.user_id, action="CAMPAIGN_PAUSE", target=record.campaign_id
-    )
     # Contract: 202 Accepted (achado 4).
+    return JSONResponse(result, status_code=202)
+
+
+# --------------------------------------------------------------------------- resume
+
+
+async def resume_campaign(request: Request) -> JSONResponse:
+    """Fase 4, item A da missao de reconciliacao/takeover (26/09/2026): a maquina de
+    estados (campaia_core/states.py) ja modelava e testava PAUSED -> ACTIVE, com sua
+    propria guarda (`_guard_resume`) -- FATO CONFIRMADO por leitura real do dominio antes
+    de qualquer codigo ser escrito. So faltava exposicao via API; nenhuma mudanca de
+    semantica de dominio foi necessaria.
+
+    Exige `Permission.CAMPAIGN_PUBLISH` + step-up (mesmo nivel de cautela de
+    `publish_campaign`, nao o de `pause_campaign`/`CAMPAIGN_EDIT`) porque retomar volta a
+    gerar gasto externo real -- o mesmo risco que publicar pela primeira vez. NAO exige um
+    novo `approval_id`: a guarda de dominio para esta transicao especifica
+    (`_guard_resume`) so verifica `kill_switch_active`, nao aprovacao humana -- diferente de
+    APPROVED -> PUBLISHING (`_guard_publishing`), que exige uma. Inventar aqui uma exigencia
+    de aprovacao que o dominio nao modela seria o erro oposto (mais rigoroso que o dominio
+    autoriza), entao a rota segue exatamente o que a guarda real exige, nada mais.
+
+    Deliberadamente NAO chama nenhum metodo de conector para "reativar" o recurso externo:
+    `AdsConnector` (campaia_core/connectors.py) so declara `publish`/`pause` -- nao existe
+    `resume`/`unpause` no protocolo. A propria chamada `connector.pause(...)` que
+    `pause_campaign` faz hoje e simbolica (um `ProviderSimulator()` novo e descartado a
+    cada chamada, sem nenhuma leitura posterior de `.paused` em lugar nenhum do codigo --
+    confirmado por grep real), entao nao ha nenhum efeito real a espelhar aqui. Definir o
+    que uma "retomada" deveria significar para um adaptador real (nova chamada de API do
+    provider? republicar? outra coisa?) e uma decisao de protocolo de conector/produto
+    ainda pendente, fora do escopo desta exposicao -- nao inventada aqui.
+    """
+    fixture, state, principal = _authorize(request, Permission.CAMPAIGN_PUBLISH)
+    require_step_up(request, fixture)
+    idem_key = require_idempotency_key(request)
+    campaign_id = request.path_params["campaignId"]
+
+    def _do_resume():
+        record = _get_campaign_or_404(
+            state, fixture.tenant_id, campaign_id, principal=principal
+        )
+        try:
+            # TransitionContext() default (kill_switch_active=False) -- mesmo padrao ja
+            # usado por publish_campaign/validate_campaign para transition_to() nesta API:
+            # nenhum sinal persistente de "kill switch ligado" existe hoje para alimentar
+            # este campo (o kill switch real e uma ACAO pontual, `apply_kill_switch`, nao um
+            # estado consultavel depois -- ver `kill_switch()`/`_try_pause()` acima).
+            record.campaign.transition_to(
+                CampaignState.ACTIVE,
+                reason=f"resume:{idem_key}",
+            )
+        except InvalidStateTransition as exc:
+            raise from_domain_error(exc)
+        # ACHADO 26 (Fase 4, item A, 26/09/2026, REPRODUZIDO por execucao real ao escrever
+        # o teste de replay abaixo): o audit.append tem que estar DENTRO deste fecho, senao
+        # roda de novo a cada replay legitimo da mesma Idempotency-Key e duplica o evento
+        # CAMPAIGN_RESUME sem nenhuma mutacao real correspondente -- mesma classe de bug
+        # encontrada e corrigida em pause_campaign nesta mesma sessao.
+        state.audit.append(
+            tenant_id=fixture.tenant_id, actor=fixture.user_id, action="CAMPAIGN_RESUME", target=record.campaign_id
+        )
+        return serialize_campaign(record).model_dump(mode="json")
+
+    try:
+        # SECURITY FIX (Fase C4, 27/09/2026) -- ver mesma nota em pause_campaign acima.
+        result, _replay = state.idempotency.execute(
+            fixture.tenant_id, f"http:resume_campaign:{idem_key}", _do_resume
+        )
+    except ApiError:
+        raise
+    except CampaiaError as exc:
+        raise from_domain_error(exc)
+
+    # Contract: 202 Accepted, mesmo shape de pause_campaign.
     return JSONResponse(result, status_code=202)
 
 
@@ -489,48 +606,62 @@ async def patch_budget(request: Request) -> JSONResponse:
     fixture, state, principal = _authorize(request, Permission.BUDGET_CHANGE)
     require_step_up(request, fixture)
     idem_key = require_idempotency_key(request)
-    record = _get_campaign_or_404(
-        state, fixture.tenant_id, request.path_params["campaignId"], principal=principal
-    )
+    campaign_id = request.path_params["campaignId"]
     body = await parse_body(request, BudgetPatchRequest)
+    key = f"http:patch_budget:{idem_key}"
 
-    approval = state.approvals.get(fixture.tenant_id, body.approval_id)
-    if approval is None or approval.campaign_id != record.campaign_id or approval.kind != "BUDGET_CHANGE":
-        raise ApiError("APPROVAL_REQUIRED", "approval_id not found for this budget change.")
-    if approval.status != "APPROVED":
-        raise ApiError("APPROVAL_REQUIRED", "Approval has not been granted.")
-
-    # Idempotency check happens BEFORE the mutation for the same reason as publish_campaign:
-    # on replay, validate_change/limits-replace must not run a second time.
-    existing = state.idempotency.get(fixture.tenant_id, f"http:patch_budget:{idem_key}")
+    existing = state.idempotency.get(fixture.tenant_id, key)
     if existing is not None:
-        return json_response(serialize_campaign(record), status_code=202)
-
-    ok, change_pct, reason = record.budget.validate_change(body.new_daily_cap)
-    if not ok:
-        raise ApiError("BUDGET_LIMIT", reason, details={"change_pct": str(change_pct)})
+        return JSONResponse(existing.result, status_code=202)
 
     def _do_patch():
-        # BudgetEngine has no direct "set daily_cap" mutator (limits is frozen) -- replace
-        # the BudgetLimits with a new one carrying the same total/currency/policy, only
-        # daily_cap changed. This preserves spent_total/spent_today/reservations on the
-        # engine instance.
         from dataclasses import replace
 
-        record.budget.limits = replace(record.budget.limits, daily_cap=Decimal(str(body.new_daily_cap)))
+        record = _get_campaign_or_404(
+            state, fixture.tenant_id, campaign_id, principal=principal
+        )
+        approval = state.approvals.get(fixture.tenant_id, body.approval_id)
+        if (
+            approval is None
+            or approval.campaign_id != record.campaign_id
+            or approval.kind != "BUDGET_CHANGE"
+        ):
+            raise ApiError(
+                "APPROVAL_REQUIRED",
+                "approval_id not found for this budget change.",
+            )
+        if approval.status != "APPROVED":
+            raise ApiError("APPROVAL_REQUIRED", "Approval has not been granted.")
 
+        ok, change_pct, reason = record.budget.validate_change(body.new_daily_cap)
+        if not ok:
+            raise ApiError(
+                "BUDGET_LIMIT",
+                reason,
+                details={"change_pct": str(change_pct)},
+            )
+
+        record.budget.limits = replace(
+            record.budget.limits,
+            daily_cap=Decimal(str(body.new_daily_cap)),
+        )
         state.audit.append(
             tenant_id=fixture.tenant_id,
             actor=fixture.user_id,
             action="BUDGET_CHANGE",
             target=record.campaign_id,
-            details={"new_daily_cap": str(body.new_daily_cap), "change_pct": str(change_pct)},
+            details={
+                "new_daily_cap": str(body.new_daily_cap),
+                "change_pct": str(change_pct),
+            },
         )
-        return True
+        approval.status = "APPLIED"
+        return serialize_campaign(record).model_dump(mode="json")
 
-    state.idempotency.execute(fixture.tenant_id, f"http:patch_budget:{idem_key}", _do_patch)
-    # Contract: 202 Accepted (achado 4).
-    return json_response(serialize_campaign(record), status_code=202)
+    result, _replay = state.idempotency.execute(
+        fixture.tenant_id, key, _do_patch
+    )
+    return JSONResponse(result, status_code=202)
 
 
 # --------------------------------------------------------------------------- kill switch
@@ -618,15 +749,24 @@ async def kill_switch(request: Request) -> JSONResponse:
                         affected_tenants[record.campaign_id] = record.tenant_id
 
         elif body.scope == "GLOBAL":
-            # Deliberate, documented exception to tenant isolation: GLOBAL kill-switch is
-            # the one operation in this system that must cross every tenant by definition
-            # (achado 13). It still only ever pauses (reduces effect), never widens it, and
-            # every affected campaign is recorded in ITS OWN tenant's audit log below
-            # (achado 17 fix -- see audit loop after this branch).
-            for record in state.campaigns._items.values():
-                _try_pause(record, body.reason, affected)
-                if record.campaign_id in affected:
-                    affected_tenants[record.campaign_id] = record.tenant_id
+            # SECURITY FIX (Fase C1, 27/09/2026 -- auditoria independente): a versao
+            # anterior tratava GLOBAL como "excecao deliberada ao isolamento de tenant",
+            # mas a unica autorizacao verificada era Permission.KILL_SWITCH, concedida a
+            # OWNER/FINANCE/APPROVER *dentro do proprio tenant*. Isso permitia que
+            # QUALQUER tenant pausasse campanhas de QUALQUER outro tenant so por ter
+            # KILL_SWITCH no seu proprio escopo -- confirmado por teste real
+            # (test_kill_switch_global_scope_crosses_tenants, tests_api/test_smoke_endpoints.py)
+            # que provava a falha como se fosse comportamento correto. Nao existe hoje
+            # nenhum conceito de PLATFORM_ADMIN (autoridade de plataforma, distinta da
+            # autoridade comum de tenant) em campaia_core.permissions -- ate essa
+            # autoridade existir de verdade, GLOBAL fica fail-closed: nunca executa,
+            # nunca afeta nenhuma campanha, de nenhum tenant, incluindo o do proprio
+            # chamador.
+            raise ApiError(
+                "PERMISSION_DENIED",
+                "scope=GLOBAL exige autoridade de plataforma (PLATFORM_ADMIN), que ainda "
+                "nao existe neste sistema. Nenhuma campanha foi afetada.",
+            )
 
         # Always record the event in the CALLER's own tenant, even when nothing was
         # affected there directly (e.g. a GLOBAL call from a tenant with no campaigns of

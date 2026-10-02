@@ -1,6 +1,6 @@
 # CampaIA — Ponto Zero Web · 03. Arquitetura Web, Domínio, Dados, Autenticação e Fluxos
 
-**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019, 19/09/2026) — implementação (WP-01 em diante) ainda não iniciada.
+**Status:** TARGET com decisões arquiteturais APROVADAS (ADR-0016–0019, 19/09/2026) — **WP-01 implementado e validado** (ver `docs/web/08_CERTIFICACAO_WP01_FUNDACAO_WEB.md`); WP-02 em diante ainda não iniciados.
 
 ---
 

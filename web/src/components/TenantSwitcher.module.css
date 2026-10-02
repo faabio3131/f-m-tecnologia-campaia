@@ -1,0 +1,38 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-3);
+}
+
+.singleMembership {
+  margin: 0;
+  color: var(--campaia-color-text-muted);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--campaia-space-3);
+  padding: var(--campaia-space-3);
+  border: 1px solid var(--campaia-color-border);
+  border-radius: var(--campaia-radius-md);
+}
+
+.tenant {
+  margin: 0;
+  font-weight: 600;
+  color: var(--campaia-color-text);
+}
+
+.detail {
+  margin: var(--campaia-space-1) 0 0;
+  color: var(--campaia-color-text-muted);
+  font-size: var(--campaia-font-size-sm);
+}
+
+.activeBadge {
+  font-size: var(--campaia-font-size-sm);
+  font-weight: 600;
+  color: var(--campaia-color-accent);
+}

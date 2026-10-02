@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -48,6 +48,127 @@ class SessionLoginResponse(BaseModel):
     #: Cliente deve devolver este valor no header X-CSRF-Token em toda mutacao
     #: subsequente (double-submit cookie, ver api/session.py).
     csrf_token: str
+
+
+# --------------------------------------------------------------------------- onboarding comercial (F1)
+
+
+class TenantOnboardingRequest(ApiModel):
+    id_token: str = Field(min_length=1)
+    company_name: str = Field(min_length=1, max_length=160)
+    document: str | None = Field(default=None, max_length=32)
+    segment: str = Field(min_length=1, max_length=120)
+    language: str = Field(default="pt-BR", min_length=2, max_length=20)
+    timezone: str = Field(default="America/Sao_Paulo", min_length=1, max_length=80)
+    entry_mode: Literal["TRIAL", "PURCHASE"] = "TRIAL"
+
+
+class OrganizationResponse(BaseModel):
+    tenant_id: str
+    name: str
+    document: str | None
+    segment: str
+    language: str
+    timezone: str
+    entry_mode: str
+    plan_id: str | None
+    status: str
+    default_business_unit_id: str | None
+    created_at: datetime
+
+
+class MembershipResponse(BaseModel):
+    id: str
+    tenant_id: str
+    email: str
+    roles: list[str]
+    business_unit_id: str | None
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    deactivated_at: datetime | None
+
+
+class TenantOnboardingResponse(BaseModel):
+    session: SessionLoginResponse
+    organization: OrganizationResponse
+    membership: MembershipResponse
+
+
+class InvitationCreateRequest(ApiModel):
+    email: str = Field(min_length=3, max_length=254)
+    roles: list[str] = Field(min_length=1)
+    business_unit_id: str | None = None
+
+
+class InvitationResponse(BaseModel):
+    id: str
+    email: str
+    roles: list[str]
+    business_unit_id: str | None
+    status: str
+    created_at: datetime
+    expires_at: datetime
+    accepted_by: str | None
+    # O token bruto e devolvido SOMENTE na primeira criacao para que o Owner/Admin possa
+    # compartilhar o link. O repositorio guarda apenas SHA-256; replay idempotente devolve
+    # null em vez de persistir este segredo em claro no idempotency store.
+    accept_token: str | None = None
+
+
+class InvitationAcceptRequest(ApiModel):
+    id_token: str = Field(min_length=1)
+    accept_token: str = Field(min_length=16, max_length=512)
+
+
+# --------------------------------------------------------------------------- F2 organization / IAM administration
+
+
+class BusinessUnitResponse(BaseModel):
+    id: str
+    name: str
+    status: str
+    created_at: datetime
+
+
+class BusinessUnitCreateRequest(ApiModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class BusinessUnitRenameRequest(ApiModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class MembershipAccessUpdateRequest(ApiModel):
+    roles: list[str] = Field(min_length=1)
+    business_unit_id: str
+
+
+
+# --------------------------------------------------------------------------- vinculos multi-tenant (WP-03)
+
+
+class MembershipItem(BaseModel):
+    #: Identificador estavel do VINCULO (nunca do e-mail/identidade) -- e' o valor que o
+    #: cliente devolve em SwitchMembershipRequest.user_id para selecionar este vinculo.
+    user_id: str
+    tenant_id: str
+    business_unit_id: str | None
+    roles: list[str]
+    #: True para exatamente um item da lista: o vinculo ativo na sessao agora.
+    active: bool
+
+
+class MembershipsResponse(BaseModel):
+    memberships: list[MembershipItem]
+
+
+class SwitchMembershipRequest(ApiModel):
+    #: user_id do vinculo-alvo (um dos devolvidos por GET /me/memberships) -- nunca um
+    #: tenant_id livre: a troca so aceita um vinculo que ja pertença a esta identidade,
+    #: nunca um tenant arbitrario informado pelo cliente (mesma disciplina de
+    #: `reject_client_tenant_id`, api/deps.py).
+    user_id: str
 
 
 # --------------------------------------------------------------------------- brand profiles
@@ -100,13 +221,41 @@ class OAuthStartResponse(BaseModel):
     state: str
 
 
+class OAuthCallbackRequest(ApiModel):
+    #: `state` devolvido por POST /connections/oauth/start -- resgatado uma unica vez,
+    #: amarrado ao tenant que iniciou o fluxo (nunca aceito de outro tenant).
+    state: str
+    #: Conta selecionada pelo usuario no provedor (simulado nesta etapa -- nenhum
+    #: provider real e contatado). Nunca inventada pelo backend: sempre o que o
+    #: cliente envia apos a "selecao" na tela (real, quando existir, ou simulada, como
+    #: hoje).
+    external_account_id: str
+    display_name: str
+
+
+#: SECURITY FIX (Fase 3, achado 4, 27/09/2026 -- auditoria independente): o campo
+#: `credential` que este endpoint aceitava foi RETIRADO do contrato publico. O TARGET
+#: comercial nunca deixa um token real do provedor trafegar pelo browser at' este
+#: endpoint -- a troca real de OAuth e' server-side (ver ADR-0013, adendo). O mecanismo
+#: abaixo (`DevAttachCredentialRequest`) e' explicitamente dev/test-only, usado so por
+#: `POST /connections/{connectionId}/dev-attach-credential` (nao documentado no
+#: contrato OpenAPI publico, fail-closed fora de test/dev-local) -- existe so para o
+#: Vault poder ser testado de ponta a ponta sem inventar uma troca de OAuth real.
+class DevAttachCredentialRequest(ApiModel):
+    credential: dict
+
+
 class CapabilityResponse(BaseModel):
     provider: str
     capability_key: str
     country: str
     api_version: str
     supported: bool
-    verified_at: datetime
+    # ACHADO 20 (Fase 3, 26/09/2026): nullable -- quando nenhum registro real de
+    # capacidade existe para o modo de conexao consultado (routes_connections.py::
+    # connection_capabilities), o backend nunca fabrica um "verificado agora"; None
+    # significa honestamente "nunca verificado".
+    verified_at: datetime | None
     requires_approval: bool
     # Contract's Capability schema adds `evidence_url` (nullable). There is no real
     # evidence-URL source yet (no capability-evidence tracking in campaia_core), so this
