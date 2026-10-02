@@ -497,6 +497,10 @@ class BillingSubscriptionUpsert(ApiModel):
     start_trial: bool = False
 
 
+class BillingPlanChangeRequest(ApiModel):
+    target_plan_id: str
+
+
 class BillingEntitlementsResponse(BaseModel):
     max_users: int | None
     max_active_campaigns: int | None
@@ -515,6 +519,12 @@ class BillingSubscriptionResponse(BaseModel):
     trial_started_at: datetime | None = None
     trial_ends_at: datetime | None = None
     activated_at: datetime | None = None
+    pending_plan_id: str | None = None
+    pending_plan_name: str | None = None
+    pending_plan_change_kind: str | None = None
+    pending_plan_change_billing_mode: str | None = None
+    canceled_at: datetime | None = None
+    reactivation_requested_at: datetime | None = None
     entitlement_access_active: bool
     entitlements: BillingEntitlementsResponse | None = None
 

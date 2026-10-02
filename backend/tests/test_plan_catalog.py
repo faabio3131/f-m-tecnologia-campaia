@@ -157,6 +157,36 @@ class PlanCatalogTests(unittest.TestCase):
         with self.assertRaises(PlanCatalogError):
             load_plan_catalog(path)
 
+    def test_plan_change_without_billing_mode_fails_closed(self) -> None:
+        target = self.valid_entry(plan_id="pro", name="Pro")
+        source = self.valid_entry(
+            plan_changes=[
+                {
+                    "target_plan_id": "pro",
+                    "kind": "UPGRADE",
+                    "activation": "SETTLED_PAYMENT",
+                }
+            ]
+        )
+        path = self.write_catalog([source, target])
+        with self.assertRaises(PlanCatalogError):
+            load_plan_catalog(path)
+
+    def test_plan_change_target_must_exist_in_same_catalog(self) -> None:
+        entry = self.valid_entry(
+            plan_changes=[
+                {
+                    "target_plan_id": "nao-existe",
+                    "kind": "UPGRADE",
+                    "activation": "SETTLED_PAYMENT",
+                    "billing_mode": "TARGET_PLAN_FULL_CYCLE",
+                }
+            ]
+        )
+        path = self.write_catalog([entry])
+        with self.assertRaises(PlanCatalogError):
+            load_plan_catalog(path)
+
     def test_empty_catalog_fails_closed(self) -> None:
         path = self.write_catalog([])
         with self.assertRaises(PlanCatalogError):

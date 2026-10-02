@@ -24,7 +24,15 @@ from .routes_approvals import create_approval, decide_approval, list_approvals
 from .routes_audit import list_audit_events
 from .routes_auth import get_session, list_memberships, login, logout, switch_membership
 from .routes_autonomy import get_autonomy, put_autonomy
-from .routes_billing import asaas_webhook, create_charge, get_subscription, put_subscription
+from .routes_billing import (
+    asaas_webhook,
+    cancel_billing_subscription,
+    change_subscription_plan,
+    create_charge,
+    get_subscription,
+    put_subscription,
+    reactivate_billing_subscription,
+)
 from .routes_brand import create_brand_profile, list_brand_profiles
 from .routes_campaigns import (
     create_brief,
@@ -171,6 +179,9 @@ routes = [
     # Motor de cobranca propria do CampaIA (B11 / ADR-0020).
     Route("/billing/subscription", get_subscription, methods=["GET"]),
     Route("/billing/subscription", put_subscription, methods=["PUT"]),
+    Route("/billing/subscription/change-plan", change_subscription_plan, methods=["POST"]),
+    Route("/billing/subscription/cancel", cancel_billing_subscription, methods=["POST"]),
+    Route("/billing/subscription/reactivate", reactivate_billing_subscription, methods=["POST"]),
     Route("/billing/charges", create_charge, methods=["POST"]),
     # Unico endpoint deste app sem Bearer token de usuario -- quem chama e o Asaas, nao o
     # app; a autenticidade vem do token estatico verificado por AsaasWebhookReceiver.
