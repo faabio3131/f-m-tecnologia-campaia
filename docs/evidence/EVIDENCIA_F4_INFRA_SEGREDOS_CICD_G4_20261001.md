@@ -455,3 +455,47 @@ qualquer merge:
   sem versionar Client Secret.
 
 Nenhum deploy ou merge foi executado por estas correções.
+
+
+## 20. Evidência externa pós-merge — 02/10/2026
+
+PR #32 foi mergeada por merge commit após autorização expressa. HEAD da `main`: `70bb364dd9e1a9054b5e3e8706b0988df8a8ef59`. Backend Tests, Frontend Tests e F4 Platform CI pós-merge = `success`.
+
+Release real de staging: workflow `CAMPAIA Cloud Run Release`, run `36955222281`, environment `staging`, resultado `success`. Produção não foi autorizada nem executada.
+
+Evidências do release:
+- OIDC Google Cloud concluído;
+- build/push backend;
+- migration Job real concluído;
+- Migration gate = success;
+- deploy backend;
+- backend readiness smoke = success;
+- build/push Web;
+- deploy Web;
+- bind da origem Web para backend;
+- final smoke = success.
+
+Verificação pós-workflow:
+- backend `/health/ready` = HTTP 200;
+- Web `/` = HTTP 200;
+- backend revision `campaia-backend-staging-00002-pjr`, 100% tráfego;
+- Web revision `campaia-web-staging-00001-lst`, 100% tráfego.
+
+Cloud SQL real:
+- `campaia-staging-pg`;
+- PostgreSQL 16;
+- `southamerica-east1`;
+- estado RUNNABLE;
+- IPv4 público desabilitado;
+- backup automático habilitado;
+- PITR habilitado;
+- transaction log retention = 7 dias.
+
+KMS real:
+- key ring `campaia-staging-vault`;
+- CryptoKey `tenant-credentials`;
+- rotação de 90 dias configurada.
+
+Achado a reconciliar: a consulta real do Cloud SQL reportou `settings.deletionProtectionEnabled=false`, enquanto o TARGET Terraform usa `db_deletion_protection=true`. Status desse item: `PARTIAL` até confirmar state/plan e corrigir eventual drift com evidência.
+
+G4 passa de `EXTERNAL_INFRASTRUCTURE` para `PARTIAL`, mas não recebe `DONE_VERIFIED` antes de rollback real, login Google real em staging e reconciliação da proteção contra exclusão. Restore/RPO/RTO continuam F17.
