@@ -41,6 +41,8 @@ RUNTIME_TABLES = frozenset(
         "tenant_autonomy",
         "tenant_autonomy_updated_at",
         "asaas_webhook_seen_events",
+        "billing_subscriptions",
+        "billing_charges",
     }
 )
 _TABLE_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
