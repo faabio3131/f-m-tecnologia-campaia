@@ -521,6 +521,10 @@ class AppState:
             self.audit = AuditLog(self.db.table("audit_events"))
             self.organizations = OrganizationRepository(self.db.table("organizations"))
             self.idempotency = PersistentIdempotencyStore(self.db.table("idempotency"))
+            self.subscriptions = PersistentTenantObjectMap(
+                self.db.table("billing_subscriptions")
+            )
+            self.charges = PersistentTenantObjectMap(self.db.table("billing_charges"))
             self.sessions = PersistentSessionStore(self.db.table("sessions"))
             self._persistent_step_up_store = PersistentStepUpStore(
                 self.db.table("step_up_states")
@@ -549,6 +553,12 @@ class AppState:
                     max_requests=ASAAS_WEBHOOK_RATE_LIMIT_MAX_REQUESTS,
                     window=ASAAS_WEBHOOK_RATE_LIMIT_WINDOW,
                 )
+            # Billing gateway idempotency must share the durable store as well. Otherwise
+            # a process restart can recreate the same external charge even when the HTTP
+            # layer itself is persistent.
+            if hasattr(self.billing_gateway, "idempotency"):
+                self.billing_gateway.idempotency = self.idempotency
+
             # capabilities and dev/test tokens remain startup fixtures, never persisted.
 
         # The identity directory must be created AFTER persistence is selected so the
