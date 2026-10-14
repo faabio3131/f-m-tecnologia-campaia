@@ -431,6 +431,30 @@ async def asaas_webhook(request: Request) -> JSONResponse:
         # em memoria, ja perdida) -- aceitar o recebimento sem erro, nao ha o que liquidar.
         return JSONResponse({"accepted": True, "processed": False})
 
+    if event.event_type in {
+        "PAYMENT_CREDIT_CARD_CAPTURE_REFUSED",
+        "PAYMENT_REPROVED_BY_RISK_ANALYSIS",
+    }:
+        state.audit.append(
+            tenant_id=charge.tenant_id,
+            actor="asaas",
+            actor_kind="EXTERNAL_PROVIDER",
+            action="BILLING_PAYMENT_ATTEMPT_FAILED",
+            target=charge.billing_id,
+            details={
+                "event_type": event.event_type,
+                "payment_status": event.asaas_status,
+            },
+        )
+        return JSONResponse(
+            {
+                "accepted": True,
+                "processed": True,
+                "billing_id": charge.billing_id,
+                "event": event.event_type,
+            }
+        )
+
     observed_at = datetime.now(timezone.utc)
     status = map_asaas_status(event.asaas_status)
 
