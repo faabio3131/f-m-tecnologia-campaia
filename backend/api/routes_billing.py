@@ -21,7 +21,7 @@ from campaia_core.asaas_gateway import map_asaas_status
 from campaia_core.asaas_webhook import parse_asaas_payment_event
 from campaia_core.billing_settlement import charge_subscription, try_settle_from_status
 from campaia_core.fiscal_handoff import build_campaia_fiscal_handoff
-from campaia_core.payment_gateway import PaymentGatewayError
+from campaia_core.payment_gateway import GatewayChargeStatus, PaymentGatewayError
 from campaia_core.permissions import Permission, Resource, authorize
 from campaia_core.plan_catalog import PlanCatalogError, get_plan, load_plan_catalog
 from campaia_core.subscription import (
@@ -34,6 +34,9 @@ from campaia_core.subscription import (
     cancel_subscription,
     compute_cycle_charge,
     entitlement_access_is_active,
+    mark_past_due,
+    next_dunning_reminder_at,
+    past_due_is_in_grace,
     refresh_trial_status,
     request_plan_change,
     request_reactivation,
@@ -109,6 +112,16 @@ def _serialize_subscription(sub: Subscription) -> dict:
         ),
         canceled_at=current.canceled_at,
         reactivation_requested_at=current.reactivation_requested_at,
+        past_due_at=current.past_due_at,
+        grace_period_ends_at=current.grace_period_ends_at,
+        past_due_in_grace=past_due_is_in_grace(current),
+        past_due_access_mode=(
+            current.plan.dunning_policy.access_mode.value
+            if current.plan.dunning_policy is not None
+            else None
+        ),
+        dunning_reminders_sent=current.dunning_reminders_sent,
+        next_dunning_reminder_at=next_dunning_reminder_at(current),
         entitlement_access_active=entitlement_access_is_active(current),
         entitlements=entitlement_payload,
     ).model_dump(mode="json")
@@ -182,6 +195,10 @@ async def put_subscription(request: Request) -> JSONResponse:
                     pending_plan_change_billing_mode=existing.pending_plan_change_billing_mode,
                     canceled_at=existing.canceled_at,
                     reactivation_requested_at=existing.reactivation_requested_at,
+                    past_due_at=existing.past_due_at,
+                    grace_period_ends_at=existing.grace_period_ends_at,
+                    dunning_reminders_sent=existing.dunning_reminders_sent,
+                    last_dunning_at=existing.last_dunning_at,
                 )
 
             if body.start_trial:
@@ -414,8 +431,68 @@ async def asaas_webhook(request: Request) -> JSONResponse:
         # em memoria, ja perdida) -- aceitar o recebimento sem erro, nao ha o que liquidar.
         return JSONResponse({"accepted": True, "processed": False})
 
+    observed_at = datetime.now(timezone.utc)
     status = map_asaas_status(event.asaas_status)
-    fact = try_settle_from_status(charge, status, settled_at=datetime.now(timezone.utc))
+
+    if status is GatewayChargeStatus.OVERDUE:
+        subscription = state.subscriptions.get(charge.tenant_id)
+        if subscription is None:
+            return JSONResponse(
+                {"accepted": True, "processed": False, "status": status.value}
+            )
+
+        try:
+            past_due = mark_past_due(
+                subscription,
+                overdue_at=observed_at,
+                billed_plan_id=charge.plan_id,
+                billed_purpose=charge.purpose,
+            )
+        except ValueError as exc:
+            state.audit.append(
+                tenant_id=charge.tenant_id,
+                actor="asaas",
+                actor_kind="EXTERNAL_PROVIDER",
+                action="BILLING_SUBSCRIPTION_PAST_DUE_SKIPPED",
+                target=subscription.plan.plan_id,
+                details={
+                    "billing_id": charge.billing_id,
+                    "billed_plan_id": charge.plan_id,
+                    "charge_purpose": charge.purpose.value,
+                    "reason": str(exc),
+                },
+            )
+            return JSONResponse(
+                {"accepted": True, "processed": False, "status": status.value}
+            )
+
+        state.subscriptions[charge.tenant_id] = past_due
+        if past_due != subscription:
+            state.audit.append(
+                tenant_id=charge.tenant_id,
+                actor="asaas",
+                actor_kind="EXTERNAL_PROVIDER",
+                action="BILLING_SUBSCRIPTION_PAST_DUE",
+                target=past_due.plan.plan_id,
+                details={
+                    "billing_id": charge.billing_id,
+                    "grace_period_ends_at": (
+                        past_due.grace_period_ends_at.isoformat()
+                        if past_due.grace_period_ends_at is not None
+                        else None
+                    ),
+                },
+            )
+        return JSONResponse(
+            {
+                "accepted": True,
+                "processed": True,
+                "billing_id": charge.billing_id,
+                "status": status.value,
+            }
+        )
+
+    fact = try_settle_from_status(charge, status, settled_at=observed_at)
     if fact is None:
         return JSONResponse({"accepted": True, "processed": False, "status": status.value})
 
@@ -423,6 +500,7 @@ async def asaas_webhook(request: Request) -> JSONResponse:
 
     subscription = state.subscriptions.get(charge.tenant_id)
     if subscription is not None:
+        was_past_due = subscription.status is SubscriptionStatus.PAST_DUE
         try:
             activated = activate_from_settled_payment(
                 subscription,
@@ -455,7 +533,11 @@ async def asaas_webhook(request: Request) -> JSONResponse:
                 tenant_id=charge.tenant_id,
                 actor="asaas",
                 actor_kind="EXTERNAL_PROVIDER",
-                action="BILLING_SUBSCRIPTION_ACTIVATED",
+                action=(
+                    "BILLING_SUBSCRIPTION_RECOVERED"
+                    if was_past_due
+                    else "BILLING_SUBSCRIPTION_ACTIVATED"
+                ),
                 target=activated.plan.plan_id,
                 details={"billing_id": charge.billing_id},
             )
