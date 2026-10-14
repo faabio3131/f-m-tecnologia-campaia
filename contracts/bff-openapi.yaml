@@ -1473,6 +1473,14 @@ components:
         pending_plan_change_billing_mode: { type: [string, 'null'] }
         canceled_at: { type: [string, 'null'], format: date-time }
         reactivation_requested_at: { type: [string, 'null'], format: date-time }
+        past_due_at: { type: [string, 'null'], format: date-time }
+        grace_period_ends_at: { type: [string, 'null'], format: date-time }
+        past_due_in_grace: { type: boolean }
+        past_due_access_mode:
+          type: [string, 'null']
+          enum: [ALLOW_DURING_GRACE, BLOCK_IMMEDIATELY, null]
+        dunning_reminders_sent: { type: integer, minimum: 0 }
+        next_dunning_reminder_at: { type: [string, 'null'], format: date-time }
         entitlement_access_active: { type: boolean }
         entitlements:
           anyOf:
@@ -1505,7 +1513,7 @@ components:
             - { type: number }
             - { type: string }
         gateway_charge_id: { type: string }
-        gateway_status: { type: string, enum: [PENDING, CONFIRMED, FAILED] }
+        gateway_status: { type: string, enum: [PENDING, OVERDUE, CONFIRMED, FAILED] }
 
     BillingWebhookReceipt:
       type: object
