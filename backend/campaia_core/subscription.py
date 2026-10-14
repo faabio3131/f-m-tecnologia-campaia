@@ -420,16 +420,27 @@ def dunning_reminder_is_due(
 
 
 def record_dunning_reminder(
-    subscription: Subscription, *, now: datetime | None = None
+    subscription: Subscription,
+    *,
+    reminder_index: int,
+    now: datetime | None = None,
 ) -> Subscription:
-    """Registra uma tentativa ja executada pelo canal externo.
+    """Registra uma tentativa ja executada pelo canal externo com replay idempotente.
 
-    Este dominio nao envia e-mail/SMS e nao solicita negativacao. O caller somente pode
-    registrar o passo quando a agenda governada estiver vencida.
+    Este dominio nao envia e-mail/SMS e nao solicita negativacao. O caller informa o indice
+    da acao que executou. Repetir um indice ja aplicado devolve o mesmo estado; pular indice
+    falha fechado.
     """
 
     if subscription.status is not SubscriptionStatus.PAST_DUE:
         raise ValueError("dunning exige assinatura PAST_DUE.")
+    if isinstance(reminder_index, bool) or not isinstance(reminder_index, int):
+        raise ValueError("reminder_index deve ser inteiro.")
+    if reminder_index < subscription.dunning_reminders_sent:
+        return subscription
+    if reminder_index > subscription.dunning_reminders_sent:
+        raise ValueError("reminder_index fora de ordem.")
+
     at = now or datetime.now(timezone.utc)
     if at.tzinfo is None:
         raise ValueError("now deve ser timezone-aware.")
