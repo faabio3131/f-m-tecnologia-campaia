@@ -346,16 +346,16 @@ def mark_past_due(
     cobranca legada sem plan_id ou outro proposito falham fechados.
     """
 
-    if subscription.status is SubscriptionStatus.PAST_DUE:
-        return subscription
-    if subscription.status is not SubscriptionStatus.ACTIVE:
-        raise ValueError("PAST_DUE exige assinatura ACTIVE.")
     if billed_purpose is not ChargePurpose.REGULAR:
         raise ValueError("somente cobranca REGULAR pode marcar assinatura PAST_DUE.")
     if billed_plan_id is None:
         raise ValueError("cobranca sem plan_id nao pode marcar assinatura PAST_DUE.")
     if billed_plan_id != subscription.plan.plan_id:
         raise ValueError("cobranca vencida nao corresponde ao plano vigente.")
+    if subscription.status is SubscriptionStatus.PAST_DUE:
+        return subscription
+    if subscription.status is not SubscriptionStatus.ACTIVE:
+        raise ValueError("PAST_DUE exige assinatura ACTIVE.")
 
     policy = subscription.plan.dunning_policy
     if policy is None:
