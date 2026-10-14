@@ -478,6 +478,234 @@ class AsaasWebhookTests(unittest.TestCase):
         assert observed["pending_plan_id"] == "exemplo-pro"
         assert observed["entitlements"]["max_users"] == 1
 
+    def test_overdue_event_marks_past_due_with_grace_and_audit(self) -> None:
+        app, client = self._app_and_client()
+        _put_subscription(client)
+        state = client.app.state.campaia
+        status_enum = __import__(
+            "campaia_core.subscription", fromlist=["SubscriptionStatus"]
+        ).SubscriptionStatus
+        current = state.subscriptions["demo-tenant"]
+        state.subscriptions["demo-tenant"] = replace(current, status=status_enum.ACTIVE)
+
+        charge_response = client.post(
+            "/billing/charges",
+            headers={**with_step_up(OWNER), **unique_idem()},
+            json={"competence": "2026-10"},
+        )
+        assert charge_response.status_code == 202, charge_response.text
+        gateway_charge_id = charge_response.json()["gateway_charge_id"]
+
+        old = self._set_webhook_token("expected-token")
+        try:
+            overdue = client.post(
+                "/webhooks/asaas",
+                headers={"asaas-access-token": "expected-token"},
+                json={
+                    "id": "evt_overdue_1",
+                    "event": "PAYMENT_OVERDUE",
+                    "payment": {"id": gateway_charge_id, "status": "OVERDUE"},
+                },
+            )
+            assert overdue.status_code == 200, overdue.text
+            assert overdue.json()["processed"] is True
+            assert overdue.json()["status"] == "OVERDUE"
+        finally:
+            self._restore_webhook_token(old)
+
+        observed = client.get("/billing/subscription", headers=OWNER).json()
+        assert observed["status"] == "PAST_DUE"
+        assert observed["past_due_at"] is not None
+        assert observed["grace_period_ends_at"] is not None
+        assert observed["past_due_in_grace"] is True
+        assert observed["entitlement_access_active"] is True
+        assert observed["past_due_access_mode"] == "ALLOW_DURING_GRACE"
+        assert observed["next_dunning_reminder_at"] is not None
+
+        actions = [event.action for event in state.audit.list_for_tenant("demo-tenant")]
+        assert "BILLING_SUBSCRIPTION_PAST_DUE" in actions
+
+    def test_received_after_overdue_recovers_active_and_clears_past_due_state(self) -> None:
+        app, client = self._app_and_client()
+        _put_subscription(client)
+        state = client.app.state.campaia
+        status_enum = __import__(
+            "campaia_core.subscription", fromlist=["SubscriptionStatus"]
+        ).SubscriptionStatus
+        current = state.subscriptions["demo-tenant"]
+        state.subscriptions["demo-tenant"] = replace(current, status=status_enum.ACTIVE)
+
+        charge_response = client.post(
+            "/billing/charges",
+            headers={**with_step_up(OWNER), **unique_idem()},
+            json={"competence": "2026-10"},
+        )
+        gateway_charge_id = charge_response.json()["gateway_charge_id"]
+
+        old = self._set_webhook_token("expected-token")
+        try:
+            first = client.post(
+                "/webhooks/asaas",
+                headers={"asaas-access-token": "expected-token"},
+                json={
+                    "id": "evt_overdue_recovery_1",
+                    "event": "PAYMENT_OVERDUE",
+                    "payment": {"id": gateway_charge_id, "status": "OVERDUE"},
+                },
+            )
+            assert first.status_code == 200, first.text
+
+            recovered = client.post(
+                "/webhooks/asaas",
+                headers={"asaas-access-token": "expected-token"},
+                json={
+                    "id": "evt_overdue_recovery_2",
+                    "event": "PAYMENT_RECEIVED",
+                    "payment": {"id": gateway_charge_id, "status": "RECEIVED"},
+                },
+            )
+            assert recovered.status_code == 200, recovered.text
+            assert recovered.json()["processed"] is True
+        finally:
+            self._restore_webhook_token(old)
+
+        observed = client.get("/billing/subscription", headers=OWNER).json()
+        assert observed["status"] == "ACTIVE"
+        assert observed["past_due_at"] is None
+        assert observed["grace_period_ends_at"] is None
+        assert observed["dunning_reminders_sent"] == 0
+        assert observed["entitlement_access_active"] is True
+
+        actions = [event.action for event in state.audit.list_for_tenant("demo-tenant")]
+        assert "BILLING_SUBSCRIPTION_RECOVERED" in actions
+
+    def test_failed_payment_attempt_is_audited_without_marking_past_due(self) -> None:
+        app, client = self._app_and_client()
+        _put_subscription(client)
+        state = client.app.state.campaia
+        status_enum = __import__(
+            "campaia_core.subscription", fromlist=["SubscriptionStatus"]
+        ).SubscriptionStatus
+        current = state.subscriptions["demo-tenant"]
+        state.subscriptions["demo-tenant"] = replace(current, status=status_enum.ACTIVE)
+
+        charge_response = client.post(
+            "/billing/charges",
+            headers={**with_step_up(OWNER), **unique_idem()},
+            json={"competence": "2026-10"},
+        )
+        gateway_charge_id = charge_response.json()["gateway_charge_id"]
+
+        old = self._set_webhook_token("expected-token")
+        try:
+            failed = client.post(
+                "/webhooks/asaas",
+                headers={"asaas-access-token": "expected-token"},
+                json={
+                    "id": "evt_card_refused_1",
+                    "event": "PAYMENT_CREDIT_CARD_CAPTURE_REFUSED",
+                    "payment": {"id": gateway_charge_id, "status": "PENDING"},
+                },
+            )
+            assert failed.status_code == 200, failed.text
+            assert failed.json()["processed"] is True
+        finally:
+            self._restore_webhook_token(old)
+
+        observed = client.get("/billing/subscription", headers=OWNER).json()
+        assert observed["status"] == "ACTIVE"
+        assert observed["past_due_at"] is None
+        actions = [event.action for event in state.audit.list_for_tenant("demo-tenant")]
+        assert "BILLING_PAYMENT_ATTEMPT_FAILED" in actions
+
+    def test_overdue_is_isolated_to_the_charge_tenant(self) -> None:
+        app, client = self._app_and_client()
+        _put_subscription(client, headers=OWNER)
+        _put_subscription(client, headers=OTHER_OWNER)
+        state = client.app.state.campaia
+        status_enum = __import__(
+            "campaia_core.subscription", fromlist=["SubscriptionStatus"]
+        ).SubscriptionStatus
+        state.subscriptions["demo-tenant"] = replace(
+            state.subscriptions["demo-tenant"], status=status_enum.ACTIVE
+        )
+        state.subscriptions["other-tenant"] = replace(
+            state.subscriptions["other-tenant"], status=status_enum.ACTIVE
+        )
+
+        charge_response = client.post(
+            "/billing/charges",
+            headers={**with_step_up(OWNER), **unique_idem()},
+            json={"competence": "2026-10"},
+        )
+        gateway_charge_id = charge_response.json()["gateway_charge_id"]
+
+        old = self._set_webhook_token("expected-token")
+        try:
+            overdue = client.post(
+                "/webhooks/asaas",
+                headers={"asaas-access-token": "expected-token"},
+                json={
+                    "id": "evt_cross_tenant_overdue_1",
+                    "event": "PAYMENT_OVERDUE",
+                    "payment": {"id": gateway_charge_id, "status": "OVERDUE"},
+                },
+            )
+            assert overdue.status_code == 200, overdue.text
+        finally:
+            self._restore_webhook_token(old)
+
+        assert client.get("/billing/subscription", headers=OWNER).json()["status"] == "PAST_DUE"
+        assert client.get("/billing/subscription", headers=OTHER_OWNER).json()["status"] == "ACTIVE"
+
+    def test_overdue_plan_change_charge_does_not_mark_current_plan_past_due(self) -> None:
+        app, client = self._app_and_client()
+        _put_subscription(client)
+        state = client.app.state.campaia
+        status_enum = __import__(
+            "campaia_core.subscription", fromlist=["SubscriptionStatus"]
+        ).SubscriptionStatus
+        state.subscriptions["demo-tenant"] = replace(
+            state.subscriptions["demo-tenant"], status=status_enum.ACTIVE
+        )
+
+        with _with_catalog():
+            changed = client.post(
+                "/billing/subscription/change-plan",
+                headers={**with_step_up(OWNER), **unique_idem()},
+                json={"target_plan_id": "exemplo-pro"},
+            )
+        assert changed.status_code == 200, changed.text
+
+        charge_response = client.post(
+            "/billing/charges",
+            headers={**with_step_up(OWNER), **unique_idem()},
+            json={"competence": "2026-10"},
+        )
+        gateway_charge_id = charge_response.json()["gateway_charge_id"]
+
+        old = self._set_webhook_token("expected-token")
+        try:
+            overdue = client.post(
+                "/webhooks/asaas",
+                headers={"asaas-access-token": "expected-token"},
+                json={
+                    "id": "evt_upgrade_overdue_1",
+                    "event": "PAYMENT_OVERDUE",
+                    "payment": {"id": gateway_charge_id, "status": "OVERDUE"},
+                },
+            )
+            assert overdue.status_code == 200, overdue.text
+            assert overdue.json()["processed"] is False
+        finally:
+            self._restore_webhook_token(old)
+
+        observed = client.get("/billing/subscription", headers=OWNER).json()
+        assert observed["status"] == "ACTIVE"
+        assert observed["pending_plan_id"] == "exemplo-pro"
+        actions = [event.action for event in state.audit.list_for_tenant("demo-tenant")]
+        assert "BILLING_SUBSCRIPTION_PAST_DUE_SKIPPED" in actions
+
     def test_pending_status_is_accepted_but_not_settled(self) -> None:
         app, client = self._app_and_client()
         with _with_catalog():
