@@ -525,6 +525,12 @@ class BillingSubscriptionResponse(BaseModel):
     pending_plan_change_billing_mode: str | None = None
     canceled_at: datetime | None = None
     reactivation_requested_at: datetime | None = None
+    past_due_at: datetime | None = None
+    grace_period_ends_at: datetime | None = None
+    past_due_in_grace: bool = False
+    past_due_access_mode: str | None = None
+    dunning_reminders_sent: int = 0
+    next_dunning_reminder_at: datetime | None = None
     entitlement_access_active: bool
     entitlements: BillingEntitlementsResponse | None = None
 
