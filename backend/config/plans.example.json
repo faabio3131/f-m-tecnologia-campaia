@@ -3,15 +3,25 @@
     "_comment": "EXEMPLO — valores fictícios usados somente para testes e formato. Nunca representam preços, franquias, trial ou entitlements comerciais reais. O catálogo real continua sendo dado externo aprovado pelo Diretor.",
     "plan_id": "exemplo-essencial",
     "name": "Exemplo Essencial",
-    "monthly_price": 1,
+    "monthly_price": 1.00,
     "included_credits": 1,
-    "extra_credit_unit_price": 1,
+    "extra_credit_unit_price": 1.00,
     "max_users": 1,
     "currency": "BRL",
     "trial_days": 7,
     "cancellation_mode": "IMMEDIATE",
     "reactivation_mode": "PAYMENT_REQUIRED",
     "reactivation_billing_mode": "CURRENT_PLAN_FULL_CYCLE",
+    "dunning_policy": {
+      "grace_period_days": 3,
+      "access_mode": "ALLOW_DURING_GRACE",
+      "reminder_offsets_days": [0, 2, 3]
+    },
+    "dunning_policy": {
+      "grace_period_days": 3,
+      "access_mode": "ALLOW_DURING_GRACE",
+      "reminder_offsets_days": [0, 2, 3]
+    },
     "plan_changes": [
       {
         "target_plan_id": "exemplo-pro",
@@ -23,33 +33,18 @@
     "entitlements": {
       "max_users": 1,
       "max_active_campaigns": 1,
-      "channels": [
-        "EXEMPLO_CHANNEL"
-      ],
-      "ai_capabilities": [
-        "EXEMPLO_AI"
-      ],
-      "resources": [
-        "EXEMPLO_RESOURCE"
-      ]
-    },
-    "dunning_policy": {
-      "grace_period_days": 3,
-      "access_mode": "ALLOW_DURING_GRACE",
-      "reminder_offsets_days": [
-        0,
-        2,
-        3
-      ]
+      "channels": ["EXEMPLO_CHANNEL"],
+      "ai_capabilities": ["EXEMPLO_AI"],
+      "resources": ["EXEMPLO_RESOURCE"]
     }
   },
   {
     "_comment": "EXEMPLO fictício para exercitar downgrade. Não é oferta comercial real.",
     "plan_id": "exemplo-pro",
     "name": "Exemplo Pro",
-    "monthly_price": 2,
+    "monthly_price": 2.00,
     "included_credits": 2,
-    "extra_credit_unit_price": 1,
+    "extra_credit_unit_price": 1.00,
     "max_users": 2,
     "currency": "BRL",
     "trial_days": 7,
@@ -67,27 +62,9 @@
     "entitlements": {
       "max_users": 2,
       "max_active_campaigns": 2,
-      "channels": [
-        "EXEMPLO_CHANNEL",
-        "EXEMPLO_CHANNEL_2"
-      ],
-      "ai_capabilities": [
-        "EXEMPLO_AI",
-        "EXEMPLO_AI_2"
-      ],
-      "resources": [
-        "EXEMPLO_RESOURCE",
-        "EXEMPLO_RESOURCE_2"
-      ]
-    },
-    "dunning_policy": {
-      "grace_period_days": 3,
-      "access_mode": "ALLOW_DURING_GRACE",
-      "reminder_offsets_days": [
-        0,
-        2,
-        3
-      ]
+      "channels": ["EXEMPLO_CHANNEL", "EXEMPLO_CHANNEL_2"],
+      "ai_capabilities": ["EXEMPLO_AI", "EXEMPLO_AI_2"],
+      "resources": ["EXEMPLO_RESOURCE", "EXEMPLO_RESOURCE_2"]
     }
   }
 ]
