@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -20,5 +21,29 @@ describe("WP-01 automated boundary checks", () => {
       path.join(WEB_ROOT, "src", "contracts", "bff-openapi.generated.ts"),
     );
     expect(inSync).toBe(true);
+  });
+
+  it("keeps the implemented billing HTTP surface declared in the canonical OpenAPI", () => {
+    const contract = fs.readFileSync(
+      path.join(WEB_ROOT, "..", "contracts", "bff-openapi.yaml"),
+      "utf8",
+    );
+    const backendMain = fs.readFileSync(
+      path.join(WEB_ROOT, "..", "backend", "api", "main.py"),
+      "utf8",
+    );
+    const billingPaths = [
+      "/billing/subscription",
+      "/billing/subscription/change-plan",
+      "/billing/subscription/cancel",
+      "/billing/subscription/reactivate",
+      "/billing/charges",
+      "/webhooks/asaas",
+    ];
+
+    for (const route of billingPaths) {
+      expect(backendMain).toContain(`Route(\"${route}\"`);
+      expect(contract).toContain(`  ${route}:`);
+    }
   });
 });

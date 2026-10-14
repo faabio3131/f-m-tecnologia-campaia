@@ -2,6 +2,8 @@
 
 **Status:** APROVADA · **Data:** 24/09/2026 · **Aprovador:** Fábio Aluizio da Silva
 
+> **ADENDO CURRENT — 02/10/2026:** a decisão por Google Identity Platform permanece vigente, mas o estado histórico que descreve autenticação real como `TARGET` foi superado. O CURRENT implementa Google Identity/Firebase Admin fail-closed, sessão server-side por cookie seguro, CSRF, tenant switching e step-up; o staging real comprovou login Google, onboarding explícito e sessão autenticada em tenant próprio. Fixtures de bearer permanecem restritas a test/dev-local e são recusadas fora desses ambientes.
+
 ## Contexto
 
 A ADR-0018 (19/09/2026) já aprovou a estratégia de autenticação Web: provedor de identidade

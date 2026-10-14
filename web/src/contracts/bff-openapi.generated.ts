@@ -720,6 +720,132 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/billing/subscription": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Consulta assinatura, trial, plano e entitlements do tenant atual */
+        get: operations["getBillingSubscription"];
+        /**
+         * Configura assinatura inicial ou inicia trial segundo o catalogo comercial
+         * @description Nunca ativa assinatura paga apenas por selecao do browser. O plano vem do catalogo
+         *     server-side; start_trial apenas solicita o trial cuja duracao pertence ao catalogo.
+         *     Troca de plano usa exclusivamente /billing/subscription/change-plan.
+         */
+        put: operations["putBillingSubscription"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/subscription/change-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Solicita upgrade ou downgrade permitido pelo catalogo
+         * @description O plano atual permanece autoritativo ate liquidacao de cobranca correspondente
+         *     ao plano-alvo e ao proposito PLAN_CHANGE. Regras de transicao e cobranca sao
+         *     configuracao comercial externa, nunca hardcode por tenant.
+         */
+        post: operations["changeBillingPlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/subscription/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancela assinatura conforme politica explicita do catalogo */
+        post: operations["cancelBillingSubscription"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/subscription/reactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Solicita reativacao com novo pagamento obrigatorio
+         * @description Reativacao volta a PENDING_PAYMENT. Entitlement nao e restaurado ate liquidacao
+         *     de cobranca com proposito REACTIVATION correspondente ao plano vigente.
+         */
+        post: operations["reactivateBillingSubscription"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/charges": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cria cobranca idempotente para uma competencia
+         * @description A cobranca usa plano/proposito autoritativos do servidor. Retry com a mesma
+         *     Idempotency-Key nao duplica efeito externo. Confirmacao chega pelo webhook.
+         */
+        post: operations["createBillingCharge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/webhooks/asaas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recebe evento de pagamento do Asaas
+         * @description Endpoint provider-to-provider sem sessao de usuario. Autenticidade vem de
+         *     asaas-access-token; dedupe e rate-limit sao server-side. Pagamento tardio pode
+         *     ser liquidado financeiramente sem reativar entitlement indevido.
+         */
+        post: operations["receiveAsaasWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/campaigns/{campaignId}/insights": {
         parameters: {
             query?: never;
@@ -758,6 +884,70 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        BillingSubscriptionUpsert: {
+            plan_id: string;
+            /** @description CPF/CNPJ exigido pelo contrato de cobranca; nunca inferido. */
+            customer_document: string;
+            /** @default false */
+            start_trial: boolean;
+        };
+        BillingPlanChangeRequest: {
+            target_plan_id: string;
+        };
+        BillingEntitlements: {
+            max_users: number | null;
+            max_active_campaigns: number | null;
+            channels: string[];
+            ai_capabilities: string[];
+            resources: string[];
+        };
+        BillingSubscription: {
+            tenant_id: string;
+            customer_ref: string;
+            customer_document: string;
+            plan_id: string;
+            plan_name: string;
+            /** @enum {string} */
+            status: "PENDING_PAYMENT" | "TRIAL" | "ACTIVE" | "PAST_DUE" | "EXPIRED" | "CANCELED";
+            /** Format: date-time */
+            trial_started_at?: string | null;
+            /** Format: date-time */
+            trial_ends_at?: string | null;
+            /** Format: date-time */
+            activated_at?: string | null;
+            pending_plan_id?: string | null;
+            pending_plan_name?: string | null;
+            pending_plan_change_kind?: string | null;
+            pending_plan_change_billing_mode?: string | null;
+            /** Format: date-time */
+            canceled_at?: string | null;
+            /** Format: date-time */
+            reactivation_requested_at?: string | null;
+            entitlement_access_active: boolean;
+            entitlements?: components["schemas"]["BillingEntitlements"] | null;
+        };
+        BillingChargeCreate: {
+            competence: string;
+            /** @default 0 */
+            extra_credits_used: number | string;
+        };
+        BillingCharge: {
+            billing_id: string;
+            tenant_id: string;
+            competence: string;
+            /** @enum {string} */
+            currency: "BRL";
+            amount: number | string;
+            gateway_charge_id: string;
+            /** @enum {string} */
+            gateway_status: "PENDING" | "CONFIRMED" | "FAILED";
+        };
+        BillingWebhookReceipt: {
+            accepted: boolean;
+            processed?: boolean;
+            reason?: string | null;
+            status?: string | null;
+        };
         /** @enum {string} */
         Provider: "GOOGLE_ADS" | "META" | "WHATSAPP";
         /** @enum {string} */
@@ -769,7 +959,7 @@ export interface components {
              * @description Taxonomia canonica. Codigos de provedor NUNCA vazam para o cliente.
              * @enum {string}
              */
-            code: "UNAUTHENTICATED" | "PERMISSION_DENIED" | "STEP_UP_REQUIRED" | "APPROVAL_REQUIRED" | "VALIDATION_FAILED" | "INVALID_STATE" | "CAPABILITY_UNSUPPORTED" | "BUDGET_LIMIT" | "RATE_LIMITED" | "QUOTA_EXHAUSTED" | "POLICY_VIOLATION" | "KILL_SWITCH_ACTIVE" | "NOT_FOUND" | "TRANSIENT" | "UNKNOWN";
+            code: "UNAUTHENTICATED" | "PERMISSION_DENIED" | "STEP_UP_REQUIRED" | "APPROVAL_REQUIRED" | "VALIDATION_FAILED" | "VALIDATION_REJECTED" | "INVALID_STATE" | "CAPABILITY_UNSUPPORTED" | "BUDGET_LIMIT" | "RATE_LIMITED" | "QUOTA_EXHAUSTED" | "POLICY_VIOLATION" | "KILL_SWITCH_ACTIVE" | "NOT_FOUND" | "AUTH_EXPIRED" | "DECLINED" | "TRANSIENT" | "UNKNOWN" | "BILLING_CATALOG_UNAVAILABLE" | "BILLING_PLAN_CHANGE_REQUIRES_EXPLICIT_FLOW" | "BILLING_PLAN_CHANGE_REJECTED" | "BILLING_CANCEL_REJECTED" | "BILLING_REACTIVATION_REJECTED";
             /** @description Texto compreensivel por usuario nao tecnico. */
             message: string;
             details?: Record<string, never> | null;
@@ -2509,6 +2699,320 @@ export interface operations {
                         scope?: "CAMPAIGN" | "ACCOUNT" | "TENANT" | "PLATFORM" | "GLOBAL";
                         affected_campaign_ids?: string[];
                     };
+                };
+            };
+        };
+    };
+    getBillingSubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Assinatura atual */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingSubscription"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Usuario sem BILLING_VIEW */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    putBillingSubscription: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+                 *     login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+                 *     servidor. Ausente/invalido -> 403.
+                 */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao. */
+                "X-Step-Up-Token": components["parameters"]["StepUpToken"];
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillingSubscriptionUpsert"];
+            };
+        };
+        responses: {
+            /** @description Assinatura configurada */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingSubscription"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["StepUpRequired"];
+            /** @description Troca de plano exige fluxo explicito */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
+            /** @description Catalogo comercial indisponivel */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    changeBillingPlan: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+                 *     login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+                 *     servidor. Ausente/invalido -> 403.
+                 */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao. */
+                "X-Step-Up-Token": components["parameters"]["StepUpToken"];
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillingPlanChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Troca registrada como pendente */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingSubscription"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["StepUpRequired"];
+            404: components["responses"]["NotFound"];
+            /** @description Transicao nao permitida ou assinatura em estado incompativel */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Catalogo comercial indisponivel */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    cancelBillingSubscription: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+                 *     login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+                 *     servidor. Ausente/invalido -> 403.
+                 */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao. */
+                "X-Step-Up-Token": components["parameters"]["StepUpToken"];
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Assinatura cancelada */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingSubscription"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["StepUpRequired"];
+            404: components["responses"]["NotFound"];
+            /** @description Politica de cancelamento ausente ou incompativel */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reactivateBillingSubscription: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+                 *     login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+                 *     servidor. Ausente/invalido -> 403.
+                 */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao. */
+                "X-Step-Up-Token": components["parameters"]["StepUpToken"];
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reativacao solicitada */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingSubscription"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["StepUpRequired"];
+            404: components["responses"]["NotFound"];
+            /** @description Assinatura ou politica incompativel */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createBillingCharge: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+                 *     login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+                 *     servidor. Ausente/invalido -> 403.
+                 */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao. */
+                "X-Step-Up-Token": components["parameters"]["StepUpToken"];
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillingChargeCreate"];
+            };
+        };
+        responses: {
+            /** @description Cobranca criada ou reencontrada no gateway */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingCharge"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["StepUpRequired"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    receiveAsaasWebhook: {
+        parameters: {
+            query?: never;
+            header: {
+                "asaas-access-token": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Evento aceito; processed indica se houve liquidacao aplicavel */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingWebhookReceipt"];
+                };
+            };
+            /** @description Token de webhook invalido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingWebhookReceipt"];
+                };
+            };
+            /** @description Rate limit por origem excedido */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingWebhookReceipt"];
                 };
             };
         };

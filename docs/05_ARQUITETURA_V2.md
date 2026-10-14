@@ -1,8 +1,10 @@
 # CAMPAIA — ARQUITETURA MESTRA V2
 
 **Substitui:** `ARQUITETURA_KORDENA_MARKETING_AI_V1-1.md` (V1.1 passa a `SUBSTITUÍDA`)
-**Status:** PROPOSTA — sujeita ao Gate Arquitetural (G1)
+**Status histórico:** PROPOSTA de 25/08/2026 — preservar como base; o CURRENT é regido pelo adendo de 02/10/2026 e pelas ADRs/Controle Mestre posteriores.
 **Data:** 25/08/2026 · **Diretor:** Fábio Aluizio da Silva
+
+> **ADENDO CURRENT — 02/10/2026:** este documento preserva a proposta arquitetural histórica, mas seu framing de cliente Mobile/Flutter, Mobile BFF, RLS genérico obrigatório e itens então pendentes não descreve integralmente o CURRENT. A linha comercial vigente é **Web-first Next.js/React**, com mobile em quarentena; o BFF atual é Starlette; runtime em Cloud Run/Google Cloud `southamerica-east1`; persistência PostgreSQL/Cloud SQL; isolamento por escopo de query + ownership imutável + triggers PostgreSQL onde aplicável; KMS/Secret Manager e Google Identity Platform já integram o CURRENT. Decisões e implementações posteriores prevalecem sem apagar este histórico. Ver Cronograma Mestre F0–F20 e `CAMPAIA_CONTROLE_MESTRE_EXECUCAO_20260927.md`.
 
 ## Mudanças em relação à V1.1
 

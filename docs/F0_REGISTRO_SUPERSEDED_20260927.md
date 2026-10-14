@@ -21,9 +21,12 @@
 | docs/product/NON_FUNCTIONAL_REQUIREMENTS.md | PARTIAL | NFR TARGET; ADR posterior prevalece |
 | docs/product/CAMPAIA_PRODUCT_CHARTER.md | PARTIAL | visão; trechos listados no banner não prevalecem |
 | docs/product/DECISOES_DIRETOR.md item 3 | SUPERSEDED | ADR-0020 prevalece |
+| PR #5 `feat/campaia-wp01-web-foundation` | SUPERSEDED como linha de integração | conteúdo válido reconciliado no takeover/PR #31 e `main` posterior |
+| PR #6 `feat/campaia-v1-complete-saas` | SUPERSEDED como linha de integração | minerada/reconciliada no takeover; não mergear a branch histórica |
+| PR #28 `verify/wp02-auth-review` | SUPERSEDED como linha de integração | autenticação real posterior já está na `main` e homologada em staging |
 
 ## Controle vigente
 
-CURRENT técnico da PR #31/GitHub → Cronograma Mestre F0–F20/G0–G20 → docs/CAMPAIA_CONTROLE_MESTRE_EXECUCAO_20260927.md → docs/CAMPAIA_MATRIZ_MESTRE_COBERTURA_20260927.md → ADRs aprovadas/evidências do WP.
+CURRENT técnico da `main` canônica/GitHub → Cronograma Mestre F0–F20/G0–G20 → docs/CAMPAIA_CONTROLE_MESTRE_EXECUCAO_20260927.md → docs/CAMPAIA_MATRIZ_MESTRE_COBERTURA_20260927.md → ADRs aprovadas/evidências do WP. A PR #31 permanece marco histórico de takeover, não fonte de HEAD atual.
 
 Documento histórico divergente nunca autoriza reimplementação, remoção ou promoção de status sem verificação do CURRENT.
