@@ -58,6 +58,8 @@ MINIMUM_CHARGE_AMOUNT = Decimal("5.00")
 _CONFIRMED_ASAAS_STATUSES: frozenset[str] = frozenset(
     {"RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH", "DUNNING_RECEIVED"}
 )
+#: Status de cobranca vencida confirmado pela documentacao oficial do Asaas.
+_OVERDUE_ASAAS_STATUSES: frozenset[str] = frozenset({"OVERDUE"})
 #: Unico status que representa reversao definitiva do valor — nunca deve virar fato fiscal.
 _FAILED_ASAAS_STATUSES: frozenset[str] = frozenset({"REFUNDED"})
 
@@ -68,6 +70,8 @@ def map_asaas_status(asaas_status: str) -> GatewayChargeStatus:
     polling devem classificar o mesmo status do Asaas do mesmo jeito, sempre."""
     if asaas_status in _CONFIRMED_ASAAS_STATUSES:
         return GatewayChargeStatus.CONFIRMED
+    if asaas_status in _OVERDUE_ASAAS_STATUSES:
+        return GatewayChargeStatus.OVERDUE
     if asaas_status in _FAILED_ASAAS_STATUSES:
         return GatewayChargeStatus.FAILED
     return GatewayChargeStatus.PENDING

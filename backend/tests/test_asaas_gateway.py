@@ -297,6 +297,13 @@ class AsaasGatewayRequestShapeTests(unittest.TestCase):
         status = gateway.get_charge_status("pay_1")
         self.assertEqual(status, GatewayChargeStatus.CONFIRMED)
 
+    def test_overdue_status_maps_to_overdue(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"status": "OVERDUE"})
+
+        gateway = self._gateway(handler)
+        self.assertEqual(gateway.get_charge_status("pay_1"), GatewayChargeStatus.OVERDUE)
+
     def test_refunded_status_maps_to_failed(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, json={"status": "REFUNDED"})

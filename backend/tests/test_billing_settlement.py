@@ -88,7 +88,11 @@ class BillingSettlementTests(unittest.TestCase):
 
     def test_try_settle_from_status_pending_or_failed_produce_nothing(self) -> None:
         charge = compute_cycle_charge(self.subscription, competence="2026-09")
-        for status in (GatewayChargeStatus.PENDING, GatewayChargeStatus.FAILED):
+        for status in (
+            GatewayChargeStatus.PENDING,
+            GatewayChargeStatus.OVERDUE,
+            GatewayChargeStatus.FAILED,
+        ):
             fact = try_settle_from_status(
                 charge, status, settled_at=datetime(2026, 9, 24, 12, tzinfo=UTC)
             )

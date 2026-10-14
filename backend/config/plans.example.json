@@ -12,6 +12,16 @@
     "cancellation_mode": "IMMEDIATE",
     "reactivation_mode": "PAYMENT_REQUIRED",
     "reactivation_billing_mode": "CURRENT_PLAN_FULL_CYCLE",
+    "dunning_policy": {
+      "grace_period_days": 3,
+      "access_mode": "ALLOW_DURING_GRACE",
+      "reminder_offsets_days": [0, 2, 3]
+    },
+    "dunning_policy": {
+      "grace_period_days": 3,
+      "access_mode": "ALLOW_DURING_GRACE",
+      "reminder_offsets_days": [0, 2, 3]
+    },
     "plan_changes": [
       {
         "target_plan_id": "exemplo-pro",

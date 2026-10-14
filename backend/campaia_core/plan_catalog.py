@@ -21,6 +21,8 @@ from pathlib import Path
 
 from .subscription import (
     CancellationMode,
+    DunningPolicy,
+    PastDueAccessMode,
     PlanChangeActivation,
     PlanChangeBillingMode,
     PlanChangeKind,
@@ -113,6 +115,31 @@ def _parse_plan_changes(entry: dict, *, source: Path) -> tuple[PlanChangeRule, .
     return tuple(rules)
 
 
+def _parse_dunning_policy(entry: dict, *, source: Path) -> DunningPolicy | None:
+    raw = entry.get("dunning_policy")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise PlanCatalogError(f"dunning_policy em {source} deve ser objeto JSON.")
+
+    offsets = raw.get("reminder_offsets_days")
+    if not isinstance(offsets, list):
+        raise PlanCatalogError(
+            f"dunning_policy.reminder_offsets_days em {source} deve ser lista."
+        )
+
+    try:
+        return DunningPolicy(
+            grace_period_days=raw["grace_period_days"],
+            access_mode=PastDueAccessMode(raw["access_mode"]),
+            reminder_offsets_days=tuple(offsets),
+        )
+    except (KeyError, ValueError) as exc:
+        raise PlanCatalogError(
+            f"dunning_policy invalida em {source}: {raw!r} — {exc}"
+        ) from exc
+
+
 def _to_plan_definition(entry: dict, *, source: Path) -> PlanDefinition:
     required = {"plan_id", "name", "monthly_price", "included_credits", "extra_credit_unit_price"}
     missing = required - entry.keys()
@@ -156,6 +183,7 @@ def _to_plan_definition(entry: dict, *, source: Path) -> PlanDefinition:
                 if entry.get("reactivation_billing_mode") is not None
                 else None
             ),
+            dunning_policy=_parse_dunning_policy(entry, source=source),
         )
     except (ValueError, ArithmeticError) as exc:
         raise PlanCatalogError(f"Plano invalido em {source}: {entry!r} — {exc}") from exc

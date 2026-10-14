@@ -923,6 +923,16 @@ export interface components {
             canceled_at?: string | null;
             /** Format: date-time */
             reactivation_requested_at?: string | null;
+            /** Format: date-time */
+            past_due_at?: string | null;
+            /** Format: date-time */
+            grace_period_ends_at?: string | null;
+            past_due_in_grace?: boolean;
+            /** @enum {string|null} */
+            past_due_access_mode?: "ALLOW_DURING_GRACE" | "BLOCK_IMMEDIATELY" | null;
+            dunning_reminders_sent?: number;
+            /** Format: date-time */
+            next_dunning_reminder_at?: string | null;
             entitlement_access_active: boolean;
             entitlements?: components["schemas"]["BillingEntitlements"] | null;
         };
@@ -940,7 +950,7 @@ export interface components {
             amount: number | string;
             gateway_charge_id: string;
             /** @enum {string} */
-            gateway_status: "PENDING" | "CONFIRMED" | "FAILED";
+            gateway_status: "PENDING" | "OVERDUE" | "CONFIRMED" | "FAILED";
         };
         BillingWebhookReceipt: {
             accepted: boolean;

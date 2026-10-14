@@ -7,11 +7,13 @@ from decimal import Decimal
 from campaia_core.subscription import (
     CancellationMode,
     ChargePurpose,
+    DunningPolicy,
     PlanChangeBillingMode,
     PlanChangeKind,
     PlanChangeRule,
     PlanDefinition,
     PlanEntitlements,
+    PastDueAccessMode,
     Subscription,
     SubscriptionStatus,
     ReactivationBillingMode,
@@ -19,7 +21,12 @@ from campaia_core.subscription import (
     activate_from_settled_payment,
     cancel_subscription,
     compute_cycle_charge,
+    dunning_reminder_is_due,
     entitlement_access_is_active,
+    mark_past_due,
+    next_dunning_reminder_at,
+    past_due_is_in_grace,
+    record_dunning_reminder,
     refresh_trial_status,
     request_plan_change,
     request_reactivation,
@@ -61,6 +68,23 @@ class SubscriptionChargeTests(unittest.TestCase):
                 channels=("GOOGLE_ADS",),
                 ai_capabilities=("TEXT_STRATEGY",),
                 resources=("BRAND_KIT",),
+            ),
+        )
+
+    def dunning_plan(
+        self, access_mode: PastDueAccessMode = PastDueAccessMode.ALLOW_DURING_GRACE
+    ) -> PlanDefinition:
+        return PlanDefinition(
+            plan_id="dunning-plan",
+            name="Dunning Plan",
+            monthly_price=Decimal("99.90"),
+            included_credits=Decimal("10"),
+            extra_credit_unit_price=Decimal("1"),
+            entitlements=PlanEntitlements(max_users=2),
+            dunning_policy=DunningPolicy(
+                grace_period_days=3,
+                access_mode=access_mode,
+                reminder_offsets_days=(0, 2, 3),
             ),
         )
 
@@ -301,6 +325,180 @@ class SubscriptionChargeTests(unittest.TestCase):
             billed_purpose=ChargePurpose.REACTIVATION,
         )
         self.assertEqual(active.status, SubscriptionStatus.ACTIVE)
+
+    def test_past_due_fails_closed_without_dunning_policy(self) -> None:
+        sub = Subscription(
+            tenant_id="tenant-1",
+            customer_ref="customer-1",
+            customer_document="11144477735",
+            plan=self.commercial_plan(),
+            status=SubscriptionStatus.ACTIVE,
+        )
+        with self.assertRaises(ValueError):
+            mark_past_due(
+                sub,
+                billed_plan_id=sub.plan.plan_id,
+                billed_purpose=ChargePurpose.REGULAR,
+            )
+
+    def test_past_due_grace_window_controls_entitlement(self) -> None:
+        now = datetime(2026, 10, 14, 12, 0, tzinfo=timezone.utc)
+        sub = Subscription(
+            tenant_id="tenant-1",
+            customer_ref="customer-1",
+            customer_document="11144477735",
+            plan=self.dunning_plan(),
+            status=SubscriptionStatus.ACTIVE,
+        )
+        overdue = mark_past_due(
+            sub,
+            overdue_at=now,
+            billed_plan_id=sub.plan.plan_id,
+            billed_purpose=ChargePurpose.REGULAR,
+        )
+        self.assertEqual(overdue.status, SubscriptionStatus.PAST_DUE)
+        self.assertEqual(overdue.past_due_at, now)
+        self.assertEqual(overdue.grace_period_ends_at, now + timedelta(days=3))
+        self.assertTrue(past_due_is_in_grace(overdue, now=now + timedelta(days=2)))
+        self.assertTrue(
+            entitlement_access_is_active(overdue, now=now + timedelta(days=2))
+        )
+        self.assertFalse(
+            entitlement_access_is_active(overdue, now=now + timedelta(days=3))
+        )
+
+    def test_past_due_can_block_immediately_when_policy_says_so(self) -> None:
+        now = datetime(2026, 10, 14, 12, 0, tzinfo=timezone.utc)
+        plan = self.dunning_plan(PastDueAccessMode.BLOCK_IMMEDIATELY)
+        sub = Subscription(
+            tenant_id="tenant-1",
+            customer_ref="customer-1",
+            customer_document="11144477735",
+            plan=plan,
+            status=SubscriptionStatus.ACTIVE,
+        )
+        overdue = mark_past_due(
+            sub,
+            overdue_at=now,
+            billed_plan_id=plan.plan_id,
+        )
+        self.assertFalse(past_due_is_in_grace(overdue, now=now))
+        self.assertFalse(entitlement_access_is_active(overdue, now=now))
+
+    def test_dunning_schedule_is_deterministic_and_recorded_only_when_due(self) -> None:
+        now = datetime(2026, 10, 14, 12, 0, tzinfo=timezone.utc)
+        plan = self.dunning_plan()
+        sub = Subscription(
+            tenant_id="tenant-1",
+            customer_ref="customer-1",
+            customer_document="11144477735",
+            plan=plan,
+            status=SubscriptionStatus.ACTIVE,
+        )
+        overdue = mark_past_due(
+            sub,
+            overdue_at=now,
+            billed_plan_id=plan.plan_id,
+        )
+        self.assertEqual(next_dunning_reminder_at(overdue), now)
+        self.assertTrue(dunning_reminder_is_due(overdue, now=now))
+        first = record_dunning_reminder(overdue, reminder_index=0, now=now)
+        self.assertEqual(first.dunning_reminders_sent, 1)
+        self.assertEqual(next_dunning_reminder_at(first), now + timedelta(days=2))
+
+        replay = record_dunning_reminder(first, reminder_index=0, now=now)
+        self.assertEqual(replay, first)
+
+        with self.assertRaises(ValueError):
+            record_dunning_reminder(first, reminder_index=1, now=now + timedelta(days=1))
+        with self.assertRaises(ValueError):
+            record_dunning_reminder(first, reminder_index=2, now=now + timedelta(days=2))
+
+        second = record_dunning_reminder(
+            first, reminder_index=1, now=now + timedelta(days=2)
+        )
+        third = record_dunning_reminder(
+            second, reminder_index=2, now=now + timedelta(days=3)
+        )
+        self.assertEqual(third.dunning_reminders_sent, 3)
+        self.assertIsNone(next_dunning_reminder_at(third))
+
+    def test_only_regular_current_plan_charge_can_mark_past_due(self) -> None:
+        plan = self.dunning_plan()
+        sub = Subscription(
+            tenant_id="tenant-1",
+            customer_ref="customer-1",
+            customer_document="11144477735",
+            plan=plan,
+            status=SubscriptionStatus.ACTIVE,
+        )
+        with self.assertRaises(ValueError):
+            mark_past_due(
+                sub,
+                billed_plan_id=plan.plan_id,
+                billed_purpose=ChargePurpose.PLAN_CHANGE,
+            )
+        with self.assertRaises(ValueError):
+            mark_past_due(sub, billed_plan_id="outro-plano")
+
+    def test_regular_payment_recovers_past_due_and_clears_dunning_state(self) -> None:
+        now = datetime(2026, 10, 14, 12, 0, tzinfo=timezone.utc)
+        plan = self.dunning_plan()
+        sub = Subscription(
+            tenant_id="tenant-1",
+            customer_ref="customer-1",
+            customer_document="11144477735",
+            plan=plan,
+            status=SubscriptionStatus.ACTIVE,
+        )
+        overdue = mark_past_due(
+            sub,
+            overdue_at=now,
+            billed_plan_id=plan.plan_id,
+        )
+        reminded = record_dunning_reminder(overdue, reminder_index=0, now=now)
+        recovered = activate_from_settled_payment(
+            reminded,
+            settled_at=now + timedelta(days=1),
+            billed_plan_id=plan.plan_id,
+            billed_purpose=ChargePurpose.REGULAR,
+        )
+        self.assertEqual(recovered.status, SubscriptionStatus.ACTIVE)
+        self.assertIsNone(recovered.past_due_at)
+        self.assertIsNone(recovered.grace_period_ends_at)
+        self.assertEqual(recovered.dunning_reminders_sent, 0)
+        self.assertIsNone(recovered.last_dunning_at)
+
+    def test_plan_change_payment_cannot_recover_past_due(self) -> None:
+        plan = self.dunning_plan()
+        sub = Subscription(
+            tenant_id="tenant-1",
+            customer_ref="customer-1",
+            customer_document="11144477735",
+            plan=plan,
+            status=SubscriptionStatus.ACTIVE,
+        )
+        overdue = mark_past_due(sub, billed_plan_id=plan.plan_id)
+        with self.assertRaises(ValueError):
+            activate_from_settled_payment(
+                overdue,
+                billed_plan_id=plan.plan_id,
+                billed_purpose=ChargePurpose.PLAN_CHANGE,
+            )
+
+    def test_past_due_does_not_generate_a_new_regular_charge(self) -> None:
+        plan = self.dunning_plan()
+        sub = Subscription(
+            tenant_id="tenant-1",
+            customer_ref="customer-1",
+            customer_document="11144477735",
+            plan=plan,
+            status=SubscriptionStatus.ACTIVE,
+        )
+        overdue = mark_past_due(sub, billed_plan_id=plan.plan_id)
+        with self.assertRaises(ValueError):
+            compute_cycle_charge(overdue, competence="2026-11")
+
 
 if __name__ == "__main__":
     unittest.main()

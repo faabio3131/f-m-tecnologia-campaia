@@ -157,6 +157,44 @@ class PlanCatalogTests(unittest.TestCase):
         with self.assertRaises(PlanCatalogError):
             load_plan_catalog(path)
 
+    def test_loads_explicit_dunning_policy(self) -> None:
+        entry = self.valid_entry(
+            dunning_policy={
+                "grace_period_days": 3,
+                "access_mode": "ALLOW_DURING_GRACE",
+                "reminder_offsets_days": [0, 2, 3],
+            }
+        )
+        path = self.write_catalog([entry])
+        policy = load_plan_catalog(path)["essencial"].dunning_policy
+        self.assertIsNotNone(policy)
+        assert policy is not None
+        self.assertEqual(policy.grace_period_days, 3)
+        self.assertEqual(policy.reminder_offsets_days, (0, 2, 3))
+
+    def test_dunning_policy_missing_required_field_fails_closed(self) -> None:
+        entry = self.valid_entry(
+            dunning_policy={
+                "grace_period_days": 3,
+                "reminder_offsets_days": [0, 2],
+            }
+        )
+        path = self.write_catalog([entry])
+        with self.assertRaises(PlanCatalogError):
+            load_plan_catalog(path)
+
+    def test_dunning_offsets_must_be_strictly_increasing(self) -> None:
+        entry = self.valid_entry(
+            dunning_policy={
+                "grace_period_days": 3,
+                "access_mode": "ALLOW_DURING_GRACE",
+                "reminder_offsets_days": [0, 2, 2],
+            }
+        )
+        path = self.write_catalog([entry])
+        with self.assertRaises(PlanCatalogError):
+            load_plan_catalog(path)
+
     def test_plan_change_without_billing_mode_fails_closed(self) -> None:
         target = self.valid_entry(plan_id="pro", name="Pro")
         source = self.valid_entry(

@@ -54,6 +54,7 @@ class PaymentGatewayError(CampaiaError):
 
 class GatewayChargeStatus(StrEnum):
     PENDING = "PENDING"
+    OVERDUE = "OVERDUE"
     CONFIRMED = "CONFIRMED"
     FAILED = "FAILED"
 
