@@ -402,13 +402,24 @@ class SubscriptionChargeTests(unittest.TestCase):
         )
         self.assertEqual(next_dunning_reminder_at(overdue), now)
         self.assertTrue(dunning_reminder_is_due(overdue, now=now))
-        first = record_dunning_reminder(overdue, now=now)
+        first = record_dunning_reminder(overdue, reminder_index=0, now=now)
         self.assertEqual(first.dunning_reminders_sent, 1)
         self.assertEqual(next_dunning_reminder_at(first), now + timedelta(days=2))
+
+        replay = record_dunning_reminder(first, reminder_index=0, now=now)
+        self.assertEqual(replay, first)
+
         with self.assertRaises(ValueError):
-            record_dunning_reminder(first, now=now + timedelta(days=1))
-        second = record_dunning_reminder(first, now=now + timedelta(days=2))
-        third = record_dunning_reminder(second, now=now + timedelta(days=3))
+            record_dunning_reminder(first, reminder_index=1, now=now + timedelta(days=1))
+        with self.assertRaises(ValueError):
+            record_dunning_reminder(first, reminder_index=2, now=now + timedelta(days=2))
+
+        second = record_dunning_reminder(
+            first, reminder_index=1, now=now + timedelta(days=2)
+        )
+        third = record_dunning_reminder(
+            second, reminder_index=2, now=now + timedelta(days=3)
+        )
         self.assertEqual(third.dunning_reminders_sent, 3)
         self.assertIsNone(next_dunning_reminder_at(third))
 
@@ -445,7 +456,7 @@ class SubscriptionChargeTests(unittest.TestCase):
             overdue_at=now,
             billed_plan_id=plan.plan_id,
         )
-        reminded = record_dunning_reminder(overdue, now=now)
+        reminded = record_dunning_reminder(overdue, reminder_index=0, now=now)
         recovered = activate_from_settled_payment(
             reminded,
             settled_at=now + timedelta(days=1),
