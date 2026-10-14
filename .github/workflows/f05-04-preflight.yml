@@ -1,0 +1,64 @@
+name: TEMP F05-04 preflight
+
+on:
+  push:
+    branches: ["feat/f5-past-due-dunning"]
+
+permissions:
+  contents: write
+
+jobs:
+  preflight:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/f5-past-due-dunning
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Focused billing tests
+        working-directory: backend
+        run: |
+          python -m unittest             tests.test_subscription             tests.test_plan_catalog             tests.test_asaas_gateway             tests.test_billing_settlement             tests_api.test_billing
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Generate billing contract types
+        working-directory: web
+        run: npm run contracts:generate
+
+      - name: Verify contract drift after generation
+        working-directory: web
+        run: npm run contracts:check
+
+      - name: Commit generated types and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/f05-04-preflight.yml
+          git add web/src/contracts/bff-openapi.generated.ts
+          git diff --cached --check
+          git commit -m "chore(contract): generate F05-04 billing types"
+          git push origin HEAD:feat/f5-past-due-dunning
