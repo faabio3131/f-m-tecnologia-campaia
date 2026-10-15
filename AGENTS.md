@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@f3428e6eb4a2c476a258d1f2bb7c2cb4c6907ce2`
+**CURRENT confirmado:** `main@1586ec120ea8d5ee0a06a9ec704f3719f4cd4254`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -244,7 +244,7 @@ No CURRENT:
 - optimizer/pacing/reconciliation existem, mas não estão ligados a métricas externas reais;
 - Brand Kit ainda não possui upload/assets completos;
 - fluxo de criativos/imagem/preview ainda não está completo;
-- Billing Web inicial e histórico/fatura hospedada integrados nas PRs #45/#46; entrada inicial/trial em implementação WP-R02-03; consumo e checkout completo pendentes;
+- Billing Web inicial e histórico/fatura hospedada integrados nas PRs #45/#46; entrada inicial/trial integrados na PR #47; consumo e checkout completo pendentes;
 - Premium final ainda não foi executado;
 - G18/G19/G20 ainda não ocorreram.
 
@@ -315,16 +315,22 @@ histórico paginado por tenant, observações de gateway/ambiente e fatura hospe
 Não reconstruir histórico, cursor ou preservação do link do provedor.
 
 ### Falta
-1. decisão real de planos/preços/trial/grace/dunning/refund;
+1. política V1 aprovada pelo Diretor em 15/10/2026; registro na proposta da PR #48;
+   publicação segue condicionada a custos/jurídico/homologação/produção;
 2. arquivo/catálogo comercial real;
 3. Billing Web restante:
    - medição comercial persistente de uso/créditos (CostLedger em memória não é franquia mensal);
-   - entrada inicial/trial Web: WP-R02-03 proposto nesta branch, integração condicionada à CI/revisão/merge;
+   - entrada inicial/trial Web: WP-R02-03 integrado na PR #47, preservar;
    - contratação inicial/checkout completo;
 4. credenciais/conta Asaas produção quando apropriado;
 5. checkout/fluxo de pagamento real;
 6. E2E real:
    trial/assinatura -> cobrança -> pagamento -> webhook -> entitlement.
+
+WP-R02-04 / PR #48: fundação interna do ledger comercial em revisão, não integrada
+às chamadas IA/checkout nem ativada no produto. Ver
+`docs/WP_R02_04_LEDGER_CREDITOS_20261015.md` para limites, testes e próximos passos.
+Não confundir a aprovação da política com conclusão de F5/G5.
 
 **Gate G5:** pagamento real ativa entitlement sem intervenção de desenvolvedor.
 

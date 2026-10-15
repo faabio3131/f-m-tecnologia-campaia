@@ -548,7 +548,18 @@ class Database:
             raise RuntimeError("lock_key requires an active SQLite transaction")
 
     def table(self, name: str) -> RecordTable:
-        return RecordTable(self, name)
+        table = RecordTable(self, name)
+        if name == "credit_journal":
+            with self._lock:
+                for operation in ("UPDATE", "DELETE"):
+                    self._conn.execute(
+                        f'CREATE TRIGGER IF NOT EXISTS credit_journal_no_{operation.lower()} '
+                        f'BEFORE {operation} ON credit_journal BEGIN '
+                        "SELECT RAISE(ABORT, 'credit_journal is append-only'); END"
+                    )
+                if not self.in_transaction:
+                    self._conn.commit()
+        return table
 
     def ping(self) -> bool:
         try:
