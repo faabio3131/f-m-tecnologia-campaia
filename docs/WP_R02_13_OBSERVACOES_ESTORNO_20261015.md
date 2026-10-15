@@ -48,7 +48,7 @@ no HEAD exato é obrigatória antes do merge, incluindo domínio/API, PostgreSQL
 Web, browser, containers, auditorias de dependências e SAST. Types opcionais foram
 sincronizados com o contrato; o check de drift deve comprovar essa sincronização no CI.
 
-Novos testes de domínio verificam parser/consulta mínima, multiplicidade, desconhecidos e
+Primeira rodada CI: domínio/API passaram; PostgreSQL apontou uma asserção textual entre\n1.0 e 1.00. Corrigida para comparação Decimal, sem relaxar valor ou mudar regra financeira.\nA rodada corrigida completa ainda precisa passar no novo HEAD.\n\nNovos testes de domínio verificam parser/consulta mínima, multiplicidade, desconhecidos e
 valores inválidos. API verifica processamento/parcial/integral, soma de múltiplos DONE,
 não regressão, isolamento, privacidade, restart, autenticação/dedupe, GET idempotente fora
 da transação e rollback. Teste PostgreSQL existente amplia a prova com observação de refund

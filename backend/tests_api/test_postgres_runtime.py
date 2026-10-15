@@ -14,6 +14,7 @@ import threading
 import time
 import unittest
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import psycopg
 
@@ -419,7 +420,7 @@ class PostgresRuntimeTests(unittest.TestCase):
                 refund_item = next(item for item in b.get('/billing/charges', headers=OWNER).json()['items']
                                    if item['gateway_charge_id'] == first.json()['gateway_charge_id'])
                 self.assertEqual(refund_item['gateway_refund_state'], 'FULL_DONE')
-                self.assertEqual(refund_item['gateway_refund_amount'], first.json()['amount'])
+                self.assertEqual(Decimal(refund_item['gateway_refund_amount']), Decimal(first.json()['amount']))
                 self.assertEqual(b.get('/billing/closure', headers=OWNER).json()['state'], 'RECONCILIATION_REQUIRED')
                 self.assertIsNotNone(b.app.state.campaia.idempotency.get('demo-tenant', 'billing-receipt:pg-refund-observation'))
 
