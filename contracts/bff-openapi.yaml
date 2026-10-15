@@ -773,11 +773,34 @@ paths:
             application/json:
               schema: { type: object }
 
+  /campaigns/{campaignId}/plan/quote:
+    get:
+      tags: [Campanhas]
+      summary: Consulta debito da estrategia antes de confirmar, sem executar IA
+      operationId: quoteStrategy
+      security: [cookieAuth: []]
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+      responses:
+        '200':
+          description: Cotacao server-side ou medicao comercial legada nao ativada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StrategyCreditQuote' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Sem franquia ou acesso comercial para executar a operacao inteira
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /campaigns/{campaignId}/plan/regenerate:
     post:
       tags: [Campanhas]
-      summary: Solicita nova versao do plano com ajustes do usuario
+      summary: Gera estrategia; contrato comercial exige debito revisado e confirmado
       operationId: regeneratePlan
+      security: [cookieAuth: []]
       parameters:
         - $ref: '#/components/parameters/CampaignId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -787,8 +810,9 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               properties:
-                adjustments: { type: string, maxLength: 2000 }
+                credit_confirmation: { $ref: '#/components/schemas/CreditConfirmation' }
       responses:
         '202': { description: Geracao iniciada }
         '409': { $ref: '#/components/responses/InvalidState' }
@@ -1666,6 +1690,28 @@ components:
           type: array
           items: { $ref: '#/components/schemas/BillingChargeHistoryItem' }
         next_cursor: { type: [string, 'null'] }
+
+    CreditConfirmation:
+      type: object
+      additionalProperties: false
+      required: [cycle_id, policy_version, credits, extra_amount]
+      properties:
+        cycle_id: { type: string }
+        policy_version: { type: string }
+        credits: { type: integer, minimum: 1 }
+        extra_amount: { type: string }
+
+    StrategyCreditQuote:
+      type: object
+      required: [mode, action, cycle_id, policy_version, credits, extra_amount, included_available]
+      properties:
+        mode: { type: string, enum: [COMMERCIAL, LEGACY] }
+        action: { type: string }
+        cycle_id: { type: [string, 'null'] }
+        policy_version: { type: [string, 'null'] }
+        credits: { type: [integer, 'null'] }
+        extra_amount: { type: [string, 'null'] }
+        included_available: { type: [integer, 'null'] }
 
     BillingCreditPolicy:
       type: object

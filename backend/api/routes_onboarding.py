@@ -12,6 +12,7 @@ from starlette.responses import JSONResponse
 from campaia_core.identity_provider import IdentityError
 from campaia_core.permissions import Permission, Resource, Role, authorize
 
+from .commercial_limits import enforce_member_capacity, contracted_limits
 from .deps import (
     build_domain_principal,
     get_state,
@@ -333,8 +334,10 @@ async def create_invitation(request: Request) -> JSONResponse:
         if unit is None or unit.status != "ACTIVE":
             raise ApiError("NOT_FOUND", "Unidade de negocio nao encontrada neste tenant.")
 
+        enforce_member_capacity(state, fixture.tenant_id)
         plan_id = organization.tenant.plan_id
-        max_users = state.plan_user_limits.get(plan_id) if plan_id else None
+        contract = contracted_limits(state, fixture.tenant_id)
+        max_users = contract[0] if contract else (state.plan_user_limits.get(plan_id) if plan_id else None)
         if max_users is not None:
             occupied = state.organizations.active_membership_count(fixture.tenant_id)
             reserved = state.organizations.pending_invitation_count(fixture.tenant_id)
@@ -408,6 +411,9 @@ async def accept_invitation(request: Request) -> JSONResponse:
 
         def _accept():
             state.lock_runtime_scope(f"invitation-token:{token_digest}")
+            found = state.organizations._find_invitation_by_token(body.accept_token)
+            if found is not None and state.db is not None:
+                state.idempotency._table.lock_key(f"tenant:{found[0].tenant.tenant_id}")
             try:
                 membership = state.organizations.accept_invitation(
                     raw_token=body.accept_token,
@@ -423,6 +429,7 @@ async def accept_invitation(request: Request) -> JSONResponse:
                 if code == "TENANT_INACTIVE":
                     raise ApiError("INVALID_STATE", "Tenant inativo.") from exc
                 raise
+            enforce_member_capacity(state, membership.tenant_id, include_pending=False, after_add=True)
             state.audit.append(
                 tenant_id=membership.tenant_id,
                 actor=membership.membership_id,
@@ -520,10 +527,13 @@ async def reactivate_member(request: Request) -> JSONResponse:
         if target is None:
             raise ApiError("NOT_FOUND", "Usuario nao encontrado neste tenant.")
         _enforce_target_role_authority(fixture, target)
+        if target.status != "ACTIVE":
+            enforce_member_capacity(state, fixture.tenant_id)
 
         organization = state.organizations.get_organization(fixture.tenant_id)
         plan_id = organization.tenant.plan_id if organization else None
-        max_users = state.plan_user_limits.get(plan_id) if plan_id else None
+        contract = contracted_limits(state, fixture.tenant_id) if target.status != "ACTIVE" else None
+        max_users = contract[0] if contract else (state.plan_user_limits.get(plan_id) if plan_id else None)
         if target.status != "ACTIVE" and max_users is not None:
             if state.organizations.active_membership_count(fixture.tenant_id) >= max_users:
                 raise ApiError(

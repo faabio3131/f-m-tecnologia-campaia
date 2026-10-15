@@ -49,6 +49,7 @@ from .routes_campaigns import (
     pause_campaign,
     publish_campaign,
     regenerate_plan,
+    quote_strategy,
     resume_campaign,
     validate_campaign,
 )
@@ -159,6 +160,7 @@ routes = [
     Route("/campaigns", list_campaigns, methods=["GET"]),
     Route("/campaigns/{campaignId}", get_campaign, methods=["GET"]),
     Route("/campaigns/{campaignId}/plan", get_plan, methods=["GET"]),
+    Route("/campaigns/{campaignId}/plan/quote", quote_strategy, methods=["GET"]),
     Route("/campaigns/{campaignId}/plan/regenerate", regenerate_plan, methods=["POST"]),
     Route("/campaigns/{campaignId}/validate", validate_campaign, methods=["POST"]),
     Route("/campaigns/{campaignId}/publish", publish_campaign, methods=["POST"]),

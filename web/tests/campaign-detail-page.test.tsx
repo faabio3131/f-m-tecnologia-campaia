@@ -45,6 +45,7 @@ describe("CampaignDetailPage", () => {
 
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url = String(input);
+      if (url.endsWith("/plan/quote")) return jsonResponse(200, { mode: "LEGACY" });
       if (url.endsWith("/plan/regenerate") && init?.method === "POST") {
         planVersion = 1;
         return jsonResponse(202, {});

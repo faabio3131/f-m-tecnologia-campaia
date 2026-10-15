@@ -232,6 +232,40 @@ class PostgresRuntimeTests(unittest.TestCase):
                 entries = clients[1].app.state.campaia.credit_ledger.entries("demo-tenant")
                 self.assertEqual(sum(e.kind == "OPEN" for e in entries), 2)
 
+                from tests_api.test_helpers import DEFAULT_BRIEF
+                created = clients[0].post("/briefs", headers={**OWNER, **unique_idem()}, json=DEFAULT_BRIEF)
+                self.assertEqual(created.status_code, 202, created.text)
+                campaign_id = created.json()["id"]
+                quote = clients[0].get(f"/campaigns/{campaign_id}/plan/quote", headers=OWNER).json()
+                body = {"credit_confirmation": {k: quote[k] for k in
+                    ("cycle_id", "policy_version", "credits", "extra_amount")}}
+                headers = {**OWNER, **unique_idem()}
+                entered, complete = threading.Event(), threading.Event()
+                runner = clients[0].app.state.campaia.agent_runner
+                original = runner.run
+                def blocked(*args, **kwargs):
+                    self.assertFalse(clients[0].app.state.campaia.db.in_transaction)
+                    entered.set()
+                    if not complete.wait(timeout=10):
+                        raise RuntimeError("coordination timeout")
+                    return original(*args, **kwargs)
+                endpoint = f"/campaigns/{campaign_id}/plan/regenerate"
+                with patch.object(runner, "run", side_effect=blocked) as provider:
+                    with ThreadPoolExecutor(max_workers=2) as pool:
+                        running = pool.submit(clients[0].post, endpoint, headers=headers, json=body)
+                        self.assertTrue(entered.wait(timeout=5))
+                        pending = clients[1].post(endpoint, headers=headers, json=body)
+                        self.assertEqual(pending.status_code, 503, pending.text)
+                        complete.set()
+                        first = running.result(timeout=5)
+                    self.assertEqual(first.status_code, 202, first.text)
+                    replay = clients[1].post(endpoint, headers=headers, json=body)
+                    self.assertEqual(replay.json(), first.json())
+                    self.assertEqual(provider.call_count, 1)
+                usage = clients[1].get("/billing/usage", headers=OWNER).json()
+                self.assertEqual(usage["balance"]["consumed_credits"], 5)
+                self.assertEqual(usage["balance"]["reserved_credits"], 0)
+
     def test_credit_journal_workers_replay_caps_and_immutable_history(self) -> None:
         from api.credit_store import PersistentCreditLedger
         from campaia_core.credit_ledger import CreditLimitExceeded
