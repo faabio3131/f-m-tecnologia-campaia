@@ -24,7 +24,10 @@ class BillingCreditHarness:
         self.path = root / 'runtime.db'
         catalog = json.loads((Path(__file__).parents[1] / 'config/plans.example.json').read_text())
         for plan in catalog:
-            plan['included_credits'] = 10
+            plan['included_credits'] = 10 if plan['plan_id'] == 'exemplo-essencial' else 20
+            plan['cancellation_mode'] = 'PERIOD_END'
+            for rule in plan.get('plan_changes', []):
+                rule['activation'] = 'NEXT_ANNIVERSARY'
             plan['credit_policy'] = {'version': 'test-commercial-v1',
                 'action_weights': {'strategy': 5, 'copy': 3, 'audience': 2},
                 'trial_credits': 30, 'trial_max_users': 1, 'trial_max_active_campaigns': 1}
@@ -130,7 +133,7 @@ class BillingCreditIntegrationTests(BillingCreditHarness, unittest.TestCase):
 
     def test_webhook_failure_rolls_back_dedupe_activation_and_grant(self):
         self.setup_subscription(); gateway = self.charge()
-        with patch('api.routes_billing.grant_current_cycle', side_effect=RuntimeError('injected failure')):
+        with patch('api.routes_billing.grant_paid_cycle', side_effect=RuntimeError('injected failure')):
             with self.assertRaises(RuntimeError):
                 self.payment(gateway)
         self.assertFalse(self.state.asaas_webhook.already_seen('event-first'))

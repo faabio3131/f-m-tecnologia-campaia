@@ -10,7 +10,7 @@ from hashlib import sha256
 import json
 
 from campaia_core.credit_ledger import CreditLedgerError, CreditLimitExceeded
-from campaia_core.subscription import entitlement_access_is_active
+from campaia_core.subscription import entitlement_access_is_active, refresh_trial_status
 
 from .billing_credits import cycle_snapshot
 from .errors import ApiError
@@ -18,7 +18,7 @@ from .errors import ApiError
 
 def commercial_subscription(state, tenant_id):
     sub = state.subscriptions.get(tenant_id)
-    return sub if sub is not None and sub.plan.credit_policy is not None else None
+    return refresh_trial_status(sub) if sub is not None and sub.plan.credit_policy is not None else None
 
 
 def quote_action(state, tenant_id, action):

@@ -833,6 +833,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/billing/subscription/undo-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Desiste da troca agendada antes do fechamento financeiro */
+        post: operations["undoBillingPlanChange"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/billing/subscription/cancel": {
         parameters: {
             query?: never;
@@ -973,6 +990,7 @@ export interface components {
             start_trial: boolean;
         };
         BillingPlanChangeRequest: {
+            expected_plan_fingerprint?: string | null;
             target_plan_id: string;
         };
         BillingEntitlements: {
@@ -999,6 +1017,7 @@ export interface components {
             plan_changes: {
                 target_plan_id: string;
                 kind: string;
+                activation?: string | null;
                 billing_mode: string | null;
             }[];
         };
@@ -1022,6 +1041,15 @@ export interface components {
             pending_plan_name?: string | null;
             pending_plan_change_kind?: string | null;
             pending_plan_change_billing_mode?: string | null;
+            /** Format: date-time */
+            cancel_at_period_end?: string | null;
+            /** Format: date-time */
+            pending_plan_effective_at?: string | null;
+            /** Format: date-time */
+            paid_period_starts_at?: string | null;
+            /** Format: date-time */
+            paid_period_ends_at?: string | null;
+            pending_plan_entitlements?: components["schemas"]["BillingEntitlements"] | null;
             /** Format: date-time */
             canceled_at?: string | null;
             /** Format: date-time */
@@ -1095,6 +1123,8 @@ export interface components {
             cap: string;
         };
         BillingUsage: {
+            access_active: boolean;
+            can_authorize_extras: boolean;
             /** @enum {string} */
             availability: "AVAILABLE" | "UNAVAILABLE";
             cycle: components["schemas"]["BillingUsageCycle"] | null;
@@ -3198,7 +3228,7 @@ export interface operations {
             };
         };
     };
-    cancelBillingSubscription: {
+    undoBillingPlanChange: {
         parameters: {
             query?: never;
             header: {
@@ -3217,6 +3247,55 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Agendamento removido; plano atual preservado */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingSubscription"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["StepUpRequired"];
+            /** @description Obrigacao ja fechada ou paga; exige conciliacao */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    cancelBillingSubscription: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+                 *     login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+                 *     servidor. Ausente/invalido -> 403.
+                 */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao. */
+                "X-Step-Up-Token": components["parameters"]["StepUpToken"];
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @default false */
+                    immediate?: boolean;
+                };
+            };
+        };
         responses: {
             /** @description Assinatura cancelada */
             200: {

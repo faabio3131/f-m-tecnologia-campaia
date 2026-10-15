@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import os
 import unittest
+from unittest.mock import patch
+
+from firebase_admin import credentials
+from google.auth.credentials import AnonymousCredentials
 
 from campaia_core.identity_provider import (
     AlwaysRejectIdTokenVerifier,
@@ -9,6 +13,12 @@ from campaia_core.identity_provider import (
     FirebaseIdTokenVerifier,
     IdentityError,
 )
+
+
+class OfflineFirebaseCredential(credentials.Base):
+    """Unit-test credential: never ADC, metadata discovery, or a real service account."""
+    def get_credential(self):
+        return AnonymousCredentials()
 
 
 class FirebaseIdentityConfigTests(unittest.TestCase):
@@ -64,9 +74,12 @@ class FirebaseIdTokenVerifierTests(unittest.TestCase):
 
     def test_garbage_token_is_rejected_as_identity_error(self) -> None:
         config = FirebaseIdentityConfig(project_id="campaia-test-project")
-        verifier = FirebaseIdTokenVerifier(config, app_name="campaia-test-fixture")
-        with self.assertRaises(IdentityError):
-            verifier.verify("isto-nao-e-um-jwt")
+        with patch("firebase_admin.credentials.ApplicationDefault", return_value=OfflineFirebaseCredential()):
+            verifier = FirebaseIdTokenVerifier(config, app_name="campaia-test-fixture-offline")
+            with patch("requests.sessions.Session.request", side_effect=AssertionError("Unit test must not use network")) as network:
+                with self.assertRaises(IdentityError):
+                    verifier.verify("isto-nao-e-um-jwt")
+                network.assert_not_called()
 
     def test_reusing_the_same_app_name_does_not_raise(self) -> None:
         """firebase_admin proibe inicializar duas Apps com o mesmo nome -- o adaptador

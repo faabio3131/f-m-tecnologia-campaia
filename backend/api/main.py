@@ -27,6 +27,7 @@ from .routes_autonomy import get_autonomy, put_autonomy
 from .routes_billing import (
     asaas_webhook,
     cancel_billing_subscription,
+    undo_billing_plan_change,
     change_subscription_plan,
     create_charge,
     get_subscription,
@@ -189,6 +190,7 @@ routes = [
     Route("/billing/subscription", get_subscription, methods=["GET"]),
     Route("/billing/subscription", put_subscription, methods=["PUT"]),
     Route("/billing/subscription/change-plan", change_subscription_plan, methods=["POST"]),
+    Route("/billing/subscription/undo-plan", undo_billing_plan_change, methods=["POST"]),
     Route("/billing/subscription/cancel", cancel_billing_subscription, methods=["POST"]),
     Route("/billing/subscription/reactivate", reactivate_billing_subscription, methods=["POST"]),
     Route("/billing/charges", create_charge, methods=["POST"]),

@@ -23,7 +23,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 import httpx
 
@@ -126,6 +126,16 @@ def _raise_for_response(response: httpx.Response) -> None:
             status_code=response.status_code,
             error_summary=_error_summary(response),
         )
+
+
+def _observed_payment_amount(value) -> Decimal | None:
+    try:
+        amount = Decimal(str(value))
+        if amount.is_finite() and amount > 0 and amount == amount.quantize(Decimal('0.01')):
+            return amount
+    except (InvalidOperation, ValueError, TypeError):
+        pass
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -250,6 +260,7 @@ class AsaasGateway:
                 provider=self.provider,
                 mode=self.mode,
                 invoice_url=safe_asaas_invoice_url(body.get("invoiceUrl"), self.mode),
+                observed_amount=_observed_payment_amount(body.get("value")),
             )
 
         # A camada local persiste o resultado por (tenant_id, idempotency_key). O lookup
@@ -298,6 +309,7 @@ class AsaasGateway:
             provider=self.provider,
             mode=self.mode,
             invoice_url=safe_asaas_invoice_url(payment.get("invoiceUrl"), self.mode),
+            observed_amount=_observed_payment_amount(payment.get("value")),
         )
 
     def _ensure_customer(self, customer_ref: str, customer_document: str) -> str:

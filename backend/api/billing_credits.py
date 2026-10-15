@@ -4,7 +4,7 @@ from decimal import Decimal
 from hashlib import sha256
 
 from campaia_core.credit_ledger import CreditCycle, CreditLedgerError
-from campaia_core.subscription import SubscriptionStatus, PastDueAccessMode, refresh_trial_status
+from campaia_core.subscription import SubscriptionStatus, PastDueAccessMode, refresh_trial_status, entitlement_access_is_active
 
 from .errors import ApiError
 
@@ -59,11 +59,33 @@ def grant_current_cycle(state, subscription, *, at: datetime) -> None:
 
 
 
+def grant_paid_cycle(state, subscription, *, index, plan, at):
+    schedule = subscription.paid_cycle_schedule
+    if schedule is None or plan.credit_policy is None or state.credit_ledger is None:
+        raise ApiError('BILLING_USAGE_UNAVAILABLE', 'Ciclo pago sem termos ou persistência.', status_code=503)
+    start, end = schedule.bounds(index)
+    policy = plan.credit_policy
+    cycle = CreditCycle(subscription.tenant_id, schedule.obligation_id(subscription.tenant_id, index),
+                        start, end, policy.version, int(plan.included_credits),
+                        plan.extra_credit_unit_price, policy.action_weights,
+                        included_grace_ends_at=(end + timedelta(days=plan.dunning_policy.grace_period_days)
+                            if plan.dunning_policy and plan.dunning_policy.access_mode
+                            is PastDueAccessMode.ALLOW_DURING_GRACE else None))
+    state.credit_ledger.decide(subscription.tenant_id, 'open_cycle', cycle=cycle, at=at)
+    consent = subscription.extra_credit_consent
+    if (consent is not None and at < end and consent.tenant_id == subscription.tenant_id
+            and consent.policy_version == cycle.policy_version
+            and consent.extra_credit_price == cycle.extra_credit_price):
+        reference = sha256((consent.reference + ':' + cycle.cycle_id).encode()).hexdigest()
+        state.credit_ledger.decide(subscription.tenant_id, 'consent', cycle_id=cycle.cycle_id,
+                                  cap=consent.cap, actor=consent.actor, reference=reference, at=at)
+
+
 def usage_payload(state, subscription, *, at: datetime | None = None) -> dict:
     now = at or datetime.now(timezone.utc)
     current = refresh_trial_status(subscription, now=now)
     snapshot = cycle_snapshot(current, at=now)
-    unavailable = {'availability': 'UNAVAILABLE', 'cycle': None, 'balance': None, 'actions': [], 'alerts': []}
+    unavailable = {'access_active': False, 'can_authorize_extras': False, 'availability': 'UNAVAILABLE', 'cycle': None, 'balance': None, 'actions': [], 'alerts': []}
     if state.credit_ledger is None or snapshot is None:
         return unavailable
     try:
@@ -81,6 +103,9 @@ def usage_payload(state, subscription, *, at: datetime | None = None) -> dict:
             if balance.extra_committed_amount * 100 >= balance.extra_cap * level:
                 alerts.append(f'EXTRA_CAP_{level}')
     return {
+        'access_active': entitlement_access_is_active(current, now=now),
+        'can_authorize_extras': (entitlement_access_is_active(current, now=now) and not snapshot.trial
+                                 and snapshot.starts_at <= now < snapshot.ends_at),
         'alerts': alerts,
         'availability': 'AVAILABLE',
         'cycle': {'id': snapshot.cycle_id, 'starts_at': snapshot.starts_at.isoformat(),

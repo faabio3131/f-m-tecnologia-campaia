@@ -90,6 +90,7 @@ class ChargeResult:
     provider: str
     mode: GatewayMode
     invoice_url: str | None = None
+    observed_amount: Decimal | None = None
 
 
 def require_idempotency(command: ChargeCommand) -> None:

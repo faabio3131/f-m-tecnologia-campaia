@@ -49,6 +49,7 @@ class PlanChangeKind(StrEnum):
 
 class PlanChangeActivation(StrEnum):
     SETTLED_PAYMENT = "SETTLED_PAYMENT"
+    NEXT_ANNIVERSARY = "NEXT_ANNIVERSARY"
 
 
 class PlanChangeBillingMode(StrEnum):
@@ -63,6 +64,7 @@ class ChargePurpose(StrEnum):
 
 class CancellationMode(StrEnum):
     IMMEDIATE = "IMMEDIATE"
+    PERIOD_END = "PERIOD_END"
 
 
 class ReactivationMode(StrEnum):
@@ -253,6 +255,8 @@ class Subscription:
     last_dunning_at: datetime | None = None
     paid_cycle_schedule: PaidCycleSchedule | None = None
     extra_credit_consent: ExtraCreditConsent | None = None
+    cancel_at_period_end: datetime | None = None
+    pending_plan_effective_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if not self.customer_document.strip():
@@ -305,6 +309,7 @@ class SubscriptionCharge:
     invoice_url: str | None = None
     commercial_cycle_index: int | None = None
     commercial_lifecycle_id: str | None = None
+    commercial_plan: PlanDefinition | None = None
 
     @property
     def amount(self) -> Decimal:
@@ -322,6 +327,8 @@ def start_trial(subscription: Subscription, *, now: datetime | None = None) -> S
             f"trial nao pode iniciar a partir de {subscription.status.value}; "
             "novo trial apos expiracao exige politica comercial explicita."
         )
+    if subscription.trial_started_at is not None or subscription.reactivation_requested_at is not None:
+        raise ValueError("Trial não pode ser reiniciado após uso ou solicitação de reativação.")
     if subscription.plan.trial_days is None:
         raise ValueError("plano sem trial_days configurado nao pode iniciar trial.")
     if subscription.plan.entitlements is None:
@@ -342,6 +349,23 @@ def refresh_trial_status(
 ) -> Subscription:
     """Expira trial deterministica e idempotentemente quando o prazo termina."""
 
+    reference = now or datetime.now(timezone.utc)
+    if subscription.plan.credit_policy is not None:
+        if (subscription.cancel_at_period_end is not None
+                and reference >= subscription.cancel_at_period_end
+                and subscription.status not in {SubscriptionStatus.CANCELED, SubscriptionStatus.PENDING_PAYMENT}):
+            return replace(subscription, status=SubscriptionStatus.CANCELED,
+                           canceled_at=subscription.cancel_at_period_end)
+        schedule = subscription.paid_cycle_schedule
+        if (subscription.pending_plan is not None and subscription.pending_plan_effective_at is not None
+                and reference >= subscription.pending_plan_effective_at and schedule is not None
+                and schedule.anchor_at is not None):
+            from .billing_cycles import period_index
+            index = period_index(schedule.anchor_at, subscription.pending_plan_effective_at)
+            if schedule.paid_through_index >= index:
+                subscription = replace(subscription, plan=subscription.pending_plan, pending_plan=None,
+                    pending_plan_change_kind=None, pending_plan_change_billing_mode=None,
+                    pending_plan_effective_at=None)
     if subscription.status is not SubscriptionStatus.TRIAL:
         return subscription
     if subscription.trial_ends_at is None:
@@ -479,6 +503,7 @@ def record_dunning_reminder(
 def request_plan_change(
     subscription: Subscription,
     target_plan: PlanDefinition,
+    *, now: datetime | None = None,
 ) -> Subscription:
     """Registra troca permitida pelo catalogo sem liberar entitlement antes do pagamento."""
 
@@ -495,6 +520,25 @@ def request_plan_change(
     )
     if rule is None:
         raise ValueError("transicao de plano nao permitida pelo catalogo comercial.")
+    if subscription.plan.credit_policy is not None:
+        if subscription.cancel_at_period_end is not None:
+            raise ValueError("Reative a renovação antes de solicitar troca de plano.")
+        if rule.activation is not PlanChangeActivation.NEXT_ANNIVERSARY:
+            raise ValueError("Contrato V1 exige troca no próximo aniversário.")
+        if target_plan.credit_policy is None:
+            raise ValueError("Plano alvo deve preservar medição e condições comerciais V1.")
+        schedule = subscription.paid_cycle_schedule
+        at = now or datetime.now(timezone.utc)
+        index = schedule.current_paid_index(at) if schedule else None
+        if index is None:
+            raise ValueError("Troca de plano exige ciclo pago vigente.")
+        if schedule.paid_through_index > index:
+            raise ValueError("Próxima obrigação já paga; reconciliar antes de trocar o plano.")
+        if rule.billing_mode is not PlanChangeBillingMode.TARGET_PLAN_FULL_CYCLE:
+            raise ValueError("Troca exige mensalidade integral na próxima vigência.")
+        return replace(subscription, pending_plan=target_plan, pending_plan_change_kind=rule.kind,
+                       pending_plan_change_billing_mode=rule.billing_mode,
+                       pending_plan_effective_at=schedule.bounds(index)[1])
     if rule.activation is not PlanChangeActivation.SETTLED_PAYMENT:
         raise ValueError("modo de ativacao da troca de plano nao suportado.")
     if rule.billing_mode is not PlanChangeBillingMode.TARGET_PLAN_FULL_CYCLE:
@@ -509,13 +553,40 @@ def request_plan_change(
 
 
 def cancel_subscription(
-    subscription: Subscription, *, now: datetime | None = None
+    subscription: Subscription, *, now: datetime | None = None, immediate: bool = False
 ) -> Subscription:
     """Cancela somente quando o catalogo do plano explicita cancelamento imediato."""
 
     if subscription.status is SubscriptionStatus.CANCELED:
         return subscription
-    if subscription.plan.cancellation_mode is not CancellationMode.IMMEDIATE:
+    at = now or datetime.now(timezone.utc)
+    if subscription.plan.credit_policy is not None and not immediate:
+        if subscription.plan.cancellation_mode is not CancellationMode.PERIOD_END:
+            raise ValueError("Contrato V1 exige política explícita PERIOD_END para cancelar renovação.")
+        if subscription.cancel_at_period_end is not None:
+            return subscription
+        schedule = subscription.paid_cycle_schedule
+        if schedule is not None and schedule.anchor_at is not None:
+            end = schedule.bounds(schedule.paid_through_index)[1]
+        elif subscription.status is SubscriptionStatus.TRIAL:
+            end = subscription.trial_ends_at
+        else:
+            end = at
+        if end > at:
+            keep_pending = False
+            if (schedule is not None and schedule.anchor_at is not None
+                    and subscription.pending_plan_effective_at is not None):
+                from .billing_cycles import period_index
+                keep_pending = schedule.paid_through_index >= period_index(
+                    schedule.anchor_at, subscription.pending_plan_effective_at)
+            fields = {} if keep_pending else dict(pending_plan=None, pending_plan_change_kind=None,
+                pending_plan_change_billing_mode=None, pending_plan_effective_at=None)
+            return replace(subscription, cancel_at_period_end=end, **fields)
+        return replace(subscription, status=SubscriptionStatus.CANCELED, canceled_at=at,
+                       cancel_at_period_end=end, pending_plan=None,
+                       pending_plan_change_kind=None, pending_plan_change_billing_mode=None,
+                       pending_plan_effective_at=None)
+    if subscription.plan.credit_policy is None and subscription.plan.cancellation_mode is not CancellationMode.IMMEDIATE:
         raise ValueError("politica de cancelamento nao configurada como IMMEDIATE.")
     at = now or datetime.now(timezone.utc)
     return replace(
@@ -525,6 +596,8 @@ def cancel_subscription(
         pending_plan_change_kind=None,
         pending_plan_change_billing_mode=None,
         canceled_at=at,
+        cancel_at_period_end=(at if subscription.plan.credit_policy else subscription.cancel_at_period_end),
+        pending_plan_effective_at=None,
         reactivation_requested_at=None,
         past_due_at=None,
         grace_period_ends_at=None,
@@ -534,10 +607,32 @@ def cancel_subscription(
 
 
 def request_reactivation(
-    subscription: Subscription, *, now: datetime | None = None
+    subscription: Subscription, *, now: datetime | None = None, lifecycle_id: str | None = None
 ) -> Subscription:
     """Reabre uma assinatura cancelada como PENDING_PAYMENT sem restaurar entitlement."""
 
+    if subscription.plan.credit_policy is not None:
+        at = now or datetime.now(timezone.utc)
+        if (subscription.plan.reactivation_mode is not ReactivationMode.PAYMENT_REQUIRED
+                or subscription.plan.reactivation_billing_mode is not ReactivationBillingMode.CURRENT_PLAN_FULL_CYCLE):
+            raise ValueError("Reativação comercial exige política explícita de novo pagamento integral.")
+        if (subscription.cancel_at_period_end is not None and at < subscription.cancel_at_period_end
+                and subscription.status in {SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL}):
+            return replace(subscription, cancel_at_period_end=None)
+        if (subscription.status is SubscriptionStatus.PENDING_PAYMENT
+                and subscription.reactivation_requested_at is not None):
+            return subscription
+        if subscription.status not in {SubscriptionStatus.CANCELED, SubscriptionStatus.EXPIRED}:
+            raise ValueError("Reativação exige encerramento ou cancelamento agendado.")
+        if not lifecycle_id:
+            raise ValueError("Nova contratação exige identidade de lifecycle nova.")
+        if subscription.paid_cycle_schedule and lifecycle_id == subscription.paid_cycle_schedule.lifecycle_id:
+            raise ValueError("Lifecycle anterior não pode ser reutilizado.")
+        return replace(subscription, status=SubscriptionStatus.PENDING_PAYMENT,
+                       paid_cycle_schedule=PaidCycleSchedule(lifecycle_id), activated_at=None,
+                       reactivation_requested_at=at, cancel_at_period_end=None,
+                       pending_plan=None, pending_plan_change_kind=None,
+                       pending_plan_change_billing_mode=None, pending_plan_effective_at=None)
     if subscription.status is not SubscriptionStatus.CANCELED:
         raise ValueError("reativacao exige assinatura CANCELED.")
     if subscription.plan.reactivation_mode is not ReactivationMode.PAYMENT_REQUIRED:
@@ -746,3 +841,44 @@ __all__ = [
     "request_reactivation",
     "start_trial",
 ]
+
+
+def activate_commercial_payment(
+    subscription: Subscription, *, schedule: PaidCycleSchedule,
+    billed_plan: PlanDefinition, billed_index: int, billed_purpose: ChargePurpose,
+    billing_id: str, settled_at: datetime,
+) -> Subscription:
+    """Apply only the period purchased, retaining anniversary and future effective dates."""
+    current_schedule = subscription.paid_cycle_schedule
+    if current_schedule and any(key == billing_id for key, _ in current_schedule.settled_obligations):
+        return refresh_trial_status(subscription, now=settled_at)
+    if subscription.status is SubscriptionStatus.CANCELED:
+        raise ValueError('Pagamento não reabre assinatura encerrada sem solicitação explícita.')
+    expected = subscription.plan
+    if subscription.pending_plan is not None:
+        if subscription.pending_plan_effective_at is None:
+            raise ValueError('Troca comercial sem data de vigência.')
+        if schedule.bounds(billed_index)[0] < subscription.pending_plan_effective_at:
+            raise ValueError('Fatura não corresponde à vigência do plano solicitado.')
+        expected = subscription.pending_plan
+        if billed_purpose is not ChargePurpose.PLAN_CHANGE:
+            raise ValueError('Troca exige obrigação de renovação vinculada ao plano alvo.')
+    elif subscription.reactivation_requested_at is not None:
+        if billed_purpose is not ChargePurpose.REACTIVATION:
+            raise ValueError('Reativação exige obrigação da nova contratação.')
+    elif billed_purpose is not ChargePurpose.REGULAR:
+        raise ValueError('Pagamento sem solicitação de lifecycle correspondente.')
+    if billed_plan != expected:
+        raise ValueError('Snapshot pago não corresponde às condições contratadas aguardadas.')
+    activated = replace(subscription, paid_cycle_schedule=schedule,
+        status=SubscriptionStatus.ACTIVE, activated_at=schedule.anchor_at,
+        reactivation_requested_at=None, past_due_at=None, grace_period_ends_at=None,
+        dunning_reminders_sent=0, last_dunning_at=None)
+    return refresh_trial_status(activated, now=settled_at)
+
+
+def undo_commercial_plan_change(subscription: Subscription) -> Subscription:
+    if subscription.plan.credit_policy is None:
+        raise ValueError('Desistência por aniversário exige contrato comercial V1.')
+    return replace(subscription, pending_plan=None, pending_plan_change_kind=None,
+                   pending_plan_change_billing_mode=None, pending_plan_effective_at=None)

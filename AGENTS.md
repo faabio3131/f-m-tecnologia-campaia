@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@f0849f118661d23e2c95ee82f1880025448cc9c6`
+**CURRENT confirmado:** `main@03a59c875a7f7f2363a9afc4c84f6bedd983309c`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -336,10 +336,16 @@ WP-R02-05 / PR #49: ciclo/franquia/consentimento integrado, CI pós-merge verde.
 `docs/WP_R02_05_CICLO_FRANQUIA_CONSENTIMENTO_20261015.md`. Não ativar catálogo V1 antes de
 fechar lifecycle, enforcement, medição por entrega e checkout operacional.
 
-WP-R02-06: estratégia com claim/reserva antes do provider e limites contratuais em
-implementação na branch feat/wp-r02-metered-strategy-limits. Ver
+WP-R02-06 / PR #50: estratégia com claim/reserva antes do provider e limites contratuais
+integrados, com CI pós-merge verde. Ver
 `docs/WP_R02_06_EXECUCAO_IA_CREDITOS_LIMITES_20261015.md`. F5 continua PARTIAL;
 nenhum componente simulado certifica G5 externo.
+
+WP-R02-07: lifecycle V1 por aniversário, cancelamento ao fim do período pago e reativação
+com nova identidade em validação na branch feat/wp-r02-anniversary-lifecycle. Ver
+`docs/WP_R02_07_LIFECYCLE_ANIVERSARIO_20261015.md`. Próximo: WP-R02-08, obrigação
+congelada antes do gateway, reconciliação e checkout/scheduler único. Catálogo real continua
+desabilitado; não certificar G5 com simulador ou apenas CI.
 
 **Gate G5:** pagamento real ativa entitlement sem intervenção de desenvolvedor.
 

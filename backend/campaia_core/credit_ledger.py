@@ -165,8 +165,8 @@ class UsageJournal:
         _id(actor)
         _id(reference)
         _instant(at)
-        if not cycle.starts_at <= at < cycle.ends_at:
-            raise CreditLedgerError('Consent must belong to an open cycle')
+        if at >= cycle.ends_at:
+            raise CreditLedgerError('Consent cannot be added after the cycle ends')
         if cycle.trial and cap != 0:
             raise CreditLedgerError('Trial cannot authorize extras')
         for entry in self.entries:

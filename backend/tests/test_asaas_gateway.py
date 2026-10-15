@@ -397,7 +397,7 @@ class AsaasHostedInvoiceTests(unittest.TestCase):
         for recovery in [False, True]:
             with self.subTest(recovery=recovery):
                 calls = []
-                payment = {'id': 'pay-invoice', 'status': 'PENDING',
+                payment = {'id': 'pay-invoice', 'status': 'PENDING', 'value': '199.90',
                            'invoiceUrl': 'https://sandbox.asaas.com/i/invoice-test'}
                 def handler(request):
                     calls.append((request.method, request.url.path))
@@ -413,4 +413,5 @@ class AsaasHostedInvoiceTests(unittest.TestCase):
                 replay = gateway.create_charge(_command())
                 self.assertEqual(result, replay)
                 self.assertEqual(result.invoice_url, payment['invoiceUrl'])
+                self.assertEqual(result.observed_amount, Decimal('199.90'))
                 self.assertEqual(sum(method == 'POST' for method, path in calls), 0 if recovery else 1)
