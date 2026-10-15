@@ -20,3 +20,9 @@ Screenshot image(20261015-152500).png inspecionado: corpo code NOT_FOUND; messag
 Existência do rascunho em A comprovada pela listagem UI DRAFT. Controle positivo do mesmo endpoint no tenant A ainda pendente neste checkpoint. Tentativa de navegação do agente diretamente para a API no seu navegador retornou net::ERR_BLOCKED_BY_CLIENT; isso é limite do cliente, não resposta do CampaIA, nem evidência de bloqueio por bots. Controle positivo será executado pelo Diretor na janela anônima de A, que já acessou a API de memberships.
 
 Ainda pendentes: isolamento entre unidades, mutações cross-tenant, replay externo aplicável e revogação por alteração de papel/unidade conforme matriz. Não generalizar um GET bloqueado para certificação de todas as superfícies. Nenhum merge/deploy/migration. Cloud SQL com última confirmação RUNNABLE / ALWAYS nesta janela; desligar ao término ou bloqueio e comprovar STOPPED / NEVER.
+
+## Controle positivo confirmado — 12:29
+
+Screenshot image(20261015-152923).png inspecionado: na janela anônima do VIEWER de A, o mesmo endpoint retornou objeto da campanha camp_000005_1ed30afd, business_unit_id bu_000002_4e8fe763, estado DRAFT, objetivo 'Homologação isolamento A 20261015', external_resources vazio, spent_to_date 0 e last_synced_at null. Controle positivo não depende de simulador/provider externo: é leitura real do domínio persistido em staging. O objeto não está publicado. Nenhum status HTTP foi capturado no print.
+
+Comparação comprovada para este recurso/endpoint: A lê seu próprio recurso; OWNER de B recebe NOT_FOUND para o mesmo ID. Esse controle positivo substitui a pendência específica descrita no checkpoint anterior, preservando limites dos demais testes e G2 PARTIAL.
