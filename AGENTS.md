@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@356f35448abf6b71b91c00a44a7ccc1db4e4906e`
+**CURRENT confirmado:** `main@20727bcb23c64b339bde746f7c5c06c445c6ceca`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -244,7 +244,7 @@ No CURRENT:
 - optimizer/pacing/reconciliation existem, mas não estão ligados a métricas externas reais;
 - Brand Kit ainda não possui upload/assets completos;
 - fluxo de criativos/imagem/preview ainda não está completo;
-- Billing Web em implementação na branch WP-R02; não considerar integrada antes de CI/revisão/merge;
+- Billing Web inicial integrada na PR #45; consumo, histórico completo e contratação/checkout ainda em conclusão;
 - Premium final ainda não foi executado;
 - G18/G19/G20 ainda não ocorreram.
 
@@ -306,17 +306,17 @@ No staging real:
 
 ### O que já existe
 Motor de billing, Asaas adapter, webhook, settlement, entitlement e lifecycle comercial.
+WP-R02-01 integrado na PR #45, main@20727bcb, com CI pós-merge verde:
+Web de plano/condições contratadas/catálogo/entitlements/trial/PAST_DUE/grace e
+solicitações de troca/cancelamento/reativação. Não reconstruir essas superfícies.
 
 ### Falta
 1. decisão real de planos/preços/trial/grace/dunning/refund;
 2. arquivo/catálogo comercial real;
-3. Billing Web:
-   - plano atual;
-   - uso;
-   - upgrade/downgrade;
-   - cancelamento/reativação;
-   - PAST_DUE/grace;
-   - histórico de cobranças;
+3. Billing Web restante:
+   - medição comercial persistente de uso/créditos (CostLedger em memória não é franquia mensal);
+   - histórico/fatura hospedada: WP-R02-02 proposto nesta branch, integração ainda condicionada à CI/revisão/merge;
+   - contratação inicial/checkout completo;
 4. credenciais/conta Asaas produção quando apropriado;
 5. checkout/fluxo de pagamento real;
 6. E2E real:

@@ -1253,6 +1253,32 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
 
   /billing/charges:
+    get:
+      tags: [Billing]
+      summary: Historico de cobrancas do tenant com ultima observacao registrada
+      description: |
+        Sem chamadas ao gateway. Status e origem sao observacoes persistidas, nao consulta
+        em tempo real; registros legados podem nao possuir essas informacoes. Nao retorna
+        CPF/CNPJ, customer_ref nem credenciais. Pagina fixa de ate 50 cobrancas.
+      operationId: listBillingCharges
+      security: [cookieAuth: []]
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Historico isolado por tenant, inclusive sem assinatura atual
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingChargeHistory' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Usuario sem BILLING_VIEW
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
     post:
       tags: [Billing]
       summary: Cria cobranca idempotente para uma competencia
@@ -1545,6 +1571,38 @@ components:
           anyOf:
             - { $ref: '#/components/schemas/BillingEntitlements' }
             - { type: 'null' }
+
+    BillingChargeHistoryItem:
+      type: object
+      required: [billing_id, gateway_charge_id, competence, currency, amount, plan_id,
+                 purpose, created_at, gateway_status, gateway_provider, gateway_mode,
+                 status_observed_at, status_source, invoice_url]
+      properties:
+        billing_id: { type: string }
+        gateway_charge_id: { type: string }
+        competence: { type: string }
+        currency: { type: string }
+        amount: { type: string }
+        plan_id: { type: [string, 'null'] }
+        purpose: { type: string, enum: [REGULAR, PLAN_CHANGE, REACTIVATION] }
+        created_at: { type: [string, 'null'], format: date-time }
+        gateway_status: { type: [string, 'null'] }
+        gateway_provider: { type: [string, 'null'] }
+        gateway_mode: { type: [string, 'null'] }
+        status_observed_at: { type: [string, 'null'], format: date-time }
+        status_source: { type: [string, 'null'] }
+        invoice_url:
+          type: [string, 'null']
+          description: Fatura hospedada retornada pelo Asaas, validada por ambiente; nunca sintetizada
+
+    BillingChargeHistory:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/BillingChargeHistoryItem' }
+        next_cursor: { type: [string, 'null'] }
 
     BillingChargeCreate:
       type: object

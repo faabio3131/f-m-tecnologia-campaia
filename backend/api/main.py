@@ -31,6 +31,7 @@ from .routes_billing import (
     create_charge,
     get_subscription,
     list_billing_plans,
+    list_billing_charges,
     put_subscription,
     reactivate_billing_subscription,
 )
@@ -185,6 +186,7 @@ routes = [
     Route("/billing/subscription/cancel", cancel_billing_subscription, methods=["POST"]),
     Route("/billing/subscription/reactivate", reactivate_billing_subscription, methods=["POST"]),
     Route("/billing/charges", create_charge, methods=["POST"]),
+    Route("/billing/charges", list_billing_charges, methods=["GET"]),
     # Unico endpoint deste app sem Bearer token de usuario -- quem chama e o Asaas, nao o
     # app; a autenticidade vem do token estatico verificado por AsaasWebhookReceiver.
     Route("/webhooks/asaas", asaas_webhook, methods=["POST"]),

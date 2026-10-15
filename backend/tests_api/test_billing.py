@@ -858,3 +858,100 @@ class BillingWebReadTests(unittest.TestCase):
         assert response.json()['commercial_terms']['monthly_price'] == '19.1234'
         assert other.status_code == 404, other.text
         assert not state.charges
+
+
+class BillingHistoryTests(unittest.TestCase):
+    def _charge(self, client, competence='2026-10'):
+        response = client.post('/billing/charges',
+            headers={**with_step_up(OWNER), **unique_idem()}, json={'competence': competence})
+        assert response.status_code == 202, response.text
+        return response.json()['gateway_charge_id']
+
+    def test_auth_rbac_empty_and_no_gateway_calls_on_read(self):
+        from unittest.mock import patch
+        client = make_client()
+        assert client.get('/billing/charges').status_code == 401
+        assert client.get('/billing/charges', headers=MARKETER).status_code == 403
+        with patch.object(client.app.state.campaia.billing_gateway, 'get_charge_status', side_effect=AssertionError('no polling')):
+            response = client.get('/billing/charges', headers=FINANCE)
+        assert response.json() == {'items': [], 'next_cursor': None}
+
+    def test_history_is_tenant_scoped_redacted_and_observations_are_explicit(self):
+        client = make_client()
+        _put_subscription(client)
+        key = self._charge(client)
+        response = client.get('/billing/charges', headers=OWNER)
+        item = response.json()['items'][0]
+        assert item['gateway_charge_id'] == key
+        assert item['amount'] == '1.0'
+        assert item['gateway_mode'] == 'SIMULATOR'
+        assert item['gateway_status'] == 'PENDING'
+        assert item['status_source'] == 'CREATE'
+        assert item['status_observed_at'] is not None
+        assert item['invoice_url'] is None
+        assert 'customer_document' not in item and 'customer_ref' not in item
+        assert '11144477735' not in response.text
+        assert client.get('/billing/charges', headers=OTHER_OWNER).json()['items'] == []
+        assert client.get('/billing/charges?cursor=' + key, headers=OTHER_OWNER).status_code == 422
+
+    def test_webhook_observation_survives_replay_of_creation_and_duplicate_event(self):
+        from unittest.mock import patch
+        with patch.dict(os.environ, {'ASAAS_WEBHOOK_TOKEN': 'history-test-token'}):
+            client = make_client()
+            _put_subscription(client)
+            key = self._charge(client)
+            payload = {'id': 'evt-history', 'event': 'PAYMENT_RECEIVED',
+                       'payment': {'id': key, 'status': 'RECEIVED'}}
+            headers = {'asaas-access-token': 'history-test-token'}
+            assert client.post('/webhooks/asaas', headers=headers, json=payload).status_code == 200
+            before = client.get('/billing/charges', headers=OWNER).json()
+            assert before['items'][0]['gateway_status'] == 'CONFIRMED'
+            assert before['items'][0]['status_source'] == 'WEBHOOK'
+            assert self._charge(client) == key  # New HTTP key, same deterministic billing id.
+            client.post('/webhooks/asaas', headers=headers, json=payload)
+            assert client.get('/billing/charges', headers=OWNER).json() == before
+            bad = {**payload, 'id': 'evt-untrusted', 'payment': {'id': key, 'status': 'OVERDUE'}}
+            assert client.post('/webhooks/asaas', headers={'asaas-access-token': 'wrong'}, json=bad).status_code == 401
+            assert client.get('/billing/charges', headers=OWNER).json() == before
+
+    def test_legacy_records_remain_unknown_and_do_not_inherit_current_gateway_mode(self):
+        from api.db import encode, decode
+        from campaia_core.subscription import compute_cycle_charge
+        client = make_client()
+        _put_subscription(client)
+        charge = compute_cycle_charge(client.app.state.campaia.subscriptions['demo-tenant'], competence='2020-01')
+        encoded = encode(charge)
+        encoded.pop('billing_observations')
+        client.app.state.campaia.charges['legacy'] = decode(encoded)
+        item = client.get('/billing/charges', headers=OWNER).json()['items'][0]
+        assert item['gateway_status'] is None and item['gateway_mode'] is None
+        assert item['status_observed_at'] is None and item['invoice_url'] is None
+
+    def test_pagination_and_invalid_cursor_never_fall_back_to_first_page(self):
+        client = make_client()
+        _put_subscription(client)
+        for i in range(52):
+            self._charge(client, f'period-{i:03d}')
+        first = client.get('/billing/charges', headers=OWNER).json()
+        assert len(first['items']) == 50 and first['next_cursor']
+        self._charge(client, 'newest-after-first-page')
+        second = client.get('/billing/charges?cursor=' + first['next_cursor'], headers=OWNER).json()
+        assert len(second['items']) == 2 and second['next_cursor'] is None
+        ids = [item['gateway_charge_id'] for item in first['items'] + second['items']]
+        assert len(set(ids)) == 52
+        assert client.get('/billing/charges?cursor=invalid', headers=OWNER).status_code == 422
+
+    def test_only_safe_asaas_url_with_persisted_mode_is_exposed(self):
+        client = make_client()
+        _put_subscription(client)
+        key = self._charge(client)
+        state = client.app.state.campaia
+        original = state.charges[key]
+        for mode, url, expected in [
+            ('SANDBOX', 'https://sandbox.asaas.com/i/abc', 'https://sandbox.asaas.com/i/abc'),
+            ('SANDBOX', 'https://www.asaas.com/i/abc', None),
+            ('PRODUCTION', 'https://www.asaas.com/i/abc', 'https://www.asaas.com/i/abc'),
+            ('PRODUCTION', 'https://evil.test/i/abc', None),
+        ]:
+            state.charges[key] = replace(original, gateway_provider='ASAAS', gateway_mode=mode, invoice_url=url)
+            assert client.get('/billing/charges', headers=OWNER).json()['items'][0]['invoice_url'] == expected

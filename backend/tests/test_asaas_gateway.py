@@ -390,3 +390,27 @@ class AsaasGatewayRequestShapeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AsaasHostedInvoiceTests(unittest.TestCase):
+    def test_invoice_url_is_preserved_on_creation_and_external_reference_recovery(self):
+        for recovery in [False, True]:
+            with self.subTest(recovery=recovery):
+                calls = []
+                payment = {'id': 'pay-invoice', 'status': 'PENDING',
+                           'invoiceUrl': 'https://sandbox.asaas.com/i/invoice-test'}
+                def handler(request):
+                    calls.append((request.method, request.url.path))
+                    if request.method == 'GET' and request.url.path.endswith('/payments'):
+                        return httpx.Response(200, json={'data': [payment] if recovery else []})
+                    if request.url.path.endswith('/customers'):
+                        return httpx.Response(200, json={'data': [{'id': 'cus-existing'}]})
+                    if request.method == 'POST' and request.url.path.endswith('/payments'):
+                        return httpx.Response(200, json=payment)
+                    raise AssertionError(str(request.url))
+                gateway = AsaasGateway(config=_config(), transport=httpx.MockTransport(handler))
+                result = gateway.create_charge(_command())
+                replay = gateway.create_charge(_command())
+                self.assertEqual(result, replay)
+                self.assertEqual(result.invoice_url, payment['invoiceUrl'])
+                self.assertEqual(sum(method == 'POST' for method, path in calls), 0 if recovery else 1)

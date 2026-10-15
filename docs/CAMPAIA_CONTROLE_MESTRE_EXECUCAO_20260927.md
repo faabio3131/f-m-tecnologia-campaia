@@ -401,3 +401,22 @@ Sem decisão de preços, catálogo comercial real, credenciais Asaas, pagamento 
 Restam medição de consumo, histórico financeiro, contratação/checkout e E2E financeiro real,
 além de aprovação comercial. Não confundir implementação/testes locais com fechamento G5.
 Cloud SQL não foi ligado nesta execução; última prova externa permanece STOPPED / NEVER.
+
+## Checkpoint WP-R02-02 — 15/10/2026 — histórico e fatura hospedada
+
+CURRENT main@20727bcb23c64b339bde746f7c5c06c445c6ceca; PR #45 integrada com autorização;
+Backend/PostgreSQL, Frontend/E2E e F4 pós-merge success. WP-R02-01 DONE_VERIFIED nesse escopo.
+Nenhuma PR aberta na consulta inicial desta etapa; checkout local inicialmente limpo.
+
+F5/G5 PARTIAL. Branch feat/wp-r02-charge-history adiciona GET/painel de histórico paginado,
+observações persistidas de criação/webhook, ambiente do gateway, redaction, invoiceUrl retornada
+pelo Asaas com validação exata de host/ambiente. Sem emissão de cobrança pela tela.
+Persistência sem nova migration: observações opcionais em extensão do envelope JSON,
+preservando os campos financeiros decodificáveis pelo leitor anterior.
+Evidência: WP_R02_CHARGE_HISTORY_20261015.md. Integração da nova branch pendente de CI e revisão.
+
+Consumo comercial permanece TARGET/HUMAN_DECISION: CostLedger atual usa cost_units em memória,
+sem janela de competência persistida nem regra aprovada de conversão para créditos comerciais.
+Não expor custo interno da IA como saldo comercial nem tratar ausência de medição como zero.
+Contratação/checkout completo e teste financeiro real continuam pendentes.
+Cloud SQL não foi ligado; nenhuma conta/gateway/credencial real ou política comercial alterada.

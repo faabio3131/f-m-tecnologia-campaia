@@ -283,6 +283,14 @@ class SubscriptionCharge:
     # Defaults preserve decoding of charges persisted before WP-F05-03.
     plan_id: str | None = None
     purpose: ChargePurpose = ChargePurpose.REGULAR
+    # Optional observations; absent on historical records, never inferred as paid/unpaid.
+    created_at: datetime | None = None
+    gateway_status: str | None = None
+    gateway_provider: str | None = None
+    gateway_mode: str | None = None
+    status_observed_at: datetime | None = None
+    status_source: str | None = None
+    invoice_url: str | None = None
 
     @property
     def amount(self) -> Decimal:

@@ -529,6 +529,11 @@ class TestBillingPersistence(PersistenceTestCase):
             self.assertEqual(persisted.status_code, 200, persisted.text)
             self.assertEqual(persisted.json()["plan_id"], "f5-test")
 
+            history = c2.get("/billing/charges", headers=OWNER).json()["items"]
+            self.assertEqual(history[0]["gateway_charge_id"], gateway_charge_id)
+            self.assertEqual(history[0]["gateway_mode"], "SIMULATOR")
+            self.assertEqual(history[0]["status_source"], "CREATE")
+
             settled = c2.post(
                 "/webhooks/asaas",
                 headers={"asaas-access-token": "f5-webhook-token"},
@@ -542,6 +547,12 @@ class TestBillingPersistence(PersistenceTestCase):
             self.assertTrue(settled.json()["accepted"])
             self.assertTrue(settled.json()["processed"])
             self.assertEqual(settled.json()["billing_id"], "sub:demo-tenant:2026-10")
+            self.teardown_client(c2)
+            c3 = self.new_client()
+            item = c3.get("/billing/charges", headers=OWNER).json()["items"][0]
+            self.assertEqual(item["gateway_status"], "CONFIRMED")
+            self.assertEqual(item["status_source"], "WEBHOOK")
+            self.assertEqual(item["gateway_mode"], "SIMULATOR")
         finally:
             self._restore_catalog(old_catalog)
             if old_token is None:

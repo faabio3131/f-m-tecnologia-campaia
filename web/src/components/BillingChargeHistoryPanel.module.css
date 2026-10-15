@@ -1,0 +1,17 @@
+.title {
+  margin: 0 0 var(--campaia-space-3);
+  font-size: var(--campaia-font-size-lg);
+}
+.description {
+  color: var(--campaia-color-text-muted);
+}
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-4);
+}
+.item {
+  min-width: 0;
+  padding: var(--campaia-space-3) 0;
+  overflow-wrap: anywhere;
+}

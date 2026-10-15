@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AdministrativeStepUpCard } from "@/components/AdministrativeStepUpCard";
+import { BillingChargeHistoryPanel } from "@/components/BillingChargeHistoryPanel";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
@@ -147,6 +148,7 @@ function BillingContent({ canManage }: { canManage: boolean }) {
       {success ? <p role="status">{success}</p> : null}
       {actionError ? <ErrorState title="Alteração não confirmada" description={actionError} /> : null}
       {stepUp.stepUpMessage ? <p role="alert">{stepUp.stepUpMessage}</p> : null}
+      <BillingChargeHistoryPanel />
       <Card><h2 className={styles.title}>Planos disponíveis neste ambiente</h2>
         {catalogError ? <ErrorState title="Catálogo de planos indisponível" description="As condições comerciais ainda não estão disponíveis para consulta neste ambiente." /> : plans.length === 0 ? <p>Nenhum plano configurado.</p> : plans.map((plan) => <StatusPanel key={plan.plan_id} title={plan.name} items={[
           { label: "Mensalidade", value: money(plan.monthly_price, plan.currency) },

@@ -129,6 +129,17 @@ from typing import Any, Callable
 
 # --------------------------------------------------------------------------------- encode/decode
 
+# Optional billing observations live outside constructor fields. The previous decoder
+# ignores extra envelope keys, so rollback readers still reconstruct the original
+# financial records. Only these explicit non-authoritative fields use this extension.
+_BILLING_OBSERVATION_FIELDS = {
+    ("campaia_core.subscription", "SubscriptionCharge"): frozenset({
+        "created_at", "gateway_status", "gateway_provider", "gateway_mode",
+        "status_observed_at", "status_source", "invoice_url",
+    }),
+    ("campaia_core.payment_gateway", "ChargeResult"): frozenset({"invoice_url"}),
+}
+
 
 def _original_class(obj: Any) -> type:
     return getattr(type(obj), "_notify_orig", type(obj))
@@ -163,7 +174,12 @@ def encode(value: Any) -> Any:
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         cls = _original_class(value)
         fields = {f.name: encode(getattr(value, f.name)) for f in dataclasses.fields(value)}
-        return {"__type__": "dataclass", "mod": cls.__module__, "qual": cls.__qualname__, "fields": fields}
+        extension_keys = _BILLING_OBSERVATION_FIELDS.get((cls.__module__, cls.__qualname__), ())
+        extensions = {key: fields.pop(key) for key in extension_keys if key in fields}
+        envelope = {"__type__": "dataclass", "mod": cls.__module__, "qual": cls.__qualname__, "fields": fields}
+        if extensions:
+            envelope["billing_observations"] = extensions
+        return envelope
     raise TypeError(f"api.db.encode: no encoding rule for {type(value)!r} (value={value!r})")
 
 
@@ -194,6 +210,13 @@ def decode(value: Any) -> Any:
         if tag == "dataclass":
             cls = _import_path(value["mod"], value["qual"])
             fields = {k: decode(v) for k, v in value["fields"].items()}
+            extensions = value.get("billing_observations", {})
+            allowed = _BILLING_OBSERVATION_FIELDS.get((value["mod"], value["qual"]), ())
+            if not isinstance(extensions, dict) or not set(extensions).issubset(allowed):
+                raise ValueError("Unsupported billing observation fields.")
+            if set(extensions).intersection(fields):
+                raise ValueError("Duplicate billing observation fields.")
+            fields.update({k: decode(v) for k, v in extensions.items()})
             return cls(**fields)
         return {k: decode(v) for k, v in value.items()}
     if isinstance(value, list):
@@ -621,6 +644,10 @@ class PersistentTenantObjectMap:
 
     def values(self):
         return [obj for _row_id, _tenant_id, obj in self._table.all_rows()]
+
+    def items_for_tenant(self, tenant_id: str):
+        return [(row_id, obj) for row_id, _tenant_id, obj
+                in self._table.rows_for_tenant(tenant_id)]
 
 
 class PersistentIdempotencyStore:

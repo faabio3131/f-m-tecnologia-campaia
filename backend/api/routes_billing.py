@@ -11,6 +11,7 @@ proprio `AsaasWebhookReceiver` (`asaas-access-token`), nunca de um Bearer token 
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from dataclasses import replace
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -20,6 +21,7 @@ from campaia_core.asaas_webhook import parse_asaas_payment_event
 from campaia_core.billing_settlement import charge_subscription, try_settle_from_status
 from campaia_core.fiscal_handoff import build_campaia_fiscal_handoff
 from campaia_core.payment_gateway import GatewayChargeStatus, PaymentGatewayError
+from campaia_core.payment_urls import safe_asaas_invoice_url
 from campaia_core.permissions import Permission, Resource, authorize
 from campaia_core.plan_catalog import PlanCatalogError, get_plan, load_plan_catalog
 from campaia_core.subscription import (
@@ -54,6 +56,8 @@ from .helpers import parse_body
 from .models import (
     BillingChargeCreate,
     BillingChargeResponse,
+    BillingChargeHistoryItem,
+    BillingChargeHistoryResponse,
     BillingEntitlementsResponse,
     BillingPlanChangeRequest,
     BillingPlanResponse,
@@ -351,6 +355,45 @@ async def get_subscription(request: Request) -> JSONResponse:
     return JSONResponse(_serialize_subscription(subscription))
 
 
+async def list_billing_charges(request: Request) -> JSONResponse:
+    fixture, state = _authorize_billing(request, Permission.BILLING_VIEW)
+    if hasattr(state.charges, "items_for_tenant"):
+        rows = state.charges.items_for_tenant(fixture.tenant_id)
+    else:
+        rows = [(key, charge) for key, charge in state.charges.items()
+                if charge.tenant_id == fixture.tenant_id]
+    rows.sort(key=lambda row: (
+        row[1].created_at or datetime.min.replace(tzinfo=timezone.utc), row[0]
+    ), reverse=True)
+    start = 0
+    cursor = request.query_params.get("cursor")
+    if cursor:
+        ids = [key for key, _charge in rows]
+        if cursor not in ids:
+            raise ApiError("VALIDATION_FAILED", "Cursor inválido ou indisponível.")
+        start = ids.index(cursor) + 1
+    page = rows[start:start + 50]
+    response = BillingChargeHistoryResponse(items=[BillingChargeHistoryItem(
+        billing_id=charge.billing_id,
+        gateway_charge_id=key,
+        competence=charge.competence,
+        currency=charge.currency,
+        amount=str(charge.amount),
+        plan_id=charge.plan_id,
+        purpose=charge.purpose.value,
+        created_at=charge.created_at,
+        gateway_status=charge.gateway_status,
+        gateway_provider=charge.gateway_provider,
+        gateway_mode=charge.gateway_mode,
+        status_observed_at=charge.status_observed_at,
+        status_source=charge.status_source,
+        invoice_url=(safe_asaas_invoice_url(charge.invoice_url, charge.gateway_mode)
+                     if charge.gateway_provider == "ASAAS" else None),
+    ) for key, charge in page],
+        next_cursor=page[-1][0] if start + 50 < len(rows) else None)
+    return JSONResponse(response.model_dump(mode="json"))
+
+
 async def create_charge(request: Request) -> JSONResponse:
     fixture, state = _authorize_billing(request, Permission.BILLING_MANAGE)
     idem_key = require_idempotency_key(request)
@@ -395,7 +438,20 @@ async def create_charge(request: Request) -> JSONResponse:
         # Guarda a cobranca pelo id real do gateway -- e assim que o webhook do Asaas
         # (que so conhece o payment_id, nunca o billing_id interno) encontra de volta a
         # cobranca a que um evento de pagamento pertence.
-        state.charges[result.gateway_charge_id] = charge
+        existing = state.charges.get(result.gateway_charge_id)
+        if existing is not None:
+            if existing.tenant_id != charge.tenant_id or existing.billing_id != charge.billing_id:
+                raise ApiError("INVALID_STATE", "Identificador de cobrança inconsistente.")
+            # Another HTTP key can replay the same durable gateway result. Preserve
+            # webhook observations rather than reverting them to the creation snapshot.
+        else:
+            observed_at = datetime.now(timezone.utc)
+            state.charges[result.gateway_charge_id] = replace(
+                charge, created_at=observed_at, status_observed_at=observed_at,
+                gateway_status=result.status.value, gateway_provider=result.provider,
+                gateway_mode=result.mode.value, status_source="CREATE",
+                invoice_url=result.invoice_url,
+            )
         state.audit.append(
             tenant_id=fixture.tenant_id,
             actor=fixture.user_id,
@@ -493,6 +549,11 @@ async def asaas_webhook(request: Request) -> JSONResponse:
 
     observed_at = datetime.now(timezone.utc)
     status = map_asaas_status(event.asaas_status)
+    # Receipt observation only: never a fresh provider poll or a synthesized ledger.
+    state.charges[event.payment_id] = replace(
+        charge, gateway_status=status.value, status_observed_at=observed_at,
+        status_source="WEBHOOK",
+    )
 
     if status is GatewayChargeStatus.OVERDUE:
         subscription = state.subscriptions.get(charge.tenant_id)

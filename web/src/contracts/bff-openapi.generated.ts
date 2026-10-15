@@ -827,7 +827,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Historico de cobrancas do tenant com ultima observacao registrada
+         * @description Sem chamadas ao gateway. Status e origem sao observacoes persistidas, nao consulta
+         *     em tempo real; registros legados podem nao possuir essas informacoes. Nao retorna
+         *     CPF/CNPJ, customer_ref nem credenciais. Pagina fixa de ate 50 cobrancas.
+         */
+        get: operations["listBillingCharges"];
         put?: never;
         /**
          * Cria cobranca idempotente para uma competencia
@@ -972,6 +978,30 @@ export interface components {
             next_dunning_reminder_at?: string | null;
             entitlement_access_active: boolean;
             entitlements?: components["schemas"]["BillingEntitlements"] | null;
+        };
+        BillingChargeHistoryItem: {
+            billing_id: string;
+            gateway_charge_id: string;
+            competence: string;
+            currency: string;
+            amount: string;
+            plan_id: string | null;
+            /** @enum {string} */
+            purpose: "REGULAR" | "PLAN_CHANGE" | "REACTIVATION";
+            /** Format: date-time */
+            created_at: string | null;
+            gateway_status: string | null;
+            gateway_provider: string | null;
+            gateway_mode: string | null;
+            /** Format: date-time */
+            status_observed_at: string | null;
+            status_source: string | null;
+            /** @description Fatura hospedada retornada pelo Asaas, validada por ambiente; nunca sintetizada */
+            invoice_url: string | null;
+        };
+        BillingChargeHistory: {
+            items: components["schemas"]["BillingChargeHistoryItem"][];
+            next_cursor: string | null;
         };
         BillingChargeCreate: {
             competence: string;
@@ -3018,6 +3048,39 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    listBillingCharges: {
+        parameters: {
+            query?: {
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Historico isolado por tenant, inclusive sem assinatura atual */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingChargeHistory"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Usuario sem BILLING_VIEW */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
         };
     };
     createBillingCharge: {
