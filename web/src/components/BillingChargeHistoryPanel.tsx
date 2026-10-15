@@ -23,6 +23,12 @@ const PURPOSES: Record<string, string> = {
   FINAL_USAGE: "Excedente final", REGULAR: "Assinatura", PLAN_CHANGE: "Troca de plano", REACTIVATION: "Reativação",
 };
 
+const REFUND: Record<string, string> = {
+  MISSING: "Sem detalhamento suficiente", INVALID: "Detalhamento precisa de conferência",
+  AMOUNT_CONFLICT: "Valores de devolução divergentes", OBSERVATION_CONFLICT: "Observações de devolução divergentes",
+  FULL_DONE: "Devolução integral informada pelo provedor", PARTIAL_DONE: "Devolução parcial informada pelo provedor",
+  PROCESSING: "Há devolução em processamento", NO_COMPLETED_REFUND: "Nenhuma devolução concluída nesta observação",
+};
 const REVIEW: Record<string, string> = {
   CANCELLATION_CONFLICT: "Pagamento ou restauração após pedido de retirada",
   MATCHED: "Valor conferido", AMOUNT_MISSING: "Valor recebido não informado",
@@ -131,11 +137,17 @@ export function BillingChargeHistoryPanel({ canManage = false, stepUp, onReconci
               { label: "Conferência do recebimento", value: REVIEW[item.payment_reconciliation_state] ?? "Revisão necessária" },
               { label: "Valor informado pelo provedor", value: item.gateway_observed_amount != null ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: item.currency }).format(Number(item.gateway_observed_amount)) : "Não informado" },
             ] : []),
+            ...(item.gateway_refund_state ? [
+              { label: "Estorno", value: REFUND[item.gateway_refund_state] ?? "Conferência necessária" },
+              { label: "Devolução concluída registrada", value: item.gateway_refund_amount != null ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: item.currency }).format(Number(item.gateway_refund_amount)) : "Não confirmada" },
+              { label: "Estorno observado em", value: item.gateway_refund_observed_at ? new Date(item.gateway_refund_observed_at).toLocaleString("pt-BR") : "Não registrado" },
+            ] : []),
             ...(item.withdrawal_observed_at ? [{ label: "Retirada verificada em", value: new Date(item.withdrawal_observed_at).toLocaleString("pt-BR") }] : []),
             { label: "Ambiente", value: item.gateway_mode ? MODES[item.gateway_mode] ?? item.gateway_mode : "Não registrado" },
             { label: "Origem", value: item.status_source === "RECONCILIATION" ? "Consulta ao provedor" : item.status_source === "WEBHOOK" ? "Notificação recebida" : item.status_source === "CREATE" ? "Resposta da criação" : "Não registrada" },
             { label: "Observado em", value: item.status_observed_at ? new Date(item.status_observed_at).toLocaleString("pt-BR") : "Não registrado" },
           ]} />
+          {item.gateway_refund_state ? <p>O ajuste da assinatura e das obrigações continua em conferência. Este registro não concede outra franquia.</p> : null}
           {url ? <a href={url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">Abrir fatura no Asaas{item.gateway_mode === "SANDBOX" ? " — teste" : ""}</a>
             : <p className={styles.description}>Fatura hospedada indisponível neste registro.</p>}
           {canManage && stepUp && item.reconciliation_available ? <Button variant="secondary" disabled={lookupBusy || Boolean(withdrawReview) || !stepUp.ready} onClick={() => reconcile(item.gateway_charge_id)}>Conferir recebimento no provedor</Button> : null}

@@ -321,6 +321,9 @@ class SubscriptionCharge:
     commercial_gateway_mode: str | None = None
     gateway_observed_amount: Decimal | None = None
     payment_reconciliation_state: str | None = None
+    gateway_refund_amount: Decimal | None = None
+    gateway_refund_state: str | None = None
+    gateway_refund_observed_at: datetime | None = None
 
     @property
     def amount(self) -> Decimal:

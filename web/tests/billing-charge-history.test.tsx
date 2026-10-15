@@ -144,3 +144,20 @@ it("revisa retirada de fatura aberta e conserva confirmacao apos incerteza sem a
   expect(observed).toHaveBeenCalledOnce();
   expect(screen.queryByRole("link")).not.toBeInTheDocument();
 });
+
+it("separa devolucao em processamento de valor concluido sem liberar outra franquia", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(() => json(200, { items: [
+    { ...item, gateway_charge_id: "pay-pending-refund", billing_id: "bill-pending-refund",
+      payment_reconciliation_state: "REVERSAL_PENDING", gateway_refund_state: "PROCESSING", gateway_refund_amount: "0.00" },
+    { ...item, gateway_charge_id: "pay-done-refund", billing_id: "bill-done-refund",
+      payment_reconciliation_state: "REVERSAL_PENDING", gateway_refund_state: "FULL_DONE", gateway_refund_amount: "20.50" },
+  ], next_cursor: null }));
+  render(<BillingChargeHistoryPanel />);
+  expect(await screen.findByText("Há devolução em processamento")).toBeInTheDocument();
+  const pending = screen.getByRole("article", { name: "Cobrança bill-pending-refund" });
+  expect(within(pending).getByText("R$ 0,00")).toBeInTheDocument();
+  expect(within(pending).queryByText("Devolução integral informada pelo provedor")).not.toBeInTheDocument();
+  expect(screen.getByText("Devolução integral informada pelo provedor")).toBeInTheDocument();
+  expect(screen.getAllByText(/ajuste da assinatura e das obrigações continua em conferência/)).toHaveLength(2);
+  expect(screen.queryByText("Confirmada")).not.toBeInTheDocument();
+});

@@ -1899,6 +1899,9 @@ components:
         plan_id: { type: [string, 'null'] }
         gateway_observed_amount: { type: [string, 'null'] }
         payment_reconciliation_state: { type: [string, 'null'] }
+        gateway_refund_amount: { type: [string, 'null'] }
+        gateway_refund_state: { type: [string, 'null'] }
+        gateway_refund_observed_at: { type: [string, 'null'], format: date-time }
         reconciliation_available: { type: boolean }
         withdrawal_state: { type: [string, 'null'], enum: [REQUESTED, VOID, REVIEW, null] }
         withdrawal_fingerprint: { type: [string, 'null'] }

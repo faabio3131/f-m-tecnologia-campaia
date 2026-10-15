@@ -1155,6 +1155,10 @@ export interface components {
             plan_id: string | null;
             gateway_observed_amount?: string | null;
             payment_reconciliation_state?: string | null;
+            gateway_refund_amount?: string | null;
+            gateway_refund_state?: string | null;
+            /** Format: date-time */
+            gateway_refund_observed_at?: string | null;
             reconciliation_available?: boolean;
             /** @enum {string|null} */
             withdrawal_state?: "REQUESTED" | "VOID" | "REVIEW" | null;
