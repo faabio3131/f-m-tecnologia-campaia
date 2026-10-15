@@ -22,7 +22,7 @@ G2 continua PARTIAL: revogação de sessão por alteração de membership, autor
 
 ## Encerramento da janela
 
-Testes encerrados após conferir auditoria. Solicitada imediatamente ao Diretor a execução do patch activationPolicy NEVER e describe para comprovar STOPPED / NEVER. Desligamento ainda não confirmado nesta evidência: o acesso gcloud é do Diretor, Desktop Commander indisponível. Não declarar banco desligado sem o resultado.
+Testes encerrados após conferir auditoria. Solicitada imediatamente ao Diretor a execução do patch activationPolicy NEVER e describe. O print image(20261015-015936).png recebido e inspecionado em 14/10/2026 às 22:59 (São Paulo) confirma: patch done, instância campaia-staging-pg STOPPED e activationPolicy NEVER. Janela de processamento encerrada conforme a autorização. Não houve religamento posterior nesta execução. Armazenamento e outros recursos podem manter custos residuais; o desligamento não significa custo total zero.
 
 ## Governança
 
