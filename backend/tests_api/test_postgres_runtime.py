@@ -222,9 +222,14 @@ class PostgresRuntimeTests(unittest.TestCase):
                         "demo-tenant", obligation_key(obligation.billing_id))
                     self.assertEqual(frozen.result, obligation)
                     return dispatch_frozen_charge(obligation, gateway)
+                reviewed = clients[0].get("/billing/checkout", headers=OWNER)
+                self.assertEqual(reviewed.status_code, 200, reviewed.text)
+                quote = reviewed.json()["quote"]
                 with patch("api.routes_billing.dispatch_frozen_charge", side_effect=prove_committed):
                     charge = clients[0].post("/billing/charges",
-                        headers={**with_step_up(OWNER), **unique_idem()}, json={"competence": "ignored"})
+                        headers={**with_step_up(OWNER), **unique_idem()}, json={
+                            "competence": quote["competence"], "expected_quote_fingerprint": quote["fingerprint"],
+                            "accept_quote": True})
                 self.assertEqual(charge.status_code, 202, charge.text)
                 payload = {"id": "pg-paid-event", "event": "PAYMENT_RECEIVED", "payment": {
                     "id": charge.json()["gateway_charge_id"], "status": "RECEIVED"}}

@@ -40,6 +40,13 @@ def subscription():
 
 
 class CommercialLifecycleTests(unittest.TestCase):
+    def test_commercial_prices_cannot_be_silently_rounded_at_checkout(self):
+        plan = plans()[0]
+        for field in ('monthly_price', 'extra_credit_unit_price'):
+            for value in ('1.001', 'NaN', 'Infinity'):
+                with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                    replace(plan, **{field: Decimal(value)})
+
     def test_late_overdue_notice_never_extends_anniversary_grace(self):
         original = subscription(); due = original.paid_cycle_schedule.bounds(0)[1]
         late = mark_past_due(original, overdue_at=due + timedelta(days=10),

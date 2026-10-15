@@ -1359,6 +1359,28 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /billing/checkout:
+    get:
+      tags: [Billing]
+      summary: Revisa a obrigação comercial autoritativa sem emitir cobrança
+      description: Sem consulta ao gateway nem freeze financeiro; titular minimizado e ambiente explícito.
+      operationId: getBillingCheckout
+      security: [cookieAuth: []]
+      responses:
+        '200':
+          description: Cotação, cobrança já registrada ou indisponibilidade explícita
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingCheckout' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Sem BILLING_VIEW
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
   /billing/charges:
     get:
       tags: [Billing]
@@ -1412,6 +1434,16 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/StepUpRequired' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Cotação alterada ou contexto de conciliação divergente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Emissão incerta ou divergente, sem redispatch automático
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '422': { $ref: '#/components/responses/ValidationError' }
 
   /webhooks/asaas:
@@ -1836,11 +1868,65 @@ components:
       required: [competence]
       properties:
         competence: { type: string }
+        accept_quote: { type: boolean, default: false }
+        expected_quote_fingerprint: { type: [string, 'null'], pattern: '^[a-f0-9]{64}$' }
         extra_credits_used:
           anyOf:
             - { type: number, minimum: 0 }
             - { type: string }
           default: '0'
+
+    BillingCheckout:
+      type: object
+      required: [state, quote, available_at, invoice_url]
+      properties:
+        state: { type: string, enum: [READY, PENDING, REGISTERED, NOT_DUE, CLOSED, UNAVAILABLE] }
+        quote:
+          anyOf:
+            - { $ref: '#/components/schemas/BillingCheckoutQuote' }
+            - { type: 'null' }
+        available_at: { type: [string, 'null'], format: date-time }
+        invoice_url: { type: [string, 'null'] }
+
+    BillingCheckoutQuote:
+      type: object
+      required: [organization_name, holder_document_masked, fingerprint, billing_id, competence, amount, currency, plan_id, plan_name, included_credits, extra_credit_price, action_weights, policy_version, purpose, cycle_index, due_at, period_starts_at, period_ends_at, lines, provider, mode]
+      properties:
+        organization_name: { type: [string, 'null'] }
+        holder_document_masked: { type: string }
+        fingerprint: { type: string }
+        billing_id: { type: string }
+        competence: { type: string }
+        amount: { type: string }
+        currency: { type: string, enum: [BRL] }
+        plan_id: { type: string }
+        plan_name: { type: string }
+        included_credits: { type: integer }
+        extra_credit_price: { type: string }
+        action_weights:
+          type: array
+          items:
+            type: object
+            required: [action, credits]
+            properties:
+              action: { type: string }
+              credits: { type: integer }
+        policy_version: { type: string }
+        purpose: { type: string, enum: [REGULAR, PLAN_CHANGE, REACTIVATION] }
+        cycle_index: { type: integer }
+        due_at: { type: [string, 'null'], format: date-time }
+        period_starts_at: { type: [string, 'null'], format: date-time }
+        period_ends_at: { type: [string, 'null'], format: date-time }
+        lines:
+          type: array
+          items:
+            type: object
+            required: [description, amount]
+            properties:
+              description: { type: string }
+              amount: { type: string }
+        provider: { type: string }
+        mode: { type: string, enum: [SIMULATOR, SANDBOX, PRODUCTION] }
 
     BillingCharge:
       type: object

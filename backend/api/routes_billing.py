@@ -19,7 +19,8 @@ from decimal import Decimal
 from uuid import uuid4
 
 from campaia_core.credit_ledger import ExtraCreditConsent
-from campaia_core.billing_cycles import PaidCycleSchedule, period_index
+from campaia_core.billing_cycles import PaidCycleSchedule, period_index, COMMERCIAL_TIMEZONE
+from .billing_checkout import checkout_quote
 from .billing_dispatch import execute_invoice, obligation_key
 from .billing_credits import grant_current_cycle, grant_paid_cycle, usage_payload, cycle_snapshot
 
@@ -72,6 +73,7 @@ from .models import (
     BillingCreditConsentRequest,
     BillingCancellationRequest,
     BillingChargeCreate,
+    BillingCheckoutResponse,
     BillingChargeResponse,
     BillingChargeHistoryItem,
     BillingChargeHistoryResponse,
@@ -542,86 +544,131 @@ async def list_billing_charges(request: Request) -> JSONResponse:
     return JSONResponse(response.model_dump(mode="json"))
 
 
+def _review_checkout(state, charge, body):
+    if body.expected_quote_fingerprint is not None and not body.accept_quote:
+        raise ApiError("VALIDATION_FAILED", "Confirme o aceite dos valores revisados antes de emitir.")
+    if (body.expected_quote_fingerprint is not None
+            and body.expected_quote_fingerprint != checkout_quote(state, charge)['fingerprint']):
+        raise ApiError("BILLING_QUOTE_CHANGED", "As condições da cobrança mudaram. Atualize e revise novamente.", status_code=409)
+    return charge
+
+
+async def get_billing_checkout(request: Request) -> JSONResponse:
+    fixture, state = _authorize_billing(request, Permission.BILLING_VIEW)
+    with state.db.transaction() if state.db is not None else nullcontext():
+        if state.db is not None:
+            state.idempotency._table.lock_key(f"tenant:{fixture.tenant_id}")
+        sub = _require_subscription(state, fixture.tenant_id)
+        if sub.plan.credit_policy is None or sub.paid_cycle_schedule is None or state.credit_ledger is None:
+            return JSONResponse(BillingCheckoutResponse(state="UNAVAILABLE").model_dump(mode="json"))
+        if sub.status is SubscriptionStatus.CANCELED or sub.cancel_at_period_end is not None:
+            return JSONResponse(BillingCheckoutResponse(state="CLOSED").model_dump(mode="json"))
+        schedule = sub.paid_cycle_schedule
+        index = schedule.paid_through_index + 1
+        if schedule.anchor_at is not None:
+            due = schedule.bounds(index)[0]
+            if datetime.now(timezone.utc) < due:
+                return JSONResponse(BillingCheckoutResponse(state="NOT_DUE", available_at=due).model_dump(mode="json"))
+        charge = _prepare_billing_charge(state, fixture, BillingChargeCreate(competence="server-cycle"))
+        registered = next((c for _key, c in state.charges.items_for_tenant(fixture.tenant_id)
+                           if c.billing_id == charge.billing_id), None)
+        dispatched = state.idempotency.get(fixture.tenant_id, 'billing-dispatch:' + charge.billing_id)
+        status = "REGISTERED" if registered else "PENDING" if dispatched else "READY"
+        invoice_url = (safe_asaas_invoice_url(registered.invoice_url, registered.gateway_mode)
+                       if registered and registered.gateway_provider == "ASAAS" else None)
+        return JSONResponse(BillingCheckoutResponse(state=status, quote=checkout_quote(state, charge),
+                                                     invoice_url=invoice_url).model_dump(mode="json"))
+
+
+def _prepare_billing_charge(state, fixture, body):
+    subscription = _require_subscription(state, fixture.tenant_id)
+    try:
+        billing_plan = None
+        purpose = ChargePurpose.REGULAR
+        if subscription.pending_plan is not None:
+            if (
+                subscription.pending_plan_change_billing_mode
+                is not PlanChangeBillingMode.TARGET_PLAN_FULL_CYCLE
+            ):
+                raise ValueError("modo de cobranca da troca de plano nao suportado.")
+            billing_plan = subscription.pending_plan
+            purpose = ChargePurpose.PLAN_CHANGE
+        elif subscription.reactivation_requested_at is not None:
+            if (
+                subscription.plan.reactivation_billing_mode
+                is not ReactivationBillingMode.CURRENT_PLAN_FULL_CYCLE
+            ):
+                raise ValueError("modo de cobranca da reativacao nao suportado.")
+            purpose = ChargePurpose.REACTIVATION
+
+        commercial_schedule = subscription.paid_cycle_schedule
+        if subscription.plan.credit_policy is not None:
+            if commercial_schedule is None or state.credit_ledger is None:
+                raise ValueError("Contrato comercial sem identidade/persistência de ciclo.")
+            if body.extra_credits_used != 0:
+                raise ValueError("Consumo comercial é calculado pelo servidor, nunca pelo cliente.")
+            if subscription.cancel_at_period_end is not None:
+                raise ValueError("Renovação cancelada; não emitir mensalidade posterior.")
+            index = commercial_schedule.paid_through_index + 1
+            now = datetime.now(timezone.utc)
+            if commercial_schedule.anchor_at is not None:
+                if period_index(commercial_schedule.anchor_at, now) < index:
+                    raise ValueError("A renovação é emitida somente no aniversário.")
+            frozen = state.idempotency.get(fixture.tenant_id, obligation_key(
+                commercial_schedule.obligation_id(fixture.tenant_id, index)))
+            if frozen is not None:
+                return _review_checkout(state, frozen.result, body)
+            closed_extra = Decimal("0.00")
+            if index > 0:
+                previous_id = commercial_schedule.obligation_id(subscription.tenant_id, index - 1)
+                previous = state.credit_ledger.balance(subscription.tenant_id, previous_id)
+                if previous.reserved_credits:
+                    raise ValueError("Uso anterior pendente de reconciliação; não fechar estimativa como consumo.")
+                closed_extra = previous.extra_consumed_amount
+            competence = f"cycle:{index}"
+        else:
+            competence = body.competence
+
+        charge = compute_cycle_charge(
+            subscription,
+            competence=competence,
+            extra_credits_used=body.extra_credits_used,
+            billing_plan=billing_plan,
+            purpose=purpose,
+        )
+        if subscription.plan.credit_policy is not None:
+            lines = [ChargeLineItem(f"Mensalidade antecipada — ciclo {index}", (billing_plan or subscription.plan).monthly_price)]
+            if closed_extra:
+                start, end = commercial_schedule.bounds(index - 1)
+                lines.append(ChargeLineItem(
+                    f"Excedente fechado — {start.isoformat()} / {end.isoformat()}", closed_extra))
+            charge = replace(charge,
+                billing_id=commercial_schedule.obligation_id(subscription.tenant_id, index),
+                line_items=tuple(lines), commercial_cycle_index=index,
+                commercial_lifecycle_id=commercial_schedule.lifecycle_id,
+                commercial_plan=billing_plan or subscription.plan,
+                commercial_gateway_provider=state.billing_gateway.provider,
+                commercial_gateway_mode=state.billing_gateway.mode.value,
+                commercial_due_at=(commercial_schedule.bounds(index)[0] if commercial_schedule.anchor_at is not None
+                    else now.astimezone(COMMERCIAL_TIMEZONE).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)))
+    except ValueError as exc:
+        raise ApiError("VALIDATION_FAILED", str(exc)) from exc
+
+    if subscription.plan.credit_policy is not None:
+        existing_obligation = next((c for _key, c in state.charges.items_for_tenant(fixture.tenant_id)
+                                    if c.billing_id == charge.billing_id), None)
+        if existing_obligation is not None:
+            charge = existing_obligation
+    return _review_checkout(state, charge, body)
+
+
+
 async def create_charge(request: Request) -> JSONResponse:
     fixture, state = _authorize_billing(request, Permission.BILLING_MANAGE)
     idem_key = require_idempotency_key(request)
     body = await parse_body(request, BillingChargeCreate)
     def _prepare_charge():
-        subscription = _require_subscription(state, fixture.tenant_id)
-        try:
-            billing_plan = None
-            purpose = ChargePurpose.REGULAR
-            if subscription.pending_plan is not None:
-                if (
-                    subscription.pending_plan_change_billing_mode
-                    is not PlanChangeBillingMode.TARGET_PLAN_FULL_CYCLE
-                ):
-                    raise ValueError("modo de cobranca da troca de plano nao suportado.")
-                billing_plan = subscription.pending_plan
-                purpose = ChargePurpose.PLAN_CHANGE
-            elif subscription.reactivation_requested_at is not None:
-                if (
-                    subscription.plan.reactivation_billing_mode
-                    is not ReactivationBillingMode.CURRENT_PLAN_FULL_CYCLE
-                ):
-                    raise ValueError("modo de cobranca da reativacao nao suportado.")
-                purpose = ChargePurpose.REACTIVATION
-
-            commercial_schedule = subscription.paid_cycle_schedule
-            if subscription.plan.credit_policy is not None:
-                if commercial_schedule is None or state.credit_ledger is None:
-                    raise ValueError("Contrato comercial sem identidade/persistência de ciclo.")
-                if body.extra_credits_used != 0:
-                    raise ValueError("Consumo comercial é calculado pelo servidor, nunca pelo cliente.")
-                if subscription.cancel_at_period_end is not None:
-                    raise ValueError("Renovação cancelada; não emitir mensalidade posterior.")
-                index = commercial_schedule.paid_through_index + 1
-                now = datetime.now(timezone.utc)
-                if commercial_schedule.anchor_at is not None:
-                    if period_index(commercial_schedule.anchor_at, now) < index:
-                        raise ValueError("A renovação é emitida somente no aniversário.")
-                frozen = state.idempotency.get(fixture.tenant_id, obligation_key(
-                    commercial_schedule.obligation_id(fixture.tenant_id, index)))
-                if frozen is not None:
-                    return frozen.result
-                closed_extra = Decimal("0.00")
-                if index > 0:
-                    previous_id = commercial_schedule.obligation_id(subscription.tenant_id, index - 1)
-                    previous = state.credit_ledger.balance(subscription.tenant_id, previous_id)
-                    if previous.reserved_credits:
-                        raise ValueError("Uso anterior pendente de reconciliação; não fechar estimativa como consumo.")
-                    closed_extra = previous.extra_consumed_amount
-                competence = f"cycle:{index}"
-            else:
-                competence = body.competence
-
-            charge = compute_cycle_charge(
-                subscription,
-                competence=competence,
-                extra_credits_used=body.extra_credits_used,
-                billing_plan=billing_plan,
-                purpose=purpose,
-            )
-            if subscription.plan.credit_policy is not None:
-                lines = [ChargeLineItem(f"Mensalidade antecipada — ciclo {index}", (billing_plan or subscription.plan).monthly_price)]
-                if closed_extra:
-                    start, end = commercial_schedule.bounds(index - 1)
-                    lines.append(ChargeLineItem(
-                        f"Excedente fechado — {start.isoformat()} / {end.isoformat()}", closed_extra))
-                charge = replace(charge,
-                    billing_id=commercial_schedule.obligation_id(subscription.tenant_id, index),
-                    line_items=tuple(lines), commercial_cycle_index=index,
-                    commercial_lifecycle_id=commercial_schedule.lifecycle_id,
-                    commercial_plan=billing_plan or subscription.plan)
-        except ValueError as exc:
-            raise ApiError("VALIDATION_FAILED", str(exc)) from exc
-
-        if subscription.plan.credit_policy is not None:
-            existing_obligation = next((c for _key, c in state.charges.items_for_tenant(fixture.tenant_id)
-                                        if c.billing_id == charge.billing_id), None)
-            if existing_obligation is not None:
-                charge = existing_obligation
-        return charge
+        return _prepare_billing_charge(state, fixture, body)
 
     def _persist_charge(charge, result):
         # Guarda a cobranca pelo id real do gateway -- e assim que o webhook do Asaas

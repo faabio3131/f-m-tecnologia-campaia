@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { AdministrativeStepUpCard } from "@/components/AdministrativeStepUpCard";
 import { BillingSubscriptionSetup } from "@/components/BillingSubscriptionSetup";
 import { CommercialLifecycleActions } from "@/components/CommercialLifecycleActions";
+import { BillingCheckoutPanel } from "@/components/BillingCheckoutPanel";
 import { BillingUsagePanel } from "@/components/BillingUsagePanel";
 import { BillingChargeHistoryPanel } from "@/components/BillingChargeHistoryPanel";
 import { Button } from "@/components/Button";
@@ -43,6 +44,7 @@ function BillingContent({ canManage }: { canManage: boolean }) {
   const [action, setAction] = useState<Action | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [historyVersion, setHistoryVersion] = useState(0);
   const [success, setSuccess] = useState<string | null>(null);
   const inFlight = useRef(false);
   const stepUp = useAdministrativeStepUp();
@@ -123,7 +125,8 @@ function BillingContent({ canManage }: { canManage: boolean }) {
           { label: "Limite de campanhas ativas", value: String(subscription.entitlements?.max_active_campaigns ?? "Não configurado") },
           { label: "Canais", value: subscription.entitlements?.channels.join(", ") || "Nenhum configurado" },
         ]} /></Card>
-        <BillingUsagePanel key={`${subscription.status}:${subscription.plan_id}:${subscription.activated_at}:${subscription.cancel_at_period_end}:${subscription.pending_plan_id}`} canManage={canManage} stepUp={stepUp} />
+        {terms.credit_policy && canManage ? <BillingCheckoutPanel key={`checkout:${subscription.status}:${subscription.plan_id}:${subscription.activated_at}:${subscription.cancel_at_period_end}:${subscription.pending_plan_id}`} stepUp={stepUp} onIssued={() => { setHistoryVersion(value => value + 1); void api.get<BillingSubscription>("/billing/subscription").then(setSubscription).catch(() => undefined); }} /> : null}
+        <BillingUsagePanel key={`usage:${subscription.status}:${subscription.plan_id}:${subscription.activated_at}:${subscription.cancel_at_period_end}:${subscription.pending_plan_id}`} canManage={canManage} stepUp={stepUp} />
         {canManage && !terms.credit_policy ? <>
           <Card><h2 className={styles.title}>Gerenciar assinatura</h2>
             <div className={styles.actions}>
@@ -153,7 +156,7 @@ function BillingContent({ canManage }: { canManage: boolean }) {
       {success ? <p role="status">{success}</p> : null}
       {actionError ? <ErrorState title="Alteração não confirmada" description={actionError} /> : null}
       {stepUp.stepUpMessage ? <p role="alert">{stepUp.stepUpMessage}</p> : null}
-      <BillingChargeHistoryPanel />
+      <BillingChargeHistoryPanel key={historyVersion} />
       <Card><h2 className={styles.title}>Planos disponíveis neste ambiente</h2>
         {catalogError ? <ErrorState title="Catálogo de planos indisponível" description="As condições comerciais ainda não estão disponíveis para consulta neste ambiente." /> : plans.length === 0 ? <p>Nenhum plano configurado.</p> : plans.map((plan) => <StatusPanel key={plan.plan_id} title={plan.name} items={[
           { label: "Mensalidade", value: money(plan.monthly_price, plan.currency) },

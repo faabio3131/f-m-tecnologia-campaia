@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .billing_cycles import COMMERCIAL_TIMEZONE
 from .connectors import SecretRef
 from .infra import IdempotencyStore
 from .payment_gateway import (
@@ -60,6 +61,8 @@ class PaymentGatewaySimulator:
                 provider=self.provider,
                 mode=self.mode,
                 observed_amount=command.amount,
+                observed_due_date=(command.due_at.astimezone(COMMERCIAL_TIMEZONE).date().isoformat()
+                                   if command.due_at is not None else None),
             )
             self.scripted_status.setdefault(
                 resultado.gateway_charge_id, GatewayChargeStatus.PENDING

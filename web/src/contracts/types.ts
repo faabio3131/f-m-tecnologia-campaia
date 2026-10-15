@@ -34,3 +34,5 @@ export type BillingCreditConsent = components["schemas"]["BillingCreditConsent"]
 
 export type StrategyCreditQuote = components["schemas"]["StrategyCreditQuote"];
 export type CreditConfirmation = components["schemas"]["CreditConfirmation"];
+
+export type BillingCheckout = components["schemas"]["BillingCheckout"];

@@ -395,6 +395,31 @@ if __name__ == "__main__":
 
 
 class AsaasHostedInvoiceTests(unittest.TestCase):
+    def test_frozen_dispatch_uses_contracted_due_date_in_sao_paulo_without_late_fees(self):
+        from dataclasses import replace
+        from datetime import datetime, timezone
+        import json
+        posts = []
+        def handler(request):
+            if request.method == 'GET' and request.url.path.endswith('/payments'):
+                return httpx.Response(200, json={'data': []})
+            if request.method == 'GET' and request.url.path.endswith('/customers'):
+                return httpx.Response(200, json={'data': [{'id': 'fixture-customer'}]})
+            if request.method == 'POST' and request.url.path.endswith('/payments'):
+                body = json.loads(request.content); posts.append(body)
+                return httpx.Response(200, json={'id': 'fixture-payment', 'status': 'PENDING',
+                    'value': body['value'], 'dueDate': body['dueDate']})
+            raise AssertionError(str(request.url))
+        gateway = AsaasGateway(config=_config(), transport=httpx.MockTransport(handler))
+        try:
+            result = gateway.dispatch_frozen_charge(replace(_command(), due_at=datetime(2026, 3, 1, 1, tzinfo=timezone.utc)))
+            self.assertEqual(posts[0]['dueDate'], '2026-02-28')
+            self.assertEqual(posts[0]['interest'], {'value': 0})
+            self.assertEqual(posts[0]['fine'], {'value': 0})
+            self.assertEqual(result.observed_due_date, '2026-02-28')
+        finally:
+            gateway._client.close()
+
     def test_recovery_only_reads_and_rejects_ambiguous_or_wrong_references(self):
         payment = {'id': 'pay-recovered', 'status': 'PENDING', 'value': '199.90', 'externalReference': 'idem-1'}
         for listing, outcome in [({'data': []}, 'missing'), ({'data': [payment]}, 'found'),

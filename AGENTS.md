@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@7eb05a41170f18c97a602cad090568efe66ec94e`
+**CURRENT confirmado:** `main@667a646e6d7701173c73cbc26c8be54d3d481daa`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -343,9 +343,11 @@ nenhum componente simulado certifica G5 externo.
 
 WP-R02-07 / PR #51: lifecycle V1 por aniversário, cancelamento ao fim do período pago
 e reativação com nova identidade integrados, CI da PR e pós-merge completamente verdes. Ver
-`docs/WP_R02_07_LIFECYCLE_ANIVERSARIO_20261015.md`. WP-R02-08 em validação: obrigação
-congelada antes do gateway e fence de emissão/recuperação sem redispatch. Ver
-`docs/WP_R02_08_OBRIGACAO_DISPATCH_DURAVEL_20261015.md`. Próximo: checkout/scheduler único. Catálogo real continua
+`docs/WP_R02_07_LIFECYCLE_ANIVERSARIO_20261015.md`. WP-R02-08 / PR #52 integrado: obrigação
+congelada antes do gateway e fence de emissão/recuperação sem redispatch; CI da PR e pós-merge verdes. Ver
+`docs/WP_R02_08_OBRIGACAO_DISPATCH_DURAVEL_20261015.md`. WP-R02-09: checkout revisado,
+aceite, vencimento contratado e ambiente congelado em validação. Ver
+`docs/WP_R02_09_CHECKOUT_REVISADO_20261015.md`. Próximo: scheduler único e fechamento final. Catálogo real continua
 desabilitado; não certificar G5 com simulador ou apenas CI.
 
 **Gate G5:** pagamento real ativa entitlement sem intervenção de desenvolvedor.

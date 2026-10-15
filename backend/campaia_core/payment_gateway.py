@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+from datetime import datetime
 from enum import StrEnum
 from typing import Any, Callable, Protocol
 
@@ -81,6 +82,7 @@ class ChargeCommand:
     currency: str
     competence: str
     idempotency_key: str
+    due_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +93,7 @@ class ChargeResult:
     mode: GatewayMode
     invoice_url: str | None = None
     observed_amount: Decimal | None = None
+    observed_due_date: str | None = None
 
 
 def require_idempotency(command: ChargeCommand) -> None:
@@ -107,6 +110,8 @@ def require_idempotency(command: ChargeCommand) -> None:
         raise PaymentGatewayError(
             PaymentGatewayErrorCode.VALIDATION_REJECTED, "Cobranca sem customer_document."
         )
+    if command.due_at is not None and (command.due_at.tzinfo is None or command.due_at.utcoffset() is None):
+        raise PaymentGatewayError(PaymentGatewayErrorCode.VALIDATION_REJECTED, "Vencimento exige fuso horário.")
     if command.amount <= 0:
         raise PaymentGatewayError(
             PaymentGatewayErrorCode.VALIDATION_REJECTED, "Cobranca deve ser positiva."
