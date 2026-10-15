@@ -197,10 +197,25 @@ class CreditLedgerTests(unittest.TestCase):
                     mutation()
         self.assertEqual(len(self.ledger.entries('a')), 2)
 
+    def test_grace_uses_only_remaining_paid_quota_and_never_extras(self):
+        self.open('grace', included_grace_ends_at=cycle().ends_at + timedelta(days=3))
+        self.consent(cap='50.00', tenant='grace')
+        end = cycle().ends_at
+        for op in ('grace-1', 'grace-2'):
+            self.ledger.decide('grace', 'reserve', cycle_id='cycle-1', operation_id=op,
+                               action='strategy', at=end + timedelta(days=1))
+        with self.assertRaises(CreditLimitExceeded):
+            self.ledger.decide('grace', 'reserve', cycle_id='cycle-1', operation_id='grace-3',
+                               action='strategy', at=end + timedelta(days=1))
+        with self.assertRaises(CreditLedgerError):
+            self.ledger.decide('grace', 'reserve', cycle_id='cycle-1', operation_id='late',
+                               action='strategy', at=end + timedelta(days=3))
+
     def test_invalid_snapshots_and_nonbillable_actions(self):
         for changes in ({'included_credits': -1}, {'extra_credit_price': Decimal('NaN')},
                         {'extra_credit_price': Decimal('0.001')},
                         {'action_weights': (('x', 1), ('x', 2))},
+                        {'action_weights': (('kill_switch', 1),)},
                         {'starts_at': NOW.replace(tzinfo=None)}):
             with self.subTest(changes=changes), self.assertRaises(CreditLedgerError):
                 cycle(**changes)

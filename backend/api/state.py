@@ -492,6 +492,7 @@ class AppState:
             )
 
         self.db = None
+        self.credit_ledger = None
         self._persistent_step_up_store = None
         self._persistent_oauth_state_store = None
 
@@ -526,6 +527,8 @@ class AppState:
                 self.db.table("billing_subscriptions")
             )
             self.charges = PersistentTenantObjectMap(self.db.table("billing_charges"))
+            from .credit_store import PersistentCreditLedger
+            self.credit_ledger = PersistentCreditLedger(self.db.table("credit_journal"))
             self.sessions = PersistentSessionStore(self.db.table("sessions"))
             self._persistent_step_up_store = PersistentStepUpStore(
                 self.db.table("step_up_states")

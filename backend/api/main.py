@@ -31,6 +31,8 @@ from .routes_billing import (
     create_charge,
     get_subscription,
     list_billing_plans,
+    get_billing_usage,
+    set_credit_consent,
     list_billing_charges,
     put_subscription,
     reactivate_billing_subscription,
@@ -179,6 +181,8 @@ routes = [
     Route("/audit-events", list_audit_events, methods=["GET"]),
 
     # Motor de cobranca propria do CampaIA (B11 / ADR-0020).
+    Route("/billing/usage", get_billing_usage, methods=["GET"]),
+    Route("/billing/usage/consent", set_credit_consent, methods=["POST"]),
     Route("/billing/plans", list_billing_plans, methods=["GET"]),
     Route("/billing/subscription", get_subscription, methods=["GET"]),
     Route("/billing/subscription", put_subscription, methods=["PUT"]),

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AdministrativeStepUpCard } from "@/components/AdministrativeStepUpCard";
 import { BillingSubscriptionSetup } from "@/components/BillingSubscriptionSetup";
+import { BillingUsagePanel } from "@/components/BillingUsagePanel";
 import { BillingChargeHistoryPanel } from "@/components/BillingChargeHistoryPanel";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
@@ -120,9 +121,9 @@ function BillingContent({ canManage }: { canManage: boolean }) {
           { label: "Limite de usuários", value: String(subscription.entitlements?.max_users ?? "Não configurado") },
           { label: "Limite de campanhas ativas", value: String(subscription.entitlements?.max_active_campaigns ?? "Não configurado") },
           { label: "Canais", value: subscription.entitlements?.channels.join(", ") || "Nenhum configurado" },
-          { label: "Consumo de créditos", value: "Medição de consumo ainda indisponível" },
         ]} /></Card>
-        {canManage ? <>
+        <BillingUsagePanel canManage={canManage} stepUp={stepUp} />
+        {canManage && !terms.credit_policy ? <>
           <Card><h2 className={styles.title}>Gerenciar assinatura</h2>
             <div className={styles.actions}>
               {subscription.status !== "CANCELED" && terms.cancellation_mode === "IMMEDIATE" ?
@@ -136,7 +137,7 @@ function BillingContent({ canManage }: { canManage: boolean }) {
             </div>
             <p>Trocas de plano e reativações liberam recursos após o pagamento confirmado. O cancelamento imediato bloqueia o acesso aos recursos contratados.</p>
           </Card>
-        </> : null}
+        </> : terms.credit_policy && canManage ? <p>Alterações de plano e encerramento por aniversário aguardam homologação deste contrato.</p> : null}
       </> : <EmptyState title="Nenhuma assinatura configurada" description="Sua organização ainda não possui uma assinatura." />}
       {!subscription && canManage && !catalogError && plans.length > 0 ?
         <BillingSubscriptionSetup plans={plans} stepUp={stepUp} onCreated={setSubscription} /> : null}

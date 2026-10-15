@@ -18,6 +18,9 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import StrEnum
 
+from .billing_cycles import PaidCycleSchedule
+from .credit_ledger import CreditPolicy, ExtraCreditConsent
+
 
 def _d(value: Decimal | int | str) -> Decimal:
     return value if isinstance(value, Decimal) else Decimal(str(value))
@@ -174,6 +177,7 @@ class PlanDefinition:
     reactivation_mode: ReactivationMode | None = None
     reactivation_billing_mode: ReactivationBillingMode | None = None
     dunning_policy: DunningPolicy | None = None
+    credit_policy: CreditPolicy | None = None
 
     def __post_init__(self) -> None:
         if not self.plan_id.strip():
@@ -209,6 +213,12 @@ class PlanDefinition:
             raise ValueError(
                 "max_users historico e entitlements.max_users precisam coincidir."
             )
+        if self.credit_policy is not None:
+            if (not self.included_credits.is_finite()
+                    or self.included_credits != self.included_credits.to_integral_value()
+                    or not self.extra_credit_unit_price.is_finite()
+                    or self.extra_credit_unit_price <= 0):
+                raise ValueError("Contrato de créditos exige franquia inteira e preço extra positivo.")
         targets = [rule.target_plan_id for rule in self.plan_changes]
         if len(set(targets)) != len(targets):
             raise ValueError("plan_changes nao pode repetir target_plan_id.")
@@ -241,6 +251,8 @@ class Subscription:
     grace_period_ends_at: datetime | None = None
     dunning_reminders_sent: int = 0
     last_dunning_at: datetime | None = None
+    paid_cycle_schedule: PaidCycleSchedule | None = None
+    extra_credit_consent: ExtraCreditConsent | None = None
 
     def __post_init__(self) -> None:
         if not self.customer_document.strip():
@@ -291,6 +303,8 @@ class SubscriptionCharge:
     status_observed_at: datetime | None = None
     status_source: str | None = None
     invoice_url: str | None = None
+    commercial_cycle_index: int | None = None
+    commercial_lifecycle_id: str | None = None
 
     @property
     def amount(self) -> Decimal:
@@ -626,6 +640,17 @@ def entitlement_access_is_active(
 
     current = refresh_trial_status(subscription, now=now)
     if current.status is SubscriptionStatus.ACTIVE:
+        if current.plan.credit_policy is not None:
+            schedule = current.paid_cycle_schedule
+            at = now or datetime.now(timezone.utc)
+            if schedule is None or schedule.anchor_at is None:
+                return False
+            if schedule.current_paid_index(at) is not None:
+                return True
+            _start, end = schedule.bounds(schedule.paid_through_index)
+            policy = current.plan.dunning_policy
+            return bool(policy and policy.access_mode is PastDueAccessMode.ALLOW_DURING_GRACE
+                        and end <= at < end + timedelta(days=policy.grace_period_days))
         return True
     if current.status is SubscriptionStatus.TRIAL:
         return True

@@ -450,6 +450,16 @@ class TestAsaasWebhookDedupeSurvivesRestart(PersistenceTestCase):
             headers = {"asaas-access-token": "expected-token"}
 
             c1 = self.new_client()
+            from tests_api.test_billing import _with_catalog
+            with _with_catalog():
+                configured = c1.put("/billing/subscription",
+                    headers={**with_step_up(OWNER), **idem("dedupe-config")},
+                    json={"plan_id": "exemplo-essencial", "customer_document": "11144477735"})
+            self.assertEqual(configured.status_code, 200, configured.text)
+            created = c1.post("/billing/charges",
+                headers={**with_step_up(OWNER), **idem("dedupe-charge")}, json={"competence": "2026-09"})
+            self.assertEqual(created.status_code, 202, created.text)
+            payload["payment"]["id"] = created.json()["gateway_charge_id"]
             first = c1.post("/webhooks/asaas", headers=headers, json=payload)
             self.assertEqual(first.status_code, 200, first.text)
             self.assertTrue(first.json()["accepted"])

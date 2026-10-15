@@ -47,7 +47,7 @@ class AsaasWebhookReceiver:
         self.rejections.append(reason)
         return WebhookVerdict(False, reason, detail)
 
-    def receive(self, *, received_token: str | None, event_id: str) -> WebhookVerdict:
+    def authenticate(self, received_token: str | None) -> WebhookVerdict:
         expected = self.token_resolver()
         if not expected:
             return self._reject(
@@ -58,6 +58,12 @@ class AsaasWebhookReceiver:
             return self._reject(
                 RejectionReason.SIGNATURE_INVALID, "Token do webhook do Asaas nao confere."
             )
+        return WebhookVerdict(True, detail="Autenticado.")
+
+    def receive(self, *, received_token: str | None, event_id: str) -> WebhookVerdict:
+        authenticated = self.authenticate(received_token)
+        if not authenticated:
+            return authenticated
         if not event_id:
             return self._reject(RejectionReason.MISSING_FIELDS, "Evento sem id.")
         if not self.seen_store.mark_if_new(_PROVIDER, event_id):
@@ -93,7 +99,10 @@ def parse_asaas_payment_event(payload: dict[str, Any]) -> AsaasPaymentEvent:
         payment_id = payment["id"]
         asaas_status = payment["status"]
     except (KeyError, TypeError) as exc:
-        raise ValueError(f"Payload de webhook do Asaas incompleto ou malformado: {payload!r}") from exc
+        raise ValueError("Payload de webhook do Asaas incompleto ou malformado.") from exc
+    if any(not isinstance(value, str) or not value.strip()
+           for value in (event_id, event_type, payment_id, asaas_status)):
+        raise ValueError("Campos do webhook devem ser strings não vazias.")
     return AsaasPaymentEvent(
         event_id=event_id,
         event_type=event_type,

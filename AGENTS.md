@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@1586ec120ea8d5ee0a06a9ec704f3719f4cd4254`
+**CURRENT confirmado:** `main@2bfbe10425387432f792e4bb86856d9e4d22f5c1`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -327,10 +327,15 @@ Não reconstruir histórico, cursor ou preservação do link do provedor.
 6. E2E real:
    trial/assinatura -> cobrança -> pagamento -> webhook -> entitlement.
 
-WP-R02-04 / PR #48: fundação interna do ledger comercial em revisão, não integrada
-às chamadas IA/checkout nem ativada no produto. Ver
+WP-R02-04 / PR #48: fundação interna do ledger comercial integrada, com CI pós-merge verde.
+Não integrada às chamadas IA/checkout nem ativada no produto. Ver
 `docs/WP_R02_04_LEDGER_CREDITOS_20261015.md` para limites, testes e próximos passos.
 Não confundir a aprovação da política com conclusão de F5/G5.
+
+WP-R02-05: candidato de ciclo/franquia/consentimento em implementação na branch
+feat/wp-r02-credit-cycle-integration. Escopo e pendências em
+`docs/WP_R02_05_CICLO_FRANQUIA_CONSENTIMENTO_20261015.md`. Não ativar catálogo V1 antes de
+fechar lifecycle, enforcement, medição por entrega e checkout operacional.
 
 **Gate G5:** pagamento real ativa entitlement sem intervenção de desenvolvedor.
 
@@ -708,9 +713,13 @@ Todo WP aplicável precisa:
 
 # 11. STOP CONDITIONS
 
-Solicitar autorização antes de:
+Autorização contínua registrada pelo Diretor em 15/10/2026 às 17:58 (São Paulo):
+executar tarefas, corrigir falhas e prosseguir após verde. Inclui merges após CI completa
+no HEAD exato e verificação pós-merge, sem nova confirmação de rotina. Manter evidências
+e um WP por vez. Não estende autorização a produção, credenciais ou gastos reais.
 
-- merge;
+Solicitar autorização específica antes de:
+
 - deploy;
 - produção;
 - migration real;

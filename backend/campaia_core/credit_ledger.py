@@ -38,6 +38,27 @@ def _money(value: Decimal) -> None:
         raise CreditLedgerError("Money must have cent precision")
 
 
+_FREE_ACTIONS = frozenset({
+    'login', 'signup', 'manual_edit', 'metrics', 'history', 'connect', 'approve',
+    'publish', 'pause', 'resume', 'export', 'kill_switch', 'policy', 'reconcile',
+    'retry', 'fallback',
+})
+
+
+def _validate_weights(action_weights: tuple[tuple[str, int], ...]) -> None:
+    if not isinstance(action_weights, tuple) or not action_weights:
+        raise CreditLedgerError("Frozen action weight snapshot required")
+    seen = set()
+    for pair in action_weights:
+        if not isinstance(pair, tuple) or len(pair) != 2:
+            raise CreditLedgerError("Frozen action weight pairs required")
+        action, weight = pair
+        _id(action)
+        if action in _FREE_ACTIONS or action in seen or type(weight) is not int or weight <= 0:
+            raise CreditLedgerError("Duplicate action or invalid weight")
+        seen.add(action)
+
+
 @dataclass(frozen=True)
 class CreditCycle:
     tenant_id: str
@@ -49,6 +70,7 @@ class CreditCycle:
     extra_credit_price: Decimal
     action_weights: tuple[tuple[str, int], ...]
     trial: bool = False
+    included_grace_ends_at: datetime | None = None
 
     def __post_init__(self) -> None:
         for value in (self.tenant_id, self.cycle_id, self.policy_version):
@@ -62,17 +84,12 @@ class CreditCycle:
         _money(self.extra_credit_price)
         if self.extra_credit_price == 0:
             raise CreditLedgerError("Extra unit price must be positive")
-        if not isinstance(self.action_weights, tuple) or not self.action_weights:
-            raise CreditLedgerError("Frozen action weight snapshot required")
-        seen = set()
-        for pair in self.action_weights:
-            if not isinstance(pair, tuple) or len(pair) != 2:
-                raise CreditLedgerError("Frozen action weight pairs required")
-            action, weight = pair
-            _id(action)
-            if action in seen or type(weight) is not int or weight <= 0:
-                raise CreditLedgerError("Duplicate action or invalid weight")
-            seen.add(action)
+        _validate_weights(self.action_weights)
+        if self.included_grace_ends_at is not None:
+            _instant(self.included_grace_ends_at)
+            if self.trial or self.included_grace_ends_at < self.ends_at:
+                raise CreditLedgerError("Invalid included-credit grace window")
+
 
 
 @dataclass(frozen=True)
@@ -193,12 +210,14 @@ class UsageJournal:
                 if (entry.cycle_id, entry.action) != (cycle_id, action):
                     raise CreditLedgerError('Operation replay conflict')
                 return [e for e in self.entries if e.operation_id == operation_id][-1]
-        if not cycle.starts_at <= at < cycle.ends_at:
+        in_grace = (cycle.included_grace_ends_at is not None
+                    and cycle.ends_at <= at < cycle.included_grace_ends_at)
+        if not cycle.starts_at <= at < cycle.ends_at and not in_grace:
             raise CreditLedgerError('Cycle is not open for reservations')
         balance = self.balance(cycle_id)
         committed = balance.reserved_credits + balance.consumed_credits + credits
         required = max(committed - cycle.included_credits, 0) * cycle.extra_credit_price
-        if required > balance.extra_cap:
+        if (in_grace and committed > cycle.included_credits) or required > balance.extra_cap:
             raise CreditLimitExceeded('Entire operation exceeds available credit consent')
         return self._entry(cycle_id, 'RESERVE', at, operation_id=operation_id,
                            action=action, credits=credits, policy_version=cycle.policy_version)
@@ -226,3 +245,41 @@ class UsageJournal:
         return self._entry(previous.cycle_id, kind, at, operation_id=operation_id,
                            action=previous.action, credits=previous.credits,
                            policy_version=previous.policy_version, reference=reference)
+
+
+@dataclass(frozen=True)
+class CreditPolicy:
+    """External contract snapshot; no price or quota defaults are invented."""
+    version: str
+    action_weights: tuple[tuple[str, int], ...]
+    trial_credits: int
+    trial_max_users: int
+    trial_max_active_campaigns: int
+
+    def __post_init__(self) -> None:
+        _id(self.version)
+        for value in (self.trial_credits, self.trial_max_users, self.trial_max_active_campaigns):
+            if type(value) is not int or value < 1:
+                raise CreditLedgerError('Trial terms must be explicit positive integers')
+        _validate_weights(self.action_weights)
+
+
+
+@dataclass(frozen=True)
+class ExtraCreditConsent:
+    tenant_id: str
+    reference: str
+    actor: str
+    at: datetime
+    cap: Decimal
+    policy_version: str
+    extra_credit_price: Decimal
+
+    def __post_init__(self) -> None:
+        for value in (self.tenant_id, self.reference, self.actor, self.policy_version):
+            _id(value)
+        _instant(self.at)
+        _money(self.cap)
+        _money(self.extra_credit_price)
+        if self.extra_credit_price <= 0:
+            raise CreditLedgerError('Positive accepted unit price required')

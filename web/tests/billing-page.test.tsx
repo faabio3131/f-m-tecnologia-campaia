@@ -38,7 +38,7 @@ describe("Billing Web", () => {
     const fetch = mockRead(); render(<BillingPage />);
     expect(within(await screen.findByRole("region", { name: "Assinatura atual" })).getByText("R$ 12,50")).toBeInTheDocument();
     expect(screen.getByText("R$ 99,00")).toBeInTheDocument();
-    expect(screen.getByText("Medição de consumo ainda indisponível")).toBeInTheDocument();
+    expect(await screen.findByText("Medição de consumo ainda indisponível")).toBeInTheDocument();
     expect(screen.queryByText(sub.customer_document)).not.toBeInTheDocument();
     expect(fetch.mock.calls.every(([, init]) => init?.method === "GET")).toBe(true);
   });
