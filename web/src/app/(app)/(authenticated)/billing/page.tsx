@@ -46,6 +46,7 @@ function BillingContent({ canManage }: { canManage: boolean }) {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [historyVersion, setHistoryVersion] = useState(0);
+  const [observationVersion, setObservationVersion] = useState(0);
   const [success, setSuccess] = useState<string | null>(null);
   const inFlight = useRef(false);
   const stepUp = useAdministrativeStepUp();
@@ -133,8 +134,8 @@ function BillingContent({ canManage }: { canManage: boolean }) {
           { label: "Canais", value: subscription.entitlements?.channels.join(", ") || "Nenhum configurado" },
         ]} /></Card>
         {terms.credit_policy && canManage ? <BillingCheckoutPanel key={`checkout:${subscription.status}:${subscription.plan_id}:${subscription.activated_at}:${subscription.cancel_at_period_end}:${subscription.pending_plan_id}`} stepUp={stepUp} onIssued={refreshBillingRead} /> : null}
-        {terms.credit_policy && canManage && subscription.status === "CANCELED" ? <BillingClosurePanel key={`closure:${subscription.plan_id}:${subscription.activated_at}:${subscription.cancel_at_period_end}`} stepUp={stepUp} onClosed={refreshBillingRead} /> : null}
-        <BillingUsagePanel key={`usage:${subscription.status}:${subscription.plan_id}:${subscription.activated_at}:${subscription.cancel_at_period_end}:${subscription.pending_plan_id}`} canManage={canManage} stepUp={stepUp} />
+        {terms.credit_policy && canManage && subscription.status === "CANCELED" ? <BillingClosurePanel key={`closure:${observationVersion}:${subscription.plan_id}:${subscription.activated_at}:${subscription.cancel_at_period_end}`} stepUp={stepUp} onClosed={refreshBillingRead} /> : null}
+        <BillingUsagePanel key={`usage:${observationVersion}:${subscription.status}:${subscription.plan_id}:${subscription.activated_at}:${subscription.cancel_at_period_end}:${subscription.pending_plan_id}`} canManage={canManage} stepUp={stepUp} />
         {canManage && !terms.credit_policy ? <>
           <Card><h2 className={styles.title}>Gerenciar assinatura</h2>
             <div className={styles.actions}>
@@ -165,6 +166,7 @@ function BillingContent({ canManage }: { canManage: boolean }) {
       {actionError ? <ErrorState title="Alteração não confirmada" description={actionError} /> : null}
       {stepUp.stepUpMessage ? <p role="alert">{stepUp.stepUpMessage}</p> : null}
       <BillingChargeHistoryPanel key={historyVersion} canManage={canManage} stepUp={stepUp} onReconciled={() => {
+        setObservationVersion(value => value + 1);
         void api.get<BillingSubscription>("/billing/subscription").then(setSubscription).catch(() => undefined);
       }} />
       <Card><h2 className={styles.title}>Planos disponíveis neste ambiente</h2>

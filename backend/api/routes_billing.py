@@ -21,6 +21,7 @@ from uuid import uuid4
 from campaia_core.credit_ledger import ExtraCreditConsent
 from campaia_core.billing_cycles import PaidCycleSchedule, period_index, COMMERCIAL_TIMEZONE
 from .billing_closure import record_closed_lifecycle, closure_quote, final_charge, close_without_invoice, require_final_usage_resolved, result_key as closure_result_key
+from .billing_void import withdrawal_quote, withdrawal_state, withdrawal_observed_at, withdraw_unpaid_renewal, verified_void, intent_key as void_intent_key
 from .billing_receipts import observe_payment, require_no_payment_review, has_payment_review, payment_access_is_blocked
 from .billing_checkout import checkout_quote
 from .billing_dispatch import execute_invoice, obligation_key
@@ -74,6 +75,7 @@ from .helpers import parse_body
 from .models import (
     ApiModel,
     BillingCreditConsentRequest,
+    BillingWithdrawalRequest,
     BillingCancellationRequest,
     BillingChargeCreate,
     BillingClosureRequest,
@@ -446,6 +448,7 @@ async def reactivate_billing_subscription(request: Request) -> JSONResponse:
         try:
             if subscription.plan.credit_policy is not None and subscription.status in {SubscriptionStatus.CANCELED, SubscriptionStatus.EXPIRED}:
                 if any(charge.gateway_status == "OVERDUE" and charge.status is not ChargeStatus.SETTLED
+                       and not verified_void(state, fixture.tenant_id, charge.billing_id)
                        for _key, charge in state.charges.items_for_tenant(fixture.tenant_id)):
                     raise ValueError("Existe dívida vencida não conciliada; resolva antes de nova contratação.")
             require_no_payment_review(state, fixture.tenant_id)
@@ -550,12 +553,15 @@ async def list_billing_charges(request: Request) -> JSONResponse:
         status_source=charge.status_source,
         gateway_observed_amount=(str(charge.gateway_observed_amount) if charge.gateway_observed_amount is not None else None),
         payment_reconciliation_state=charge.payment_reconciliation_state,
+        withdrawal_state=withdrawal_state(state, charge),
+        withdrawal_observed_at=withdrawal_observed_at(state, charge),
+        withdrawal_fingerprint=withdrawal_quote(state, key, charge),
         reconciliation_available=(charge.commercial_lifecycle_id is not None
             and (charge.commercial_gateway_provider or charge.gateway_provider) == state.billing_gateway.provider
             and (charge.commercial_gateway_mode or charge.gateway_mode) == state.billing_gateway.mode.value
             and callable(getattr(state.billing_gateway, 'inspect_charge', None))),
         invoice_url=(safe_asaas_invoice_url(charge.invoice_url, charge.gateway_mode)
-                     if charge.gateway_provider == "ASAAS" else None),
+                     if charge.gateway_provider == "ASAAS" and withdrawal_state(state, charge) is None else None),
     ) for key, charge in page],
         next_cursor=page[-1][0] if start + 50 < len(rows) else None)
     return JSONResponse(response.model_dump(mode="json"))
@@ -793,6 +799,14 @@ async def create_charge(request: Request) -> JSONResponse:
     return JSONResponse(result, status_code=202)
 
 
+async def withdraw_billing_renewal(request: Request) -> JSONResponse:
+    fixture, state = _authorize_billing(request, Permission.BILLING_MANAGE)
+    key = require_idempotency_key(request)
+    body = await parse_body(request, BillingWithdrawalRequest)
+    return JSONResponse(withdraw_unpaid_renewal(state, fixture,
+        request.path_params['gatewayChargeId'], key, body.model_dump()))
+
+
 async def reconcile_billing_payment(request: Request) -> JSONResponse:
     fixture, state = _authorize_billing(request, Permission.BILLING_MANAGE)
     key = require_idempotency_key(request)
@@ -892,6 +906,14 @@ def _apply_verified_payment_event(state, charge, event, *, observed_at, source="
         state.audit.append(tenant_id=charge.tenant_id, actor="asaas", actor_kind="EXTERNAL_PROVIDER",
                            action="BILLING_STALE_OVERDUE_IGNORED", target=charge.billing_id)
         return JSONResponse({"accepted": True, "processed": False, "status": status.value})
+    void_pending = state.idempotency.get(charge.tenant_id, void_intent_key(charge.billing_id)) is not None
+    if void_pending and event.event_type == "PAYMENT_RESTORED":
+        state.charges[event.payment_id] = replace(charge, gateway_status=status.value,
+            payment_reconciliation_state="CANCELLATION_CONFLICT", status_source=source, status_observed_at=observed_at)
+        state.audit.append(tenant_id=charge.tenant_id, actor="asaas", actor_kind="EXTERNAL_PROVIDER",
+            action="BILLING_WITHDRAWN_INVOICE_RESTORED", target=charge.billing_id)
+        return JSONResponse({"accepted": True, "processed": True, "reconciled": False,
+                             "reconciliation_state": "CANCELLATION_CONFLICT"})
     is_reversal = (event.event_type.startswith("PAYMENT_REFUND") or "CHARGEBACK" in event.event_type
                    or event.event_type in {"PAYMENT_PARTIALLY_REFUNDED", "PAYMENT_RECEIVED_IN_CASH_UNDONE"})
     if charge.commercial_lifecycle_id is not None and (
@@ -987,7 +1009,9 @@ def _apply_verified_payment_event(state, charge, event, *, observed_at, source="
     state.charges[event.payment_id] = replace(state.charges[event.payment_id], status=ChargeStatus.SETTLED)
 
     subscription = state.subscriptions.get(charge.tenant_id)
-    if subscription is not None and charge.purpose is not ChargePurpose.FINAL_USAGE:
+    if void_pending:
+        state.charges[event.payment_id] = replace(state.charges[event.payment_id], payment_reconciliation_state="CANCELLATION_CONFLICT")
+    if subscription is not None and charge.purpose is not ChargePurpose.FINAL_USAGE and not void_pending:
         was_past_due = subscription.status is SubscriptionStatus.PAST_DUE
         try:
             schedule = subscription.paid_cycle_schedule
@@ -1054,7 +1078,9 @@ def _apply_verified_payment_event(state, charge, event, *, observed_at, source="
     )
     result = {"accepted": True, "processed": True, "billing_id": charge.billing_id}
     if charge.commercial_lifecycle_id is not None:
-        result["reconciled"] = True
+        result["reconciled"] = not void_pending
+        if void_pending:
+            result["reconciliation_state"] = "CANCELLATION_CONFLICT"
     return JSONResponse(result)
 
 

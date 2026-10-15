@@ -312,7 +312,25 @@ class AsaasGateway:
             provider=self.provider, mode=self.mode,
             observed_amount=parse_observed_amount(body.get('value')),
             observed_due_date=body.get('dueDate'), source_status=body['status'],
+            deleted=body.get('deleted') if isinstance(body.get('deleted'), bool) else None,
             invoice_url=safe_asaas_invoice_url(body.get('invoiceUrl'), self.mode))
+
+    def void_charge(self, gateway_charge_id: str, command: ChargeCommand) -> ChargeResult:
+        """Withdraw an unpaid invoice, never a refund. Caller owns the durable fence."""
+        from urllib.parse import quote
+        current = self.inspect_charge(gateway_charge_id, command)
+        if (current.source_status not in {'PENDING', 'OVERDUE'}
+                or current.observed_amount != command.amount or current.deleted is None):
+            raise PaymentGatewayError(PaymentGatewayErrorCode.VALIDATION_REJECTED,
+                                      "Retirada exige cobrança não paga e dados compatíveis.")
+        if current.deleted:
+            return current
+        response = self._client.delete(f"/payments/{quote(gateway_charge_id, safe='')}")
+        _raise_for_response(response)
+        body = response.json()
+        if body.get('id') != gateway_charge_id or body.get('deleted') is not True:
+            raise PaymentGatewayError(PaymentGatewayErrorCode.UNKNOWN, "Retirada externa não confirmada.")
+        return self.inspect_charge(gateway_charge_id, command)
 
     def get_charge_status(self, gateway_charge_id: str) -> GatewayChargeStatus:
         response = self._client.get(f"/payments/{gateway_charge_id}")

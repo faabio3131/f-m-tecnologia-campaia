@@ -116,3 +116,31 @@ it("exige autenticacao recente e preserva a chave apos consulta incerta sem envi
   expect(proof.consumePresentedToken).toHaveBeenCalledOnce();
   expect(screen.queryByText("Confirmada")).not.toBeInTheDocument();
 });
+
+it("revisa retirada de fatura aberta e conserva confirmacao apos incerteza sem afirmar reembolso", async () => {
+  const proof = stepUp(); const observed = vi.fn(); let withdrawn = false; const posts: RequestInit[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation((_input, init) => {
+    if (init?.method === "POST") {
+      posts.push(init);
+      if (posts.length === 1) return Promise.reject(new TypeError("unknown"));
+      withdrawn = true; return json(200, { state: "VOID" });
+    }
+    return json(200, { items: [{ ...item, withdrawal_state: withdrawn ? "VOID" : null,
+      withdrawal_fingerprint: withdrawn ? null : "a".repeat(64) }], next_cursor: null });
+  });
+  const user = userEvent.setup();
+  render(<BillingChargeHistoryPanel canManage stepUp={proof} onReconciled={observed} />);
+  await user.click(await screen.findByRole("button", { name: "Revisar retirada da fatura aberta" }));
+  expect(posts).toHaveLength(0);
+  expect(screen.getByRole("button", { name: "Confirmar retirada da fatura aberta" })).toBeDisabled();
+  await user.click(screen.getByRole("checkbox", { name: /Conferi a fatura/ }));
+  await user.click(screen.getByRole("button", { name: "Confirmar retirada da fatura aberta" }));
+  await screen.findByText(/Retirada não confirmada/);
+  await user.click(screen.getByRole("button", { name: "Confirmar retirada da fatura aberta" }));
+  await screen.findByText("Retirada confirmada — sem quitação");
+  expect(screen.getByText(/Nenhum pagamento ou reembolso foi registrado/)).toBeInTheDocument();
+  expect(posts[0].body).toBe(posts[1].body);
+  expect(new Headers(posts[0].headers).get("Idempotency-Key")).toBe(new Headers(posts[1].headers).get("Idempotency-Key"));
+  expect(observed).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("link")).not.toBeInTheDocument();
+});

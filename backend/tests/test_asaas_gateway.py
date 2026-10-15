@@ -92,6 +92,32 @@ class AsaasGatewayRequestShapeTests(unittest.TestCase):
     """Verifica a forma da requisicao e o parsing da resposta contra um transporte HTTP
     falso — nunca uma chamada de rede real (nenhuma credencial existe nesta sandbox)."""
 
+    def test_withdrawal_checks_unpaid_identity_then_delete_and_readback_without_refund(self):
+        calls = []; deleted = False
+        def handler(request):
+            nonlocal deleted
+            calls.append(request.method)
+            if request.method == 'DELETE':
+                deleted = True
+                return httpx.Response(200, json={'id': 'pay-known', 'deleted': True})
+            return httpx.Response(200, json={'id': 'pay-known', 'externalReference': 'idem-1',
+                'status': 'PENDING', 'value': '199.90', 'deleted': deleted})
+        result = self._gateway(handler).void_charge('pay-known', _command())
+        self.assertTrue(result.deleted)
+        self.assertEqual(calls, ['GET', 'DELETE', 'GET'])
+
+    def test_withdrawal_refuses_paid_unknown_and_mismatched_invoice_without_delete(self):
+        for status, amount, deleted in [('CONFIRMED', '199.90', False), ('UNKNOWN', '199.90', False),
+                                         ('PENDING', '0.00', False), ('PENDING', '199.90', None)]:
+            calls = []
+            def handler(request):
+                calls.append(request.method)
+                return httpx.Response(200, json={'id': 'pay-known', 'externalReference': 'idem-1',
+                    'status': status, 'value': amount, 'deleted': deleted})
+            with self.assertRaises(PaymentGatewayError):
+                self._gateway(handler).void_charge('pay-known', _command())
+            self.assertEqual(calls, ['GET'])
+
     def test_receipt_inspection_uses_only_get_and_binds_frozen_external_reference(self):
         calls = []
         def handler(request):
