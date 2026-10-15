@@ -1148,7 +1148,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/StepUpRequired' }
         '409':
-          description: Troca de plano exige fluxo explicito
+          description: Troca de plano exige fluxo explicito; criacao inicial duplicada ou condicoes alteradas sao recusadas
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -1485,6 +1485,14 @@ components:
         customer_document:
           type: string
           description: CPF/CNPJ exigido pelo contrato de cobranca; nunca inferido.
+        initial_only:
+          type: boolean
+          default: false
+          description: Quando true, recusa assinatura existente sem altera-la
+        expected_plan_fingerprint:
+          type: [string, 'null']
+          pattern: '^[a-f0-9]{64}$'
+          description: Versao das condicoes selecionadas; mudanca no catalogo exige nova confirmacao
         start_trial:
           type: boolean
           default: false
@@ -1508,10 +1516,11 @@ components:
 
     BillingPlan:
       type: object
-      required: [plan_id, name, currency, monthly_price, included_credits,
+      required: [fingerprint, plan_id, name, currency, monthly_price, included_credits,
                  extra_credit_unit_price, trial_days, cancellation_mode,
                  reactivation_mode, reactivation_billing_mode, plan_changes]
       properties:
+        fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
         plan_id: { type: string }
         name: { type: string }
         currency: { type: string, enum: [BRL] }

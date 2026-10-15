@@ -911,6 +911,13 @@ export interface components {
             plan_id: string;
             /** @description CPF/CNPJ exigido pelo contrato de cobranca; nunca inferido. */
             customer_document: string;
+            /**
+             * @description Quando true, recusa assinatura existente sem altera-la
+             * @default false
+             */
+            initial_only: boolean;
+            /** @description Versao das condicoes selecionadas; mudanca no catalogo exige nova confirmacao */
+            expected_plan_fingerprint?: string | null;
             /** @default false */
             start_trial: boolean;
         };
@@ -925,6 +932,7 @@ export interface components {
             resources: string[];
         };
         BillingPlan: {
+            fingerprint: string;
             plan_id: string;
             name: string;
             /** @enum {string} */
@@ -2887,7 +2895,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["StepUpRequired"];
-            /** @description Troca de plano exige fluxo explicito */
+            /** @description Troca de plano exige fluxo explicito; criacao inicial duplicada ou condicoes alteradas sao recusadas */
             409: {
                 headers: {
                     [name: string]: unknown;

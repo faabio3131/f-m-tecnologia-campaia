@@ -1,0 +1,32 @@
+.title {
+  margin: 0 0 var(--campaia-space-4);
+  font-size: var(--campaia-font-size-lg);
+}
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--campaia-space-3);
+}
+.select {
+  width: 100%;
+  padding: var(--campaia-space-3);
+  color: var(--campaia-color-text);
+  background: var(--campaia-color-surface);
+  border: 1px solid var(--campaia-color-border);
+  border-radius: var(--campaia-radius-sm);
+}
+.description {
+  color: var(--campaia-color-text-muted);
+  margin: 0;
+}
+.choice,
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--campaia-space-3);
+}
+.actions button {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}

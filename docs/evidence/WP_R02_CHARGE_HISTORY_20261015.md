@@ -87,3 +87,10 @@ HUMAN_DECISION: tabela/políticas comerciais reais; EXTERNAL_CREDENTIAL: credenc
 
 Sem merge/deploy, migration real, credencial real, gateway ligado, pagamento ou anúncio.
 Cloud SQL não foi ligado nesta execução; última prova externa permanece STOPPED / NEVER.
+
+## Adendo — integração autorizada WP-R02-02
+
+PR #46 integrada após autorização expressa em main@f3428e6eb4a2c476a258d1f2bb7c2cb4c6907ce2.
+CI pós-merge no SHA exato: Backend/PostgreSQL 38775081449, Frontend/E2E 38775081492,
+F4 38775081381, todas success. WP-R02-02 DONE_VERIFIED nesse escopo. Registros anteriores de
+integração/CI pendentes são SUPERSEDED. F5/G5 continuam PARTIAL. Sem deploy/religamento do banco.

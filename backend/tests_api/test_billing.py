@@ -955,3 +955,88 @@ class BillingHistoryTests(unittest.TestCase):
         ]:
             state.charges[key] = replace(original, gateway_provider='ASAAS', gateway_mode=mode, invoice_url=url)
             assert client.get('/billing/charges', headers=OWNER).json()['items'][0]['invoice_url'] == expected
+
+
+class BillingInitialEntryTests(unittest.TestCase):
+    def _body(self, client, *, trial=False):
+        with _with_catalog():
+            plan = client.get('/billing/plans', headers=OWNER).json()['items'][0]
+        return {'plan_id': plan['plan_id'], 'customer_document': '11144477735',
+                'start_trial': trial, 'initial_only': True,
+                'expected_plan_fingerprint': plan['fingerprint']}
+
+    def test_initial_entry_is_explicit_payment_gated_and_replay_safe(self):
+        client = make_client()
+        body = self._body(client)
+        headers = {**with_step_up(OWNER), **unique_idem()}
+        with _with_catalog():
+            response = client.put('/billing/subscription', headers=headers, json=body)
+            replay = client.put('/billing/subscription', headers=headers, json=body)
+            second = client.put('/billing/subscription', headers={**with_step_up(OWNER), **unique_idem()}, json={**body, 'customer_document': 'different'})
+        assert response.status_code == 200, response.text
+        assert response.json()['status'] == 'PENDING_PAYMENT'
+        assert response.json()['entitlement_access_active'] is False
+        assert response.json() == replay.json()
+        assert second.status_code == 409, second.text
+        assert client.get('/billing/subscription', headers=OWNER).json()['customer_document'] == '11144477735'
+        assert not client.app.state.campaia.charges
+
+    def test_initial_entry_requires_review_rbac_and_stepup(self):
+        client = make_client()
+        body = self._body(client)
+        for headers, payload, status in [
+            ({**OWNER, **unique_idem()}, body, 403),
+            ({**with_step_up(MARKETER), **unique_idem()}, body, 403),
+            ({**with_step_up(OWNER), **unique_idem()}, {**body, 'expected_plan_fingerprint': None}, 422),
+            ({**with_step_up(OWNER), **unique_idem()}, {**body, 'tenant_id': 'other'}, 422),
+        ]:
+            with _with_catalog():
+                response = client.put('/billing/subscription', headers=headers, json=payload)
+            assert response.status_code == status, response.text
+        assert not client.app.state.campaia.subscriptions
+
+    def test_changed_terms_are_rejected_without_starting_trial_or_subscription(self):
+        client = make_client()
+        body = self._body(client, trial=True)
+        from unittest.mock import patch
+        from campaia_core.plan_catalog import load_plan_catalog
+        with _with_catalog():
+            original = load_plan_catalog()
+        for modified in [replace(original[body['plan_id']], monthly_price=original[body['plan_id']].monthly_price + 1),
+                         replace(original[body['plan_id']], trial_days=99)]:
+            catalog = {**original, body['plan_id']: modified}
+            with patch('api.routes_billing.load_plan_catalog', return_value=catalog):
+                response = client.put('/billing/subscription', headers={**with_step_up(OWNER), **unique_idem()}, json=body)
+            assert response.status_code == 409, response.text
+            assert response.json()['code'] == 'BILLING_PLAN_CHANGED'
+        assert not client.app.state.campaia.subscriptions
+
+    def test_explicit_trial_cannot_be_restarted_by_second_initial_request(self):
+        client = make_client()
+        body = self._body(client, trial=True)
+        with _with_catalog():
+            first = client.put('/billing/subscription', headers={**with_step_up(OWNER), **unique_idem()}, json=body)
+            second = client.put('/billing/subscription', headers={**with_step_up(OWNER), **unique_idem()}, json=body)
+        assert first.json()['status'] == 'TRIAL'
+        assert first.json()['entitlement_access_active'] is True
+        assert second.status_code == 409, second.text
+        assert client.get('/billing/subscription', headers=OWNER).json() == first.json()
+        assert client.get('/billing/subscription', headers=OTHER_OWNER).status_code == 404
+
+    def test_document_update_does_not_reprice_existing_contract_or_change_lifecycle(self):
+        from unittest.mock import patch
+        from campaia_core.plan_catalog import load_plan_catalog
+        client = make_client()
+        original = _put_subscription(client).json()
+        with _with_catalog():
+            catalog = load_plan_catalog()
+        plan_id = original['plan_id']
+        changed = replace(catalog[plan_id], monthly_price=catalog[plan_id].monthly_price + 100,
+                          trial_days=99)
+        with patch('api.routes_billing.load_plan_catalog', return_value={**catalog, plan_id: changed}):
+            response = client.put('/billing/subscription', headers={**with_step_up(OWNER), **unique_idem()},
+                json={'plan_id': plan_id, 'customer_document': 'updated-document'})
+        assert response.status_code == 200, response.text
+        assert response.json()['commercial_terms'] == original['commercial_terms']
+        assert response.json()['status'] == original['status']
+        assert response.json()['customer_document'] == 'updated-document'

@@ -9,6 +9,7 @@ const context = vi.hoisted(() => ({ tenant: "a", roles: ["OWNER"], ready: true }
 vi.mock("@/providers/AuthProvider", () => ({ useAuth: () => ({ session: { tenant_id: context.tenant, user_id: "owner" }, me: { roles: context.roles } }) }));
 vi.mock("@/hooks/useAdministrativeStepUp", () => ({ useAdministrativeStepUp: () => ({ ready: context.ready, testMode: true, headers: () => ({ "x-step-up-token": "fresh-proof" }), consumePresentedToken: vi.fn(), noteError: vi.fn(), onIdToken: vi.fn(), stepUpMessage: null }) }));
 const plan: BillingPlan = {
+  fingerprint: "a".repeat(64),
   plan_id: "test-basic", name: "Plano contratado", currency: "BRL", monthly_price: "12.50",
   included_credits: "30", extra_credit_unit_price: "0.10", trial_days: 7,
   cancellation_mode: "IMMEDIATE", reactivation_mode: "PAYMENT_REQUIRED",
@@ -115,5 +116,90 @@ describe("Billing Web", () => {
     expect(screen.queryByText("Assinatura atual")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Confirmar alteração" })).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByText("Nenhuma assinatura configurada")).toBeInTheDocument());
+  });
+});
+
+
+describe("Entrada comercial pela Web", () => {
+  it("revisa plano e documento antes de iniciar trial; nao emite cobranca", async () => {
+    const read = mockRead({ code: "NOT_FOUND" }, 404);
+    const impl = read.getMockImplementation()!;
+    let submitted: unknown;
+    read.mockImplementation((input, init) => {
+      if (init?.method === "PUT") {
+        submitted = JSON.parse(String(init.body));
+        return response(200, { ...sub, status: "TRIAL", trial_ends_at: "2026-10-22T00:00:00Z" });
+      }
+      return impl(input, init);
+    });
+    const user = userEvent.setup(); render(<BillingPage />);
+    await user.selectOptions(await screen.findByLabelText("Plano"), "test-basic");
+    await user.type(screen.getByLabelText("CPF ou CNPJ do titular"), "11144477735");
+    await user.click(screen.getByLabelText("Iniciar período de teste de 7 dias"));
+    await user.click(screen.getByRole("button", { name: "Revisar contratação" }));
+    expect(submitted).toBeUndefined();
+    expect(screen.getByText("Período de teste: 7 dias")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Confirmar contratação" }));
+    expect(await screen.findByText("Assinatura atual")).toBeInTheDocument();
+    expect(submitted).toEqual({ plan_id: "test-basic", customer_document: "11144477735", start_trial: true, initial_only: true, expected_plan_fingerprint: plan.fingerprint });
+    expect(read.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+    expect(screen.queryByLabelText("CPF ou CNPJ do titular")).not.toBeInTheDocument();
+  });
+  it("entrada sem trial aguarda pagamento e nao libera acesso", async () => {
+    const read = mockRead({ code: "NOT_FOUND" }, 404); const impl = read.getMockImplementation()!;
+    read.mockImplementation((input, init) => init?.method === "PUT" ? response(200, { ...sub, status: "PENDING_PAYMENT", entitlement_access_active: false }) : impl(input, init));
+    const user = userEvent.setup(); render(<BillingPage />);
+    await user.selectOptions(await screen.findByLabelText("Plano"), "test-basic");
+    await user.type(screen.getByLabelText("CPF ou CNPJ do titular"), "11144477735");
+    await user.click(screen.getByRole("button", { name: "Revisar contratação" }));
+    await user.click(screen.getByRole("button", { name: "Confirmar contratação" }));
+    expect(await screen.findByText("Aguardando pagamento")).toBeInTheDocument();
+    expect(screen.getByText("Bloqueado")).toBeInTheDocument();
+  });
+  it("mantem chave e corpo no retry apos falha e envia CSRF/step-up", async () => {
+    const read = mockRead({ code: "NOT_FOUND" }, 404); const impl = read.getMockImplementation()!;
+    const writes: RequestInit[] = [];
+    read.mockImplementation((input, init) => {
+      if (init?.method === "PUT") {
+        writes.push(init);
+        return writes.length === 1 ? Promise.reject(new TypeError("network")) : response(200, { ...sub, status: "PENDING_PAYMENT" });
+      }
+      return impl(input, init);
+    });
+    const user = userEvent.setup(); render(<BillingPage />);
+    await user.selectOptions(await screen.findByLabelText("Plano"), "test-basic");
+    await user.type(screen.getByLabelText("CPF ou CNPJ do titular"), "11144477735");
+    await user.click(screen.getByRole("button", { name: "Revisar contratação" }));
+    await user.click(screen.getByRole("button", { name: "Confirmar contratação" }));
+    await screen.findByText("Contratação não confirmada");
+    await user.click(screen.getByRole("button", { name: "Confirmar contratação" }));
+    await screen.findByText("Assinatura atual");
+    expect(writes[0].body).toBe(writes[1].body);
+    const first = new Headers(writes[0].headers); const second = new Headers(writes[1].headers);
+    expect(first.get("idempotency-key")).toBe(second.get("idempotency-key"));
+    expect(first.get("x-csrf-token")).toBe("csrf");
+    expect(first.get("x-step-up-token")).toBe("fresh-proof");
+  });
+  it("exige step-up para confirmar e esconde formulario de papel somente de leitura", async () => {
+    context.ready = false; mockRead({ code: "NOT_FOUND" }, 404);
+    const user = userEvent.setup(); const view = render(<BillingPage />);
+    await user.selectOptions(await screen.findByLabelText("Plano"), "test-basic");
+    await user.type(screen.getByLabelText("CPF ou CNPJ do titular"), "11144477735");
+    await user.click(screen.getByRole("button", { name: "Revisar contratação" }));
+    expect(screen.getByRole("button", { name: "Confirmar contratação" })).toBeDisabled();
+    context.roles = ["ADMIN"]; context.tenant = "readonly"; view.rerender(<BillingPage />);
+    await screen.findByText("Nenhuma assinatura configurada");
+    expect(screen.queryByLabelText("CPF ou CNPJ do titular")).not.toBeInTheDocument();
+  });
+  it("recusa condicoes alteradas sem assumir assinatura criada", async () => {
+    const read = mockRead({ code: "NOT_FOUND" }, 404); const impl = read.getMockImplementation()!;
+    read.mockImplementation((input, init) => init?.method === "PUT" ? response(409, { code: "BILLING_PLAN_CHANGED", message: "As condições do plano mudaram." }) : impl(input, init));
+    const user = userEvent.setup(); render(<BillingPage />);
+    await user.selectOptions(await screen.findByLabelText("Plano"), "test-basic");
+    await user.type(screen.getByLabelText("CPF ou CNPJ do titular"), "11144477735");
+    await user.click(screen.getByRole("button", { name: "Revisar contratação" }));
+    await user.click(screen.getByRole("button", { name: "Confirmar contratação" }));
+    expect(await screen.findByText("As condições do plano mudaram.")).toBeInTheDocument();
+    expect(screen.queryByText("Assinatura atual")).not.toBeInTheDocument();
   });
 });

@@ -495,6 +495,8 @@ class BillingSubscriptionUpsert(ApiModel):
     #: Trial e opt-in explicito. False cria assinatura PENDING_PAYMENT.
     #: A duracao nunca vem do cliente; vem do catalogo comercial do plano.
     start_trial: bool = False
+    initial_only: bool = False
+    expected_plan_fingerprint: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
 
 
 class BillingPlanChangeRequest(ApiModel):
@@ -516,6 +518,7 @@ class BillingPlanChangeRuleResponse(BaseModel):
 
 
 class BillingPlanResponse(BaseModel):
+    fingerprint: str
     plan_id: str
     name: str
     currency: str
