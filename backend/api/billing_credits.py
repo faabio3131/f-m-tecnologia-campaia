@@ -7,6 +7,7 @@ from campaia_core.credit_ledger import CreditCycle, CreditLedgerError
 from campaia_core.subscription import SubscriptionStatus, PastDueAccessMode, refresh_trial_status, entitlement_access_is_active
 
 from .errors import ApiError
+from .billing_receipts import payment_access_is_blocked
 
 
 def cycle_snapshot(subscription, *, at: datetime):
@@ -103,8 +104,8 @@ def usage_payload(state, subscription, *, at: datetime | None = None) -> dict:
             if balance.extra_committed_amount * 100 >= balance.extra_cap * level:
                 alerts.append(f'EXTRA_CAP_{level}')
     return {
-        'access_active': entitlement_access_is_active(current, now=now),
-        'can_authorize_extras': (entitlement_access_is_active(current, now=now) and not snapshot.trial
+        'access_active': entitlement_access_is_active(current, now=now) and not payment_access_is_blocked(state, current, at=now),
+        'can_authorize_extras': (entitlement_access_is_active(current, now=now) and not payment_access_is_blocked(state, current, at=now) and not snapshot.trial
                                  and snapshot.starts_at <= now < snapshot.ends_at),
         'alerts': alerts,
         'availability': 'AVAILABLE',

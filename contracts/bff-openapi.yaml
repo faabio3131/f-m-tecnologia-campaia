@@ -1434,6 +1434,46 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationError' }
 
+  /billing/charges/{gatewayChargeId}/reconcile:
+    post:
+      tags: [Billing]
+      summary: Consulta recebimento no provedor e concilia sem emitir outra cobrança
+      description: GET externo fora da transação; valor/status vêm apenas do provedor vinculado à obrigação do tenant.
+      operationId: reconcileBillingPayment
+      security: [cookieAuth: []]
+      parameters:
+        - name: gatewayChargeId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        '200':
+          description: Observação conferida ou pendente; não aceita comprovante/status fornecido pelo cliente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingWebhookReceipt' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Contexto ou provedor/ambiente divergente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Consulta externa não confirmada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /billing/charges:
     get:
       tags: [Billing]
@@ -1745,6 +1785,7 @@ components:
         [tenant_id, customer_ref, customer_document, plan_id, plan_name, status,
          commercial_terms, entitlement_access_active]
       properties:
+        payment_review_required: { type: boolean }
         commercial_terms:
           description: Snapshot contratado; nao substituido por alteracoes posteriores do catalogo
           $ref: '#/components/schemas/BillingPlan'
@@ -1799,6 +1840,9 @@ components:
         currency: { type: string }
         amount: { type: string }
         plan_id: { type: [string, 'null'] }
+        gateway_observed_amount: { type: [string, 'null'] }
+        payment_reconciliation_state: { type: [string, 'null'] }
+        reconciliation_available: { type: boolean }
         purpose: { type: string, enum: [REGULAR, PLAN_CHANGE, REACTIVATION, FINAL_USAGE] }
         created_at: { type: [string, 'null'], format: date-time }
         gateway_status: { type: [string, 'null'] }
@@ -2016,6 +2060,12 @@ components:
       required: [accepted]
       properties:
         accepted: { type: boolean }
+        reconciled: { type: boolean }
+        reconciliation_state: { type: string }
+        billing_id: { type: string }
+        gateway_charge_id: { type: string }
+        observed_amount: { type: [string, 'null'] }
+        observed_at: { type: string, format: date-time }
         processed: { type: boolean }
         reason: { type: [string, 'null'] }
         status: { type: [string, 'null'] }

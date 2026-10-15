@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@bcfeeee30edd682de8eb190e924c55f953fe36d8`
+**CURRENT confirmado:** `main@17fb87cdb171b78b719edb2decc4d89970bcd9f8`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -347,10 +347,12 @@ e reativação com nova identidade integrados, CI da PR e pós-merge completamen
 congelada antes do gateway e fence de emissão/recuperação sem redispatch; CI da PR e pós-merge verdes. Ver
 `docs/WP_R02_08_OBRIGACAO_DISPATCH_DURAVEL_20261015.md`. WP-R02-09 / PR #53: checkout revisado,
 aceite, vencimento contratado e ambiente congelado integrados; CI da PR e pós-merge verdes. Ver
-`docs/WP_R02_09_CHECKOUT_REVISADO_20261015.md`. WP-R02-10 em validação: fechamento final
+`docs/WP_R02_09_CHECKOUT_REVISADO_20261015.md`. WP-R02-10 / PR #54 integrada, CI da PR e pós-merge verdes: fechamento final
 sem nova mensalidade, residual e reserva durante encerramento. Ver
-`docs/WP_R02_10_FECHAMENTO_CONSUMO_FINAL_20261015.md`. Antes da ativação V1, conferir valor
-liquidado do webhook e conciliar/cancelar faturas abertas; depois scheduler/dunning único. Catálogo real continua
+`docs/WP_R02_10_FECHAMENTO_CONSUMO_FINAL_20261015.md`. WP-R02-11 em validação: conferência
+de valor/status, reversões e consulta somente leitura pelo histórico. Ver
+`docs/WP_R02_11_CONFERENCIA_RECEBIMENTOS_20261015.md`. Antes da ativação V1, resolver
+refunds/chargebacks e conciliar/cancelar faturas abertas; depois scheduler/dunning único. Catálogo real continua
 desabilitado; não certificar G5 com simulador ou apenas CI.
 
 **Gate G5:** pagamento real ativa entitlement sem intervenção de desenvolvedor.

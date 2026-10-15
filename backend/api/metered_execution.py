@@ -14,6 +14,7 @@ from campaia_core.subscription import entitlement_access_is_active, refresh_tria
 
 from .billing_credits import cycle_snapshot
 from .errors import ApiError
+from .billing_receipts import payment_access_is_blocked
 
 
 def commercial_subscription(state, tenant_id):
@@ -27,7 +28,8 @@ def quote_action(state, tenant_id, action):
         return {'mode': 'LEGACY', 'action': action, 'cycle_id': None, 'policy_version': None,
                 'credits': None, 'extra_amount': None, 'included_available': None}
     at = datetime.now(timezone.utc)
-    if not entitlement_access_is_active(sub, now=at) or state.credit_ledger is None:
+    if (not entitlement_access_is_active(sub, now=at) or payment_access_is_blocked(state, sub, at=at)
+            or state.credit_ledger is None):
         raise ApiError('BILLING_ACCESS_REQUIRED', 'É necessário trial ou ciclo pago vigente.', status_code=409)
     cycle = cycle_snapshot(sub, at=at)
     if cycle is None:
@@ -98,6 +100,7 @@ def execute_metered(state, fixture, key, request_identity, confirmation, action,
             at = datetime.now(timezone.utc)
             cycle = cycle_snapshot(current, at=at) if current is not None else None
             if (current is None or not entitlement_access_is_active(current, now=at)
+                    or payment_access_is_blocked(state, current, at=at)
                     or cycle is None or cycle.cycle_id != claimed['cycle_id']):
                 raise ApiError('AI_SUBSCRIPTION_CHANGED', 'A contratação encerrou ou mudou durante a geração; entrega descartada sem débito.', status_code=409)
             result = deliver(generated)

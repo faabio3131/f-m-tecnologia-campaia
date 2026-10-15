@@ -36,6 +36,7 @@ from .routes_billing import (
     set_credit_consent,
     list_billing_charges,
     get_billing_checkout,
+    reconcile_billing_payment,
     get_billing_closure,
     close_billing_usage,
     put_subscription,
@@ -199,6 +200,7 @@ routes = [
     Route("/billing/closure", get_billing_closure, methods=["GET"]),
     Route("/billing/closure", close_billing_usage, methods=["POST"]),
     Route("/billing/checkout", get_billing_checkout, methods=["GET"]),
+    Route("/billing/charges/{gatewayChargeId}/reconcile", reconcile_billing_payment, methods=["POST"]),
     Route("/billing/charges", create_charge, methods=["POST"]),
     Route("/billing/charges", list_billing_charges, methods=["GET"]),
     # Unico endpoint deste app sem Bearer token de usuario -- quem chama e o Asaas, nao o

@@ -232,7 +232,7 @@ class PostgresRuntimeTests(unittest.TestCase):
                             "accept_quote": True})
                 self.assertEqual(charge.status_code, 202, charge.text)
                 payload = {"id": "pg-paid-event", "event": "PAYMENT_RECEIVED", "payment": {
-                    "id": charge.json()["gateway_charge_id"], "status": "RECEIVED"}}
+                    "id": charge.json()["gateway_charge_id"], "status": "RECEIVED", "value": charge.json()["amount"]}}
                 def deliver(client):
                     return client.post("/webhooks/asaas", headers={"asaas-access-token": "pg-webhook-proof"}, json=payload)
                 with patch("api.routes_billing.grant_paid_cycle", side_effect=RuntimeError("injected")):
@@ -282,6 +282,33 @@ class PostgresRuntimeTests(unittest.TestCase):
                 self.assertEqual(usage["balance"]["consumed_credits"], 5)
                 self.assertEqual(usage["balance"]["reserved_credits"], 0)
 
+                # A later authenticated divergence is durable across workers and does not
+                # undo consumption. Two fresh provider reads clear it without a second grant.
+                gateway_id = charge.json()["gateway_charge_id"]
+                mismatch = clients[0].post("/webhooks/asaas", headers={"asaas-access-token": "pg-webhook-proof"},
+                    json={"id": "pg-receipt-mismatch", "event": "PAYMENT_RECEIVED",
+                          "payment": {"id": gateway_id, "status": "RECEIVED", "value": "0.50"}})
+                self.assertEqual(mismatch.status_code, 200, mismatch.text)
+                self.assertFalse(clients[1].get("/billing/usage", headers=OWNER).json()["access_active"])
+                for client in clients:
+                    client.app.state.campaia.billing_gateway.confirm(gateway_id)
+                def reconcile(client):
+                    state = client.app.state.campaia
+                    original_inspect = state.billing_gateway.inspect_charge
+                    def inspect(*args):
+                        self.assertFalse(state.db.in_transaction)
+                        return original_inspect(*args)
+                    with patch.object(state.billing_gateway, "inspect_charge", side_effect=inspect):
+                        return client.post(f"/billing/charges/{gateway_id}/reconcile",
+                            headers={**with_step_up(OWNER), **unique_idem()})
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    reconciliations = list(pool.map(reconcile, clients))
+                self.assertTrue(all(r.status_code == 200 for r in reconciliations), [r.text for r in reconciliations])
+                self.assertTrue(clients[1].get("/billing/usage", headers=OWNER).json()["access_active"])
+                self.assertEqual(clients[1].get("/billing/usage", headers=OWNER).json()["balance"]["consumed_credits"], 5)
+                self.assertEqual(sum(e.kind == "OPEN" for e in clients[1].app.state.campaia.credit_ledger.entries("demo-tenant")), 2)
+                self.assertIsNotNone(clients[1].app.state.campaia.idempotency.get("demo-tenant", "billing-receipt:pg-receipt-mismatch"))
+
                 canceled = clients[0].post("/billing/subscription/cancel",
                     headers={**with_step_up(OWNER), **unique_idem()})
                 self.assertEqual(canceled.status_code, 200, canceled.text)
@@ -320,7 +347,7 @@ class PostgresRuntimeTests(unittest.TestCase):
                 final_id = next(key for key, invoice in clients[0].app.state.campaia.charges.items_for_tenant("demo-tenant")
                                 if invoice.purpose.value == "FINAL_USAGE")
                 final_paid = clients[0].post("/webhooks/asaas", headers={"asaas-access-token": "pg-webhook-proof"},
-                    json={"id": "pg-final-paid", "event": "PAYMENT_RECEIVED", "payment": {"id": final_id, "status": "RECEIVED"}})
+                    json={"id": "pg-final-paid", "event": "PAYMENT_RECEIVED", "payment": {"id": final_id, "status": "RECEIVED", "value": final_quote["amount"]}})
                 self.assertEqual(final_paid.status_code, 200, final_paid.text)
                 self.assertEqual(clients[1].get("/billing/subscription", headers=OWNER).json()["status"], "CANCELED")
                 self.assertEqual(clients[1].get("/billing/closure", headers=OWNER).json()["state"], "SETTLED")

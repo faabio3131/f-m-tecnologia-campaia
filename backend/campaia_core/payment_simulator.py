@@ -8,7 +8,7 @@ existir. Trocar este simulador por um adaptador real e configuracao, nao reescri
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from hashlib import sha256
 import json
@@ -87,6 +87,13 @@ class PaymentGatewaySimulator:
         require_idempotency(command)
         stored = self.idempotency.get(command.tenant_id, command.idempotency_key)
         return stored.result if stored is not None else None
+
+    def inspect_charge(self, gateway_charge_id: str, command: ChargeCommand) -> ChargeResult:
+        require_idempotency(command)
+        stored = self.idempotency.get(command.tenant_id, command.idempotency_key)
+        if stored is None or stored.result.gateway_charge_id != gateway_charge_id:
+            raise PaymentGatewayError(PaymentGatewayErrorCode.VALIDATION_REJECTED, "Cobrança simulada desconhecida.")
+        return replace(stored.result, status=self.get_charge_status(gateway_charge_id))
 
     def get_charge_status(self, gateway_charge_id: str) -> GatewayChargeStatus:
         return self.scripted_status.get(gateway_charge_id, GatewayChargeStatus.PENDING)

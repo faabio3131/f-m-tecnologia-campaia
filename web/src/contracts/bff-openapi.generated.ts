@@ -926,6 +926,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/billing/charges/{gatewayChargeId}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Consulta recebimento no provedor e concilia sem emitir outra cobrança
+         * @description GET externo fora da transação; valor/status vêm apenas do provedor vinculado à obrigação do tenant.
+         */
+        post: operations["reconcileBillingPayment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/billing/charges": {
         parameters: {
             query?: never;
@@ -1060,6 +1080,7 @@ export interface components {
             }[];
         };
         BillingSubscription: {
+            payment_review_required?: boolean;
             /** @description Snapshot contratado; nao substituido por alteracoes posteriores do catalogo */
             commercial_terms: components["schemas"]["BillingPlan"];
             tenant_id: string;
@@ -1112,6 +1133,9 @@ export interface components {
             currency: string;
             amount: string;
             plan_id: string | null;
+            gateway_observed_amount?: string | null;
+            payment_reconciliation_state?: string | null;
+            reconciliation_available?: boolean;
             /** @enum {string} */
             purpose: "REGULAR" | "PLAN_CHANGE" | "REACTIVATION" | "FINAL_USAGE";
             /** Format: date-time */
@@ -1271,6 +1295,13 @@ export interface components {
         };
         BillingWebhookReceipt: {
             accepted: boolean;
+            reconciled?: boolean;
+            reconciliation_state?: string;
+            billing_id?: string;
+            gateway_charge_id?: string;
+            observed_amount?: string | null;
+            /** Format: date-time */
+            observed_at?: string;
             processed?: boolean;
             reason?: string | null;
             status?: string | null;
@@ -3570,6 +3601,64 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationError"];
+        };
+    };
+    reconcileBillingPayment: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+                 *     login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+                 *     servidor. Ausente/invalido -> 403.
+                 */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao. */
+                "X-Step-Up-Token": components["parameters"]["StepUpToken"];
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                gatewayChargeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Observação conferida ou pendente; não aceita comprovante/status fornecido pelo cliente */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingWebhookReceipt"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["StepUpRequired"];
+            404: components["responses"]["NotFound"];
+            /** @description Contexto ou provedor/ambiente divergente */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Consulta externa não confirmada */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     listBillingCharges: {

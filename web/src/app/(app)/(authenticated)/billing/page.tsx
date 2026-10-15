@@ -119,6 +119,7 @@ function BillingContent({ canManage }: { canManage: boolean }) {
           ...(subscription.pending_plan_name ? [{ label: terms.credit_policy ? "Troca agendada" : "Troca aguardando pagamento", value: subscription.pending_plan_name }] : []),
           ...(subscription.reactivation_requested_at ? [{ label: "Reativação", value: "Aguardando pagamento confirmado" }] : []),
         ]} /></Card>
+        {subscription.payment_review_required ? <Card><p role="status">Há um recebimento em conferência. Consulte o histórico de cobranças para verificar a pendência.</p></Card> : null}
         {subscription.status === "PAST_DUE" ? <Card><StatusPanel title="Pagamento em atraso" items={[
           { label: "Em atraso desde", value: date(subscription.past_due_at) },
           { label: "Fim da carência", value: date(subscription.grace_period_ends_at) },
@@ -163,7 +164,9 @@ function BillingContent({ canManage }: { canManage: boolean }) {
       {success ? <p role="status">{success}</p> : null}
       {actionError ? <ErrorState title="Alteração não confirmada" description={actionError} /> : null}
       {stepUp.stepUpMessage ? <p role="alert">{stepUp.stepUpMessage}</p> : null}
-      <BillingChargeHistoryPanel key={historyVersion} />
+      <BillingChargeHistoryPanel key={historyVersion} canManage={canManage} stepUp={stepUp} onReconciled={() => {
+        void api.get<BillingSubscription>("/billing/subscription").then(setSubscription).catch(() => undefined);
+      }} />
       <Card><h2 className={styles.title}>Planos disponíveis neste ambiente</h2>
         {catalogError ? <ErrorState title="Catálogo de planos indisponível" description="As condições comerciais ainda não estão disponíveis para consulta neste ambiente." /> : plans.length === 0 ? <p>Nenhum plano configurado.</p> : plans.map((plan) => <StatusPanel key={plan.plan_id} title={plan.name} items={[
           { label: "Mensalidade", value: money(plan.monthly_price, plan.currency) },
