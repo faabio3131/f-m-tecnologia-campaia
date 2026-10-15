@@ -411,11 +411,19 @@ def mark_past_due(
     if at.tzinfo is None:
         raise ValueError("overdue_at deve ser timezone-aware.")
 
+    due = at
+    if subscription.plan.credit_policy is not None:
+        schedule = subscription.paid_cycle_schedule
+        if schedule is None or schedule.anchor_at is None:
+            raise ValueError("Atraso V1 exige ciclo pago anterior conhecido.")
+        due = schedule.bounds(schedule.paid_through_index)[1]
+        if at < due:
+            raise ValueError("Aviso de atraso não antecipa o vencimento contratado.")
     return replace(
         subscription,
         status=SubscriptionStatus.PAST_DUE,
-        past_due_at=at,
-        grace_period_ends_at=at + timedelta(days=policy.grace_period_days),
+        past_due_at=due,
+        grace_period_ends_at=due + timedelta(days=policy.grace_period_days),
         dunning_reminders_sent=0,
         last_dunning_at=None,
     )
@@ -436,7 +444,14 @@ def past_due_is_in_grace(
     reference = now or datetime.now(timezone.utc)
     if reference.tzinfo is None:
         raise ValueError("now deve ser timezone-aware.")
-    return reference < subscription.grace_period_ends_at
+    end = subscription.grace_period_ends_at
+    if subscription.plan.credit_policy is not None:
+        schedule = subscription.paid_cycle_schedule
+        if schedule is None or schedule.anchor_at is None:
+            return False
+        end = min(end, schedule.bounds(schedule.paid_through_index)[1]
+                  + timedelta(days=policy.grace_period_days))
+    return reference < end
 
 
 def next_dunning_reminder_at(subscription: Subscription) -> datetime | None:

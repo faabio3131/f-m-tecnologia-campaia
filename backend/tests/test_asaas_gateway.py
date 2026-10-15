@@ -205,6 +205,8 @@ class AsaasGatewayRequestShapeTests(unittest.TestCase):
         def handler(request: httpx.Request) -> httpx.Response:
             nonlocal call_count
             call_count += 1
+            if request.method == "GET" and request.url.path.endswith("/payments"):
+                return httpx.Response(200, json={"data": []})
             if request.url.path.endswith("/customers"):
                 return httpx.Response(200, json={"data": [{"id": "cus_1"}]})
             return httpx.Response(200, json={"id": "pay_1", "status": "PENDING"})
@@ -393,6 +395,35 @@ if __name__ == "__main__":
 
 
 class AsaasHostedInvoiceTests(unittest.TestCase):
+    def test_recovery_only_reads_and_rejects_ambiguous_or_wrong_references(self):
+        payment = {'id': 'pay-recovered', 'status': 'PENDING', 'value': '199.90', 'externalReference': 'idem-1'}
+        for listing, outcome in [({'data': []}, 'missing'), ({'data': [payment]}, 'found'),
+            ({'data': [payment, payment]}, 'reject'), ({'data': [], 'hasMore': True}, 'reject'),
+            ({}, 'reject'), ({'data': None}, 'reject'), ({'data': [payment], 'hasMore': True}, 'reject'),
+            ({'data': [{**payment, 'externalReference': 'another-obligation'}]}, 'reject')]:
+            with self.subTest(outcome=outcome, listing=listing):
+                calls = []
+                def handler(request):
+                    calls.append(request.method)
+                    self.assertEqual(request.method, 'GET')
+                    self.assertEqual(request.url.params['externalReference'], 'idem-1')
+                    return httpx.Response(200, json=listing)
+                gateway = AsaasGateway(config=_config(), transport=httpx.MockTransport(handler))
+                try:
+                    if outcome == 'reject':
+                        with self.assertRaises(PaymentGatewayError):
+                            gateway.recover_charge(_command())
+                    else:
+                        result = gateway.recover_charge(_command())
+                        if outcome == 'missing':
+                            self.assertIsNone(result)
+                        else:
+                            self.assertEqual(result.gateway_charge_id, 'pay-recovered')
+                            self.assertEqual(result.observed_amount, Decimal('199.90'))
+                    self.assertEqual(calls, ['GET'])
+                finally:
+                    gateway._client.close()
+
     def test_invoice_url_is_preserved_on_creation_and_external_reference_recovery(self):
         for recovery in [False, True]:
             with self.subTest(recovery=recovery):

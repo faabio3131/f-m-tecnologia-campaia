@@ -11,6 +11,7 @@ from campaia_core.subscription import (
     ReactivationMode, ReactivationBillingMode, ChargePurpose, DunningPolicy, PastDueAccessMode,
     request_plan_change, cancel_subscription, request_reactivation, refresh_trial_status,
     activate_commercial_payment, entitlement_access_is_active, start_trial,
+    mark_past_due, past_due_is_in_grace,
 )
 
 AT = datetime(2026, 1, 31, 15, tzinfo=timezone.utc)
@@ -39,6 +40,19 @@ def subscription():
 
 
 class CommercialLifecycleTests(unittest.TestCase):
+    def test_late_overdue_notice_never_extends_anniversary_grace(self):
+        original = subscription(); due = original.paid_cycle_schedule.bounds(0)[1]
+        late = mark_past_due(original, overdue_at=due + timedelta(days=10),
+                            billed_plan_id=original.plan.plan_id, billed_purpose=ChargePurpose.REGULAR)
+        self.assertEqual(late.past_due_at, due)
+        self.assertEqual(late.grace_period_ends_at, due + timedelta(days=3))
+        self.assertFalse(entitlement_access_is_active(late, now=due + timedelta(days=10)))
+        old_record = replace(late, grace_period_ends_at=due + timedelta(days=30))
+        self.assertFalse(past_due_is_in_grace(old_record, now=due + timedelta(days=3)))
+        with self.assertRaises(ValueError):
+            mark_past_due(original, overdue_at=due - timedelta(seconds=1),
+                          billed_plan_id=original.plan.plan_id, billed_purpose=ChargePurpose.REGULAR)
+
     def test_plan_change_waits_for_date_and_payment(self):
         original = subscription(); target = plans()[1]
         pending = request_plan_change(original, target, now=AT + timedelta(days=1))
