@@ -319,6 +319,8 @@ class SubscriptionCharge:
     commercial_due_at: datetime | None = None
     commercial_gateway_provider: str | None = None
     commercial_gateway_mode: str | None = None
+    gateway_observed_amount: Decimal | None = None
+    payment_reconciliation_state: str | None = None
 
     @property
     def amount(self) -> Decimal:

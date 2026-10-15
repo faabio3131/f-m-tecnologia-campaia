@@ -7,6 +7,7 @@ from campaia_core.credit_ledger import CreditLedgerError
 from campaia_core.subscription import SubscriptionStatus, SubscriptionCharge, ChargeLineItem, ChargePurpose, ChargeStatus
 from .billing_dispatch import obligation_key
 from .errors import ApiError
+from .billing_receipts import REVIEW_STATES
 
 
 def closure_key(lifecycle):
@@ -59,7 +60,9 @@ def closure_quote(state, sub):
     if closed_result is not None:
         status = closed_result.result['state']
         amount = Decimal(closed_result.result['amount'])
-        if status == 'INVOICED' and invoice is not None and invoice.status is ChargeStatus.SETTLED:
+        if invoice is not None and invoice.payment_reconciliation_state in REVIEW_STATES:
+            status = 'RECONCILIATION_REQUIRED'
+        elif status == 'INVOICED' and invoice is not None and invoice.status is ChargeStatus.SETTLED:
             status = 'SETTLED'
     elif frozen is not None:
         status = 'INVOICE_REQUIRED'

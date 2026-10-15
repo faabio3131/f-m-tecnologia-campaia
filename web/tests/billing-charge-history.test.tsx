@@ -1,7 +1,8 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BillingChargeHistoryPanel } from "@/components/BillingChargeHistoryPanel";
+import { setCsrfToken } from "@/lib/api/client";
 import type { BillingChargeHistoryItem } from "@/contracts/types";
 
 const item: BillingChargeHistoryItem = {
@@ -12,7 +13,8 @@ const item: BillingChargeHistoryItem = {
   invoice_url: "https://sandbox.asaas.com/i/test-one",
 };
 const json = (status: number, body: unknown) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }));
-afterEach(() => vi.restoreAllMocks());
+beforeEach(() => setCsrfToken("fixture-csrf"));
+afterEach(() => { vi.restoreAllMocks(); setCsrfToken(null); });
 
 describe("Billing charge history", () => {
   it("renderiza historico, ambiente e link do provedor sem emitir cobranca", async () => {
@@ -70,4 +72,47 @@ describe("Billing charge history", () => {
     expect(paths[1]).toBe(paths[2]);
     expect(screen.queryByRole("button", { name: "Carregar mais cobranças" })).not.toBeInTheDocument();
   });
+});
+
+const stepUp = (ready = true) => ({ ready, testMode: false, headers: () => ({ "x-step-up-token": "fixture-proof" }),
+  consumePresentedToken: vi.fn(), noteError: vi.fn(), onIdToken: vi.fn(), stepUpMessage: null });
+
+it("mostra divergencia e valor zero sem declarar quitacao ou inventar valor ausente", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(() => json(200, { items: [
+    { ...item, gateway_status: "CONFIRMED", payment_reconciliation_state: "AMOUNT_MISMATCH", gateway_observed_amount: "0", status_source: "RECONCILIATION" },
+    { ...item, billing_id: "bill-missing", gateway_charge_id: "pay-missing", payment_reconciliation_state: "AMOUNT_MISSING", gateway_observed_amount: null },
+  ], next_cursor: null }));
+  render(<BillingChargeHistoryPanel />);
+  expect(await screen.findByText("R$ 0,00")).toBeInTheDocument();
+  expect(screen.getByText("Não informado")).toBeInTheDocument();
+  expect(screen.getByText("Consulta ao provedor")).toBeInTheDocument();
+  expect(screen.queryByText("Confirmada")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Conferir recebimento no provedor" })).not.toBeInTheDocument();
+});
+
+it("exige autenticacao recente e preserva a chave apos consulta incerta sem enviar valor ou emitir fatura", async () => {
+  const proof = stepUp(false); const onReconciled = vi.fn(); const requests: RequestInit[] = [];
+  let attempts = 0;
+  vi.spyOn(globalThis, "fetch").mockImplementation((_input, init) => {
+    if (init?.method === "POST") {
+      requests.push(init);
+      if (++attempts === 1) return Promise.reject(new TypeError("network"));
+      return json(200, { accepted: true, reconciled: false });
+    }
+    return json(200, { items: [{ ...item, reconciliation_available: true }], next_cursor: null });
+  });
+  const user = userEvent.setup();
+  const view = render(<BillingChargeHistoryPanel canManage stepUp={proof} onReconciled={onReconciled} />);
+  expect(await screen.findByRole("button", { name: "Conferir recebimento no provedor" })).toBeDisabled();
+  view.rerender(<BillingChargeHistoryPanel canManage stepUp={{ ...proof, ready: true }} onReconciled={onReconciled} />);
+  await user.click(screen.getByRole("button", { name: "Conferir recebimento no provedor" }));
+  await screen.findByText(/Não foi possível confirmar a consulta/);
+  await user.click(screen.getByRole("button", { name: "Conferir recebimento no provedor" }));
+  await screen.findByText(/Consulta registrada/);
+  expect(requests).toHaveLength(2);
+  expect(requests[0].body).toBeUndefined();
+  expect(new Headers(requests[0].headers).get("Idempotency-Key")).toBe(new Headers(requests[1].headers).get("Idempotency-Key"));
+  expect(onReconciled).toHaveBeenCalledOnce();
+  expect(proof.consumePresentedToken).toHaveBeenCalledOnce();
+  expect(screen.queryByText("Confirmada")).not.toBeInTheDocument();
 });

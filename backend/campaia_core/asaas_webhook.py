@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import hmac
 from dataclasses import dataclass, field
+from decimal import Decimal
+from .payment_gateway import parse_observed_amount
 from typing import Any, Callable
 
 from .webhooks import InMemorySeenEventStore, RejectionReason, SeenEventStoreLike, WebhookVerdict
@@ -82,6 +84,7 @@ class AsaasPaymentEvent:
     event_type: str
     payment_id: str
     asaas_status: str
+    observed_amount: Decimal | None = None
 
 
 def parse_asaas_payment_event(payload: dict[str, Any]) -> AsaasPaymentEvent:
@@ -108,6 +111,7 @@ def parse_asaas_payment_event(payload: dict[str, Any]) -> AsaasPaymentEvent:
         event_type=event_type,
         payment_id=payment_id,
         asaas_status=asaas_status,
+        observed_amount=parse_observed_amount(payment.get('value')),
     )
 
 

@@ -551,6 +551,7 @@ class BillingPlanResponse(BaseModel):
 
 
 class BillingSubscriptionResponse(BaseModel):
+    payment_review_required: bool = False
     commercial_terms: BillingPlanResponse
     tenant_id: str
     customer_ref: str
@@ -657,6 +658,9 @@ class BillingChargeHistoryItem(BaseModel):
     status_observed_at: datetime | None
     status_source: str | None
     invoice_url: str | None
+    gateway_observed_amount: str | None = None
+    payment_reconciliation_state: str | None = None
+    reconciliation_available: bool = False
 
 
 class BillingChargeHistoryResponse(BaseModel):

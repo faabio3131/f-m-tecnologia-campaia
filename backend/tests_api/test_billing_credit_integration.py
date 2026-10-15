@@ -61,8 +61,10 @@ class BillingCreditHarness:
         return response.json()['gateway_charge_id']
 
     def payment(self, gateway_id, event='event-first'):
+        charge = self.state.charges.get(gateway_id)
         return self.client.post('/webhooks/asaas', headers={'asaas-access-token': 'test-webhook-secret'},
-            json={'id': event, 'event': 'PAYMENT_RECEIVED', 'payment': {'id': gateway_id, 'status': 'RECEIVED'}})
+            json={'id': event, 'event': 'PAYMENT_RECEIVED', 'payment': {'id': gateway_id, 'status': 'RECEIVED',
+                  'value': str(charge.amount) if charge is not None else None}})
 
     def usage(self, headers=OWNER):
         return self.client.get('/billing/usage', headers=headers)

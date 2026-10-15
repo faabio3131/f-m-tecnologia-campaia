@@ -12,7 +12,7 @@ e, quando houver conta e credencial reais, em um adaptador dedicado.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, Callable, Protocol
@@ -94,6 +94,20 @@ class ChargeResult:
     invoice_url: str | None = None
     observed_amount: Decimal | None = None
     observed_due_date: str | None = None
+    source_status: str | None = None
+
+
+def parse_observed_amount(value) -> Decimal | None:
+    """Unrounded gross currency observation; absent/invalid never becomes zero."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        amount = Decimal(str(value))
+        if amount.is_finite() and amount >= 0 and amount == amount.quantize(Decimal('0.01')):
+            return amount
+    except (InvalidOperation, ValueError, TypeError):
+        pass
+    return None
 
 
 def require_idempotency(command: ChargeCommand) -> None:
@@ -144,10 +158,12 @@ class PaymentGatewayConnector(Protocol):
     def create_charge(self, command: ChargeCommand) -> ChargeResult: ...
     def dispatch_frozen_charge(self, command: ChargeCommand) -> ChargeResult: ...
     def recover_charge(self, command: ChargeCommand) -> ChargeResult | None: ...
+    def inspect_charge(self, gateway_charge_id: str, command: ChargeCommand) -> ChargeResult: ...
     def get_charge_status(self, gateway_charge_id: str) -> GatewayChargeStatus: ...
 
 
 __all__ = [
+    "parse_observed_amount",
     "ChargeCommand",
     "ChargeResult",
     "GatewayChargeStatus",

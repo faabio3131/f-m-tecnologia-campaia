@@ -23,7 +23,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 import httpx
 
@@ -33,6 +33,7 @@ from .payment_urls import safe_asaas_invoice_url
 from .infra import IdempotencyStore
 from .payment_gateway import (
     ChargeCommand,
+    parse_observed_amount,
     ChargeResult,
     GatewayChargeStatus,
     GatewayMode,
@@ -130,13 +131,8 @@ def _raise_for_response(response: httpx.Response) -> None:
 
 
 def _observed_payment_amount(value) -> Decimal | None:
-    try:
-        amount = Decimal(str(value))
-        if amount.is_finite() and amount > 0 and amount == amount.quantize(Decimal('0.01')):
-            return amount
-    except (InvalidOperation, ValueError, TypeError):
-        pass
-    return None
+    amount = parse_observed_amount(value)
+    return amount if amount is not None and amount > 0 else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -294,12 +290,29 @@ class AsaasGateway:
             invoice_url=safe_asaas_invoice_url(body.get("invoiceUrl"), self.mode),
             observed_amount=_observed_payment_amount(body.get("value")),
             observed_due_date=body.get("dueDate"),
+            source_status=body["status"],
         )
 
     def recover_charge(self, command: ChargeCommand) -> ChargeResult | None:
         """Read-only recovery; missing results never cause a payment POST."""
         require_idempotency(command)
         return self._find_payment_by_external_reference(command.idempotency_key, strict=True)
+
+    def inspect_charge(self, gateway_charge_id: str, command: ChargeCommand) -> ChargeResult:
+        """Read only, bound to the known payment AND frozen external reference."""
+        from urllib.parse import quote
+        require_idempotency(command)
+        response = self._client.get(f"/payments/{quote(gateway_charge_id, safe='')}")
+        _raise_for_response(response)
+        body = response.json()
+        if (body.get('id') != gateway_charge_id or body.get('externalReference') != command.idempotency_key):
+            raise PaymentGatewayError(PaymentGatewayErrorCode.UNKNOWN,
+                                      "Cobrança consultada diverge da obrigação conhecida.")
+        return ChargeResult(gateway_charge_id=body['id'], status=map_asaas_status(body['status']),
+            provider=self.provider, mode=self.mode,
+            observed_amount=parse_observed_amount(body.get('value')),
+            observed_due_date=body.get('dueDate'), source_status=body['status'],
+            invoice_url=safe_asaas_invoice_url(body.get('invoiceUrl'), self.mode))
 
     def get_charge_status(self, gateway_charge_id: str) -> GatewayChargeStatus:
         response = self._client.get(f"/payments/{gateway_charge_id}")
@@ -348,6 +361,7 @@ class AsaasGateway:
             invoice_url=safe_asaas_invoice_url(payment.get("invoiceUrl"), self.mode),
             observed_amount=_observed_payment_amount(payment.get("value")),
             observed_due_date=payment.get("dueDate"),
+            source_status=payment["status"],
         )
 
     def _ensure_customer(self, customer_ref: str, customer_document: str) -> str:

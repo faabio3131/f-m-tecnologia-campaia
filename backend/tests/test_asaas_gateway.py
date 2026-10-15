@@ -92,6 +92,36 @@ class AsaasGatewayRequestShapeTests(unittest.TestCase):
     """Verifica a forma da requisicao e o parsing da resposta contra um transporte HTTP
     falso — nunca uma chamada de rede real (nenhuma credencial existe nesta sandbox)."""
 
+    def test_receipt_inspection_uses_only_get_and_binds_frozen_external_reference(self):
+        calls = []
+        def handler(request):
+            calls.append((request.method, request.url.path))
+            return httpx.Response(200, json={'id': 'pay-known', 'externalReference': 'idem-1',
+                'status': 'RECEIVED', 'value': '199.90', 'netValue': '190.00'})
+        gateway = self._gateway(handler)
+        result = gateway.inspect_charge('pay-known', _command())
+        self.assertEqual(result.observed_amount, Decimal('199.90'))
+        self.assertEqual(result.source_status, 'RECEIVED')
+        self.assertEqual(result.status, GatewayChargeStatus.CONFIRMED)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0], 'GET')
+        self.assertTrue(calls[0][1].endswith('/payments/pay-known'))
+        for field, value in [('id', 'another-payment'), ('externalReference', 'another-obligation')]:
+            def mismatch(request):
+                return httpx.Response(200, json={'id': 'pay-known', 'externalReference': 'idem-1',
+                    'status': 'RECEIVED', 'value': '199.90', field: value})
+            with self.assertRaises(PaymentGatewayError):
+                self._gateway(mismatch).inspect_charge('pay-known', _command())
+
+    def test_receipt_inspection_preserves_zero_and_rejects_invalid_precision_without_rounding(self):
+        for value, expected in [(0, Decimal('0')), (None, None), (True, None), ('NaN', None), ('199.901', None)]:
+            with self.subTest(value=value):
+                def handler(request):
+                    return httpx.Response(200, json={'id': 'pay-known', 'externalReference': 'idem-1',
+                        'status': 'CONFIRMED', 'value': value})
+                result = self._gateway(handler).inspect_charge('pay-known', _command())
+                self.assertEqual(result.observed_amount, expected)
+
     def _gateway(self, handler, mode: GatewayMode = GatewayMode.SANDBOX) -> AsaasGateway:
         def wrapped(request: httpx.Request) -> httpx.Response:
             # Every create now performs provider-side reconciliation first. Existing request

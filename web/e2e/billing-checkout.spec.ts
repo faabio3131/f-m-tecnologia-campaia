@@ -46,7 +46,7 @@ test("duas abas emitem uma fatura; pagamento simulado, uso e fechamento final pr
   await page.screenshot({ path: "test-results/checkout-mobile.png", fullPage: true });
   await page.setViewportSize({ width: 1280, height: 900 });
   // Authenticated callbacks for the payment SIMULATOR, not external banking evidence.
-  const consumed = await page.evaluate(async ({ csrf, paymentId }) => {
+  const consumed = await page.evaluate(async ({ csrf, paymentId, amount }) => {
     const headers = { "content-type": "application/json", "x-csrf-token": csrf,
       "x-step-up-token": "test-step-up", "Idempotency-Key": crypto.randomUUID() };
     const post = async (path: string, body: unknown) => {
@@ -57,7 +57,7 @@ test("duas abas emitem uma fatura; pagamento simulado, uso e fechamento final pr
     };
     const paid = await fetch("/api/campaia/webhooks/asaas", { method: "POST",
       headers: { "content-type": "application/json", "asaas-access-token": "fixture-checkout-webhook" },
-      body: JSON.stringify({ id: "e2e-first-paid", event: "PAYMENT_RECEIVED", payment: { id: paymentId, status: "RECEIVED" } }) });
+      body: JSON.stringify({ id: "e2e-first-paid", event: "PAYMENT_RECEIVED", payment: { id: paymentId, status: "RECEIVED", value: amount } }) });
     if (!paid.ok) throw new Error(`payment: ${paid.status}`);
     const usage = await (await fetch("/api/campaia/billing/usage")).json();
     await post("/billing/usage/consent", { cap: "5.00", cycle_id: usage.cycle.id,
@@ -70,7 +70,7 @@ test("duas abas emitem uma fatura; pagamento simulado, uso e fechamento final pr
         cycle_id: quote.cycle_id, policy_version: quote.policy_version, credits: quote.credits, extra_amount: quote.extra_amount } });
     }
     return (await fetch("/api/campaia/billing/usage")).json();
-  }, { csrf: onboard.csrf, paymentId: after.items[0].gateway_charge_id });
+  }, { csrf: onboard.csrf, paymentId: after.items[0].gateway_charge_id, amount: after.items[0].amount });
   expect(consumed.balance.consumed_credits).toBe(15);
   expect(Number(consumed.balance.extra_consumed_amount)).toBe(5);
   await page.reload();
@@ -85,10 +85,10 @@ test("duas abas emitem uma fatura; pagamento simulado, uso e fechamento final pr
   expect(finalHistory.items).toHaveLength(2);
   const finalInvoice = finalHistory.items.find((item: { purpose: string }) => item.purpose === "FINAL_USAGE");
   expect(Number(finalInvoice.amount)).toBe(5);
-  const settled = await page.evaluate(async (paymentId: string) => (await fetch("/api/campaia/webhooks/asaas", {
+  const settled = await page.evaluate(async ({ paymentId, amount }: { paymentId: string; amount: string }) => (await fetch("/api/campaia/webhooks/asaas", {
     method: "POST", headers: { "content-type": "application/json", "asaas-access-token": "fixture-checkout-webhook" },
-    body: JSON.stringify({ id: "e2e-final-paid", event: "PAYMENT_RECEIVED", payment: { id: paymentId, status: "RECEIVED" } }),
-  })).status, finalInvoice.gateway_charge_id);
+    body: JSON.stringify({ id: "e2e-final-paid", event: "PAYMENT_RECEIVED", payment: { id: paymentId, status: "RECEIVED", value: amount } }),
+  })).status, { paymentId: finalInvoice.gateway_charge_id, amount: String(finalInvoice.amount) });
   expect(settled).toBe(200);
   await page.getByRole("button", { name: "Atualizar fechamento", exact: true }).click();
   await expect(page.getByText(/Excedente final quitado/)).toBeVisible();
