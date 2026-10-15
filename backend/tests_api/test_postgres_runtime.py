@@ -264,6 +264,46 @@ class PostgresRuntimeTests(unittest.TestCase):
                     ("tenant-b", "pay-shared"),
                 )
 
+    def test_billing_history_cross_worker_replay_and_webhook_observation(self) -> None:
+        from pathlib import Path
+        from unittest.mock import patch
+        from starlette.testclient import TestClient
+        from tests_api.test_helpers import OWNER, OTHER_OWNER, with_step_up
+        catalog = str(Path(__file__).resolve().parent.parent / "config" / "plans.example.json")
+        with patch.dict(os.environ, {"CAMPAIA_PLAN_CATALOG_PATH": catalog,
+                                     "ASAAS_WEBHOOK_TOKEN": "pg-history-test"}):
+            a = TestClient(create_app(database_url=DSN, env="test"))
+            b = TestClient(create_app(database_url=DSN, env="test"))
+            response = a.put("/billing/subscription",
+                headers={**with_step_up(OWNER), "Idempotency-Key": "pg-history-subscription"},
+                json={"plan_id": "exemplo-essencial", "customer_document": "11144477735"})
+            self.assertEqual(response.status_code, 200, response.text)
+            def create(args):
+                client, key = args
+                return client.post("/billing/charges",
+                    headers={**with_step_up(OWNER), "Idempotency-Key": key},
+                    json={"competence": "2026-10"})
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(create, [(a, "pg-history-worker-one"),
+                                                  (b, "pg-history-worker-two")]))
+            for result in results:
+                self.assertEqual(result.status_code, 202, result.text)
+            key = results[0].json()["gateway_charge_id"]
+            self.assertEqual(results[1].json()["gateway_charge_id"], key)
+            items = b.get("/billing/charges", headers=OWNER).json()["items"]
+            self.assertEqual(len(items), 1)
+            self.assertEqual(items[0]["gateway_mode"], "SIMULATOR")
+            self.assertEqual(b.get("/billing/charges", headers=OTHER_OWNER).json()["items"], [])
+            self.assertEqual(b.get("/billing/charges?cursor=" + key, headers=OTHER_OWNER).status_code, 422)
+            event = a.post("/webhooks/asaas", headers={"asaas-access-token": "pg-history-test"},
+                json={"id": "evt-pg-history", "event": "PAYMENT_RECEIVED",
+                      "payment": {"id": key, "status": "RECEIVED"}})
+            self.assertEqual(event.status_code, 200, event.text)
+            refreshed = b.get("/billing/charges", headers=OWNER).json()["items"][0]
+            self.assertEqual(refreshed["gateway_status"], "CONFIRMED")
+            self.assertEqual(refreshed["status_source"], "WEBHOOK")
+            self.assertEqual(refreshed["gateway_mode"], "SIMULATOR")
+
     def test_sessions_are_explicit_pre_tenant_exception_to_rehome_trigger(self) -> None:
         with psycopg.connect(DSN) as conn:
             triggers = {

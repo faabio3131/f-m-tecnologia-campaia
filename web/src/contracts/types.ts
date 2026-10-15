@@ -23,3 +23,6 @@ export type AutonomySettings = components["schemas"]["AutonomySettings"];
 
 export type BillingSubscription = components["schemas"]["BillingSubscription"];
 export type BillingPlan = components["schemas"]["BillingPlan"];
+
+export type BillingChargeHistory = components["schemas"]["BillingChargeHistory"];
+export type BillingChargeHistoryItem = components["schemas"]["BillingChargeHistoryItem"];

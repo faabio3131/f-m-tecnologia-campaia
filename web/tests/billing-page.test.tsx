@@ -23,6 +23,7 @@ const sub: BillingSubscription = {
 function response(status: number, data: unknown) { return Promise.resolve(new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" } })); }
 function mockRead(subscription: unknown = sub, status = 200, catalogStatus = 200) {
   return vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+    if (String(input).endsWith("/billing/charges")) return response(200, { items: [], next_cursor: null });
     if (String(input).endsWith("/billing/subscription")) return response(status, subscription);
     if (String(input).endsWith("/billing/plans")) return response(catalogStatus, { items: [{ ...plan, monthly_price: "99.00" }, { ...plan, plan_id: "test-pro", name: "Plano Pro" }] });
     throw new Error(`Unexpected ${input}`);

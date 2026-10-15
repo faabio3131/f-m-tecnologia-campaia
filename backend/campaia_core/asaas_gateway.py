@@ -28,6 +28,7 @@ from decimal import Decimal
 import httpx
 
 from .connectors import SecretRef
+from .payment_urls import safe_asaas_invoice_url
 from .infra import IdempotencyStore
 from .payment_gateway import (
     ChargeCommand,
@@ -248,6 +249,7 @@ class AsaasGateway:
                 status=map_asaas_status(body["status"]),
                 provider=self.provider,
                 mode=self.mode,
+                invoice_url=safe_asaas_invoice_url(body.get("invoiceUrl"), self.mode),
             )
 
         # A camada local persiste o resultado por (tenant_id, idempotency_key). O lookup
@@ -295,6 +297,7 @@ class AsaasGateway:
             status=map_asaas_status(payment["status"]),
             provider=self.provider,
             mode=self.mode,
+            invoice_url=safe_asaas_invoice_url(payment.get("invoiceUrl"), self.mode),
         )
 
     def _ensure_customer(self, customer_ref: str, customer_document: str) -> str:

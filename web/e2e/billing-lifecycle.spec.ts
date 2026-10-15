@@ -26,7 +26,20 @@ test.describe("WP-R02 billing lifecycle", () => {
       return response.status;
     }, onboarding.body.session.csrf_token);
     expect(created).toBe(200);
+    // Existing billing API emits a SIMULATOR charge only in this explicit test harness.
+    const chargeStatus = await page.evaluate(async (csrf: string) => {
+      const response = await fetch("/api/campaia/billing/charges", {
+        method: "POST", credentials: "include",
+        headers: { "content-type": "application/json", "x-csrf-token": csrf, "x-step-up-token": "test-step-up", "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({ competence: "2026-10" }),
+      });
+      return response.status;
+    }, onboarding.body.session.csrf_token);
+    expect(chargeStatus).toBe(202);
     await page.goto("/billing");
+    await expect(page.getByText("Simulação", { exact: true })).toBeVisible();
+    await expect(page.getByText("Pendente", { exact: true })).toBeVisible();
+    await expect(page.getByRole("article").getByText("R$ 1,00", { exact: true })).toBeVisible();
     await expect(page.getByText("Período de teste", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Liberado", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Cancelar assinatura", exact: true }).click();
@@ -53,6 +66,8 @@ test.describe("WP-R02 billing lifecycle", () => {
     await otherPage.goto("/billing");
     await expect(otherPage.getByText("Nenhuma assinatura configurada", { exact: true })).toBeVisible();
     expect(await otherPage.evaluate(async () => (await fetch("/api/campaia/billing/subscription", { credentials: "include" })).status)).toBe(404);
+    const isolatedHistory = await otherPage.evaluate(async () => (await fetch("/api/campaia/billing/charges", { credentials: "include" })).json());
+    expect(isolatedHistory.items).toEqual([]);
     await other.close();
   });
 });

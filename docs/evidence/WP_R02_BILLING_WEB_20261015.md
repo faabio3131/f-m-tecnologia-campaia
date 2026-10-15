@@ -66,3 +66,12 @@ PUT (401), antes da UI. O APIRequestContext em HTTP loopback não envia o cookie
 emitido no onboarding. Preparação ajustada para fetch do navegador com credentials include,
 seguindo o protocolo real da Web; nenhuma regra de cookie/auth relaxada no produto.
 A negativa final também consulta pelo navegador autenticado. Nova CI necessária.
+
+## Adendo — integração autorizada WP-R02-01
+
+PR #45 integrada, após autorização expressa, em main@20727bcb23c64b339bde746f7c5c06c445c6ceca.
+CI pós-merge no SHA exato: Backend 38772626146, Frontend 38772626194 e F4 38772626304,
+todas success. O HEAD final da PR 726f927 também passou nas três trilhas e nos 28 E2Es de
+sessão, incluindo o novo fluxo Billing. Estados anteriores de CI/integração pendentes são
+SUPERSEDED por este registro. WP-R02-01 DONE_VERIFIED no escopo implementado; G5 PARTIAL.
+Sem deploy, pagamento real ou religamento do banco.

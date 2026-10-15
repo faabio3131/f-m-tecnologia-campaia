@@ -569,3 +569,25 @@ class BillingChargeResponse(BaseModel):
     amount: Decimal
     gateway_charge_id: str
     gateway_status: str
+
+
+class BillingChargeHistoryItem(BaseModel):
+    billing_id: str
+    gateway_charge_id: str
+    competence: str
+    currency: str
+    amount: str
+    plan_id: str | None
+    purpose: str
+    created_at: datetime | None
+    gateway_status: str | None
+    gateway_provider: str | None
+    gateway_mode: str | None
+    status_observed_at: datetime | None
+    status_source: str | None
+    invoice_url: str | None
+
+
+class BillingChargeHistoryResponse(BaseModel):
+    items: list[BillingChargeHistoryItem]
+    next_cursor: str | None
