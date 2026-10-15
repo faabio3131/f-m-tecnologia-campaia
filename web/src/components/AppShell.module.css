@@ -87,11 +87,25 @@
 }
 
 .main {
+  min-width: 0;
   flex: 1;
   padding: var(--campaia-space-6);
 }
 
 @media (max-width: 768px) {
+  .topbar,
+  .topbarContext {
+    flex-wrap: wrap;
+  }
+
+  .topbarContext {
+    min-width: 0;
+  }
+
+  .userId {
+    overflow-wrap: anywhere;
+  }
+
   .body {
     flex-direction: column;
   }

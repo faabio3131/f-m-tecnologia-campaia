@@ -509,7 +509,28 @@ class BillingEntitlementsResponse(BaseModel):
     resources: list[str]
 
 
+class BillingPlanChangeRuleResponse(BaseModel):
+    target_plan_id: str
+    kind: str
+    billing_mode: str | None
+
+
+class BillingPlanResponse(BaseModel):
+    plan_id: str
+    name: str
+    currency: str
+    monthly_price: str
+    included_credits: str
+    extra_credit_unit_price: str
+    trial_days: int | None
+    cancellation_mode: str | None
+    reactivation_mode: str | None
+    reactivation_billing_mode: str | None
+    plan_changes: list[BillingPlanChangeRuleResponse]
+
+
 class BillingSubscriptionResponse(BaseModel):
+    commercial_terms: BillingPlanResponse
     tenant_id: str
     customer_ref: str
     customer_document: str

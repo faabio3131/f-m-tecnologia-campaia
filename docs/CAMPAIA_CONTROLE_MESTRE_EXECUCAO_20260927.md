@@ -385,3 +385,19 @@ Fonte da revisão: `docs/evidence/WP_R01_G2_REVIEW_MATRIX_20261015.md` e evidên
 PR #44 continua Draft, sem merge. Gate remanescente: CI no HEAD documental final, revisão/inclusão autorizada do SSOT e CI pós-merge antes da promoção global para DONE_VERIFIED. Main não foi modificada nesta execução. PR #43 também permanece separada; sem merge inferido.
 
 **Banco:** campaia-staging-pg confirmado STOPPED / NEVER às 13:00 de 15/10/2026 pelo print do Cloud Shell. Não religar para documentação/CI. Nenhum deploy, migration, produção, pagamento ou anúncio publicado. Próxima fase funcional WP-R02 somente após o gate aplicável, com política comercial como HUMAN_DECISION e credenciais externas mantidas como tal.
+
+## Checkpoint WP-R02-01 — 15/10/2026 — Billing Web
+
+CURRENT: main@356f35448abf6b71b91c00a44a7ccc1db4e4906e, sem PR aberta na consulta inicial.
+WP-R01 integrado pelas PRs #43/#44 autorizadas, CI pós-merge verde nas três trilhas;
+F2/G2 DONE_VERIFIED no escopo da matriz externa, adendo registrado na própria evidência.
+O checkpoint anterior com PRs Draft é histórico SUPERSEDED.
+
+F5/G5: PARTIAL. Branch feat/wp-r02-billing-web implementa consulta de assinatura,
+condições contratadas preservadas, catálogo configurado, entitlements, trial, PAST_DUE/grace,
+e solicitações de troca/cancelamento/reativação via APIs existentes, com confirmação,
+CSRF, step-up e chave estável no retry. Evidência: WP_R02_BILLING_WEB_20261015.md.
+Sem decisão de preços, catálogo comercial real, credenciais Asaas, pagamento ou deploy.
+Restam medição de consumo, histórico financeiro, contratação/checkout e E2E financeiro real,
+além de aprovação comercial. Não confundir implementação/testes locais com fechamento G5.
+Cloud SQL não foi ligado nesta execução; última prova externa permanece STOPPED / NEVER.

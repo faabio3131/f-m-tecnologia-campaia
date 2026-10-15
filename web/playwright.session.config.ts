@@ -29,7 +29,7 @@ const BACKEND_ORIGIN = `http://127.0.0.1:${BACKEND_PORT}`;
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: /(session-protocol|budget-change|autonomy-level|kill-switch|capabilities|audit-trail|insights-honesty|approval-consumption|audit-pagination|commercial-onboarding)\.spec\.ts/,
+  testMatch: /(session-protocol|budget-change|autonomy-level|kill-switch|capabilities|audit-trail|insights-honesty|approval-consumption|audit-pagination|commercial-onboarding|billing-lifecycle)\.spec\.ts/,
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
@@ -52,6 +52,8 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 30_000,
       env: {
+        // Fictitious data used exclusively by this local/CI harness, never deployment config.
+        CAMPAIA_PLAN_CATALOG_PATH: "config/plans.example.json",
         CAMPAIA_E2E_ALLOWED_ORIGIN: WEB_ORIGIN,
         CAMPAIA_E2E_PORT: String(BACKEND_PORT),
       },
@@ -62,7 +64,7 @@ export default defineConfig({
       // `next build` (nao `next dev`) -- ver comentario do arquivo. O build
       // inlina NEXT_PUBLIC_CAMPAIA_IDENTITY_MODE=test; o `next start` resultante
       // serve exatamente esse build, nunca modo de desenvolvimento.
-      command: `npm run build && npm run start -- --port ${WEB_PORT}`,
+      command: `npm run build && npm run start -- --hostname 127.0.0.1 --port ${WEB_PORT}`,
       url: WEB_ORIGIN,
       reuseExistingServer: false,
       timeout: 180_000,

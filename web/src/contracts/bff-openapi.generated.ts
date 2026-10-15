@@ -720,6 +720,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/billing/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lista somente os planos do catalogo comercial configurado */
+        get: operations["listBillingPlans"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/billing/subscription": {
         parameters: {
             query?: never;
@@ -901,7 +918,27 @@ export interface components {
             ai_capabilities: string[];
             resources: string[];
         };
+        BillingPlan: {
+            plan_id: string;
+            name: string;
+            /** @enum {string} */
+            currency: "BRL";
+            monthly_price: string;
+            included_credits: string;
+            extra_credit_unit_price: string;
+            trial_days: number | null;
+            cancellation_mode: string | null;
+            reactivation_mode: string | null;
+            reactivation_billing_mode: string | null;
+            plan_changes: {
+                target_plan_id: string;
+                kind: string;
+                billing_mode: string | null;
+            }[];
+        };
         BillingSubscription: {
+            /** @description Snapshot contratado; nao substituido por alteracoes posteriores do catalogo */
+            commercial_terms: components["schemas"]["BillingPlan"];
             tenant_id: string;
             customer_ref: string;
             customer_document: string;
@@ -2709,6 +2746,47 @@ export interface operations {
                         scope?: "CAMPAIGN" | "ACCOUNT" | "TENANT" | "PLATFORM" | "GLOBAL";
                         affected_campaign_ids?: string[];
                     };
+                };
+            };
+        };
+    };
+    listBillingPlans: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Catalogo configurado; valores decimais preservados como strings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["BillingPlan"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Usuario sem BILLING_VIEW */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Catalogo ausente ou invalido; nenhum plano padrao e utilizado */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

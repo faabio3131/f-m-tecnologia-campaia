@@ -20,3 +20,6 @@ export type Campaign = components["schemas"]["Campaign"];
 export type PolicyDecision = components["schemas"]["PolicyDecision"];
 export type ApprovalRequest = components["schemas"]["ApprovalRequest"];
 export type AutonomySettings = components["schemas"]["AutonomySettings"];
+
+export type BillingSubscription = components["schemas"]["BillingSubscription"];
+export type BillingPlan = components["schemas"]["BillingPlan"];

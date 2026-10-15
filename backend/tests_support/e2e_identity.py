@@ -46,6 +46,12 @@ class _StaticIdentity:
 
 
 _IDENTITIES: dict[str, _StaticIdentity] = {
+    # WP-R02: isolated identity; billing lifecycle must not alter shared campaign fixtures.
+    "e2e-test-id-token-billing-owner": _StaticIdentity(
+        subject="e2e-google-uid-billing-owner",
+        email="billing-owner@commercial-e2e.campaia.test",
+        email_verified=True,
+    ),
     E2E_TOKEN_TENANT_A_OWNER: _StaticIdentity(
         subject="e2e-google-uid-tenant-a-owner",
         email="owner@demo-tenant.campaia.test",

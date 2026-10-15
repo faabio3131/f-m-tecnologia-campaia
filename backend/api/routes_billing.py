@@ -1,9 +1,7 @@
 """Superficie HTTP do motor de cobranca propria do CampaIA (B11 / ADR-0020).
 
-Deliberadamente minima: uma assinatura ativa por tenant, uma cobranca por competencia, e o
-webhook que recebe a confirmacao do Asaas. Nao expoe (ainda) historico de faturas, catalogo
-de planos navegavel nem régua de cobranca -- blocos maiores, com decisoes de produto proprias,
-fora do escopo desta integracao pontual (ver docs/18_ADR_0020_MODELO_COMERCIAL_E_GATEWAY_DE_PAGAMENTO.md).
+Uma assinatura por tenant, catalogo configurado, lifecycle, cobranca por competencia e
+webhook Asaas. Condicoes comerciais sao dados externos; nao ha catalogo padrao.
 
 O webhook (`POST /webhooks/asaas`) e o UNICO endpoint deste arquivo sem autenticacao de
 usuario: quem chama e o Asaas, nao o app. A autenticidade vem da verificacao de token do
@@ -27,6 +25,7 @@ from campaia_core.plan_catalog import PlanCatalogError, get_plan, load_plan_cata
 from campaia_core.subscription import (
     ChargePurpose,
     PlanChangeBillingMode,
+    PlanDefinition,
     ReactivationBillingMode,
     Subscription,
     SubscriptionStatus,
@@ -57,6 +56,7 @@ from .models import (
     BillingChargeResponse,
     BillingEntitlementsResponse,
     BillingPlanChangeRequest,
+    BillingPlanResponse,
     BillingSubscriptionResponse,
     BillingSubscriptionUpsert,
 )
@@ -75,6 +75,41 @@ def _authorize_billing(request: Request, permission: Permission):
     return fixture, state
 
 
+def _serialize_plan(plan: PlanDefinition) -> BillingPlanResponse:
+    return BillingPlanResponse(
+        plan_id=plan.plan_id,
+        name=plan.name,
+        currency=plan.currency,
+        monthly_price=str(plan.monthly_price),
+        included_credits=str(plan.included_credits),
+        extra_credit_unit_price=str(plan.extra_credit_unit_price),
+        trial_days=plan.trial_days,
+        cancellation_mode=plan.cancellation_mode,
+        reactivation_mode=plan.reactivation_mode,
+        reactivation_billing_mode=plan.reactivation_billing_mode,
+        plan_changes=[{
+            "target_plan_id": rule.target_plan_id,
+            "kind": rule.kind.value,
+            "billing_mode": rule.billing_mode.value if rule.billing_mode else None,
+        } for rule in plan.plan_changes],
+    )
+
+
+async def list_billing_plans(request: Request) -> JSONResponse:
+    _authorize_billing(request, Permission.BILLING_VIEW)
+    try:
+        catalog = load_plan_catalog()
+    except (PlanCatalogError, OSError, ValueError) as exc:
+        raise ApiError(
+            "BILLING_CATALOG_UNAVAILABLE",
+            "Catálogo de planos indisponível neste ambiente.",
+            status_code=503,
+        ) from exc
+    return JSONResponse({"items": [
+        _serialize_plan(plan).model_dump(mode="json") for plan in catalog.values()
+    ]})
+
+
 def _serialize_subscription(sub: Subscription) -> dict:
     current = refresh_trial_status(sub)
     entitlements = current.plan.entitlements
@@ -89,6 +124,7 @@ def _serialize_subscription(sub: Subscription) -> dict:
         )
 
     return BillingSubscriptionResponse(
+        commercial_terms=_serialize_plan(current.plan),
         tenant_id=current.tenant_id,
         customer_ref=current.customer_ref,
         customer_document=current.customer_document,
