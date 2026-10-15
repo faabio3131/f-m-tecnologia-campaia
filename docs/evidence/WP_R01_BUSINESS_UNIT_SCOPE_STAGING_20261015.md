@@ -13,3 +13,19 @@ Proprietário permanece OWNER na Principal, nenhuma ampliação de papel do usu�
 Próximas provas: atualizar endpoint da campanha na janela anônima com sessão antiga e capturar recusa; novo login com a mesma identidade, confirmar a nova unidade e VIEWER; tentar mesma campanha da Principal e observar negativa por unidade; conferir leitura da lista filtrada e manter evidência de auditoria. A mera troca registrada não certifica essas provas pendentes.
 
 Último estado confirmado do banco nesta janela: RUNNABLE / ALWAYS. Desligar imediatamente ao terminar ou bloquear e obter STOPPED / NEVER. Nenhum merge, deploy, migration ou segredo real alterado. G2 continua PARTIAL.
+
+## Resultados externos confirmados — 12:49 a 12:55
+
+- Print image(20261015-154804).png ainda mostrava JSON anterior depois de F5; não usado como prova de uma consulta nova nem classificado como falha de revogação.
+- Para distinguir nova navegação da resposta anterior, Diretor acessou o mesmo endpoint com query verificacao=g2-unidade-2. O handler não usa essa query para autorização. Print image(20261015-154919).png confirmou code UNAUTHENTICATED, message 'Sessao invalida ou expirada.' Nenhum dado da campanha retornou nessa consulta. Revogação por alteração de unidade observada.
+- Após novo Google Login da mesma identidade na janela anônima, print image(20261015-155314).png confirmou membership member_000001_5937138a, tenant A original, nova unidade bu_000001_3f64ec55, papel VIEWER e 2 permissões.
+- Nova consulta à mesma campanha da Principal com query verificacao=g2-nova-unidade, após relogin, produziu code NOT_FOUND e message 'Campaign not found.', sem dados da campanha. Screenshot image(20261015-155537).png inspecionado. Status HTTP não capturado no print.
+- Controle positivo anterior na Principal e negativo após mudar de unidade foram realizados com a mesma identidade, mesmo tenant, mesmo recurso e mesmo papel. Escopo de unidade é a variável alterada; audit comprova a mutação.
+
+## Encerramento da rodada
+
+Cenários externos desta rodada observados: login e step-up; administração de unidade; convite/aceite; desativação e revogação; reativação e autoridade VIEWER; negativa MEMBER_VIEW na API; leitura própria positiva; leitura cross-tenant negativa; edição de unidade e revogação; novo login no escopo atualizado e leitura cross-unit negativa. Nenhum código alterado nem gasto em anúncios. Não generalizar essas provas para publicação real de canais, produção, todas as rotas/mutações, replay ou concorrência externos não executados.
+
+Encerrada execução externa após o último print às 12:55. Próxima ação imediata: Diretor executar activationPolicy NEVER e confirmar STOPPED / NEVER. Banco não declarado desligado antes da resposta. O membership de teste fica ACTIVE / VIEWER na unidade de homologação, unidade também ACTIVE; proprietário permanece na Principal e rascunho permanece DRAFT, preservando dados de teste e auditoria. Isso evita mutações adicionais desnecessárias para limpeza.
+
+G2 permanece PARTIAL neste commit, aguardando revisão da matriz/DoD e CI/documentação. O desligamento precede essa análise, que não requer banco ligado. PR #44 em Draft; nenhum merge/deploy/migration autorizado ou executado nesta rodada.
