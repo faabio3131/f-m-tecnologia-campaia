@@ -52,6 +52,15 @@ os testes com MockTransport não certificam configurações da conta nem liquida
 Local: domínio 424 e API 375 testes passaram (19 PostgreSQL reservados ao CI); Web check
 passou com lint/types/drift/boundaries, 105 testes e build. Resultados finais/HEAD exato na PR.
 
+Primeiro CI da PR #53 no HEAD c87bbbb06d70740b83e121644529803533e18858:
+Backend 38816907535 e F4 38816907506 SUCCESS; Frontend 38816907509 falhou no E2E novo.
+Os 28 cenários existentes de sessão passaram. O artefato checkout-e2e-evidence mostrou
+checkout duplicado após a atualização da página: checkout e consumo compartilhavam a mesma
+key React entre irmãos. Correção: prefixos de identidade distintos. Novo teste de integração
+da página confirma atualização conjunta de assinatura/histórico com um único checkout,
+mensagem de registro preservada e ausência de aviso de chave duplicada. A suíte Web passa a
+106 testes; cenário de duas abas mantido integralmente para repetir no novo HEAD.
+
 Fontes primárias conferidas em 15/10/2026:
 - https://docs.asaas.com/reference/criar-nova-cobranca — value, dueDate, externalReference,
   UNDEFINED e efeitos da configuração global de juros/multa; criar cobrança não confirma pagamento.

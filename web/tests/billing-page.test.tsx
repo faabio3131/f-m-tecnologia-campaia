@@ -34,6 +34,39 @@ beforeEach(() => { context.tenant = "a"; context.roles = ["OWNER"]; context.read
 afterEach(() => { vi.restoreAllMocks(); setCsrfToken(null); });
 
 describe("Billing Web", () => {
+  it("preserves one checkout and its confirmation when history and subscription refresh together", async () => {
+    const user = userEvent.setup();
+    const current: BillingSubscription = { ...sub, status: "PENDING_PAYMENT", entitlement_access_active: false,
+      activated_at: null, cancel_at_period_end: null, pending_plan_id: null,
+      commercial_terms: { ...plan, credit_policy: { version: "test-v1", trial_credits: 30,
+        trial_max_users: 1, trial_max_active_campaigns: 1, action_weights: { strategy: 5 } } } };
+    const quote = { organization_name: "Teste", holder_document_masked: "***7735", fingerprint: "b".repeat(64),
+      billing_id: "fixture", competence: "cycle:0", amount: "12.50", currency: "BRL", plan_id: plan.plan_id,
+      plan_name: plan.name, included_credits: 10, extra_credit_price: "1.00", action_weights: [], policy_version: "test-v1",
+      purpose: "REGULAR", cycle_index: 0, due_at: "2026-10-15T03:00:00Z", period_starts_at: null, period_ends_at: null,
+      lines: [{ description: "Mensalidade", amount: "12.50" }], provider: "SIMULATOR", mode: "SIMULATOR" };
+    let emitted = false;
+    const consoleError = vi.spyOn(console, "error");
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/billing/charges") && init?.method === "POST") { emitted = true; return response(202, {}); }
+      if (url.endsWith("/billing/charges")) return response(200, { items: [], next_cursor: null });
+      if (url.endsWith("/billing/subscription")) return response(200, current);
+      if (url.endsWith("/billing/plans")) return response(200, { items: [plan] });
+      if (url.endsWith("/billing/usage")) return response(200, { availability: "UNAVAILABLE", access_active: false, can_authorize_extras: false, cycle: null, balance: null, alerts: [], actions: [] });
+      if (url.endsWith("/billing/checkout")) return response(200, { state: emitted ? "REGISTERED" : "READY", quote, available_at: null, invoice_url: null });
+      throw new Error(`Unexpected ${url}`);
+    });
+    render(<BillingPage />);
+    await user.click(await screen.findByRole("button", { name: "Revisar e emitir cobrança" }));
+    await user.click(screen.getByRole("checkbox", { name: /Conferi o plano/ }));
+    await user.click(screen.getByRole("button", { name: "Confirmar cobrança" }));
+    await screen.findByText("Cobrança registrada. O acesso muda somente após confirmação do pagamento.");
+    await screen.findByText("Cobrança já registrada. Consulte a fatura e o histórico.");
+    expect(screen.getAllByRole("heading", { name: "Pagamento da assinatura" })).toHaveLength(1);
+    expect(consoleError.mock.calls.some(args => args.some(value => /same key/i.test(String(value))))).toBe(false);
+  });
+
   it("mostra condicoes contratadas distintas do catalogo, limites e consumo indisponivel", async () => {
     const fetch = mockRead(); render(<BillingPage />);
     expect(within(await screen.findByRole("region", { name: "Assinatura atual" })).getByText("R$ 12,50")).toBeInTheDocument();
