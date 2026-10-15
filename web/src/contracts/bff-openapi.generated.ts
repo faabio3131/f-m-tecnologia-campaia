@@ -737,6 +737,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/billing/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Consulta franquia e reservas persistidas do ciclo do tenant */
+        get: operations["getBillingUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/usage/consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** OWNER ou FINANCE autoriza ou revoga teto de excedente com step-up */
+        post: operations["setBillingCreditConsent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/billing/subscription": {
         parameters: {
             query?: never;
@@ -941,6 +975,7 @@ export interface components {
             included_credits: string;
             extra_credit_unit_price: string;
             trial_days: number | null;
+            credit_policy?: components["schemas"]["BillingCreditPolicy"] | null;
             cancellation_mode: string | null;
             reactivation_mode: string | null;
             reactivation_billing_mode: string | null;
@@ -1010,6 +1045,53 @@ export interface components {
         BillingChargeHistory: {
             items: components["schemas"]["BillingChargeHistoryItem"][];
             next_cursor: string | null;
+        };
+        BillingCreditPolicy: {
+            version: string;
+            trial_credits: number;
+            trial_max_users: number;
+            trial_max_active_campaigns: number;
+            action_weights: {
+                [key: string]: number;
+            };
+        };
+        BillingCreditConsent: {
+            cycle_id: string;
+            policy_version: string;
+            extra_credit_price: string;
+            cap: string;
+        };
+        BillingUsage: {
+            /** @enum {string} */
+            availability: "AVAILABLE" | "UNAVAILABLE";
+            cycle: components["schemas"]["BillingUsageCycle"] | null;
+            balance: components["schemas"]["BillingUsageBalance"] | null;
+            actions: {
+                action: string;
+                credits: number;
+            }[];
+            alerts: ("INCLUDED_80" | "INCLUDED_100" | "EXTRA_CAP_80" | "EXTRA_CAP_100")[];
+        };
+        BillingUsageCycle: {
+            id: string;
+            /** Format: date-time */
+            starts_at: string;
+            /** Format: date-time */
+            ends_at: string;
+            trial: boolean;
+            policy_version: string;
+        };
+        BillingUsageBalance: {
+            included_credits: number;
+            reserved_credits: number;
+            consumed_credits: number;
+            included_available: number;
+            extra_committed_amount: string;
+            extra_consumed_amount: string;
+            extra_cap: string;
+            extra_credit_price: string;
+            /** @enum {string} */
+            currency: "BRL";
         };
         BillingChargeCreate: {
             competence: string;
@@ -2827,6 +2909,84 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    getBillingUsage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Medicao autoritativa ou indisponibilidade explicita, nunca saldo presumido */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingUsage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Sem permissao BILLING_VIEW */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    setBillingCreditConsent: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+                 *     login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+                 *     servidor. Ausente/invalido -> 403.
+                 */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao. */
+                "X-Step-Up-Token": components["parameters"]["StepUpToken"];
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillingCreditConsent"];
+            };
+        };
+        responses: {
+            /** @description Consentimento auditado; preco e versao conferidos pelo servidor */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingUsage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["StepUpRequired"];
+            /** @description Ciclo, versao ou preco mudou; trial ou ausencia de ciclo pago */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
         };
     };
     getBillingSubscription: {

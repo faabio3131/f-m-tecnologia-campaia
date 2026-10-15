@@ -190,6 +190,48 @@ class PostgresRuntimeTests(unittest.TestCase):
                 ).fetchall()
             }
 
+    def test_commercial_payment_webhook_is_atomic_across_workers(self) -> None:
+        import json
+        from pathlib import Path
+        import tempfile
+        from unittest.mock import patch
+        from starlette.testclient import TestClient
+        from tests_api.test_helpers import OWNER, with_step_up, unique_idem
+
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "catalog.json"
+            plans = json.loads((Path(__file__).parents[1] / "config/plans.example.json").read_text())
+            plans[0]["included_credits"] = 10
+            plans[0]["credit_policy"] = {"version": "pg-test-v1", "action_weights": {"strategy": 5},
+                "trial_credits": 30, "trial_max_users": 1, "trial_max_active_campaigns": 1}
+            config.write_text(json.dumps(plans))
+            with patch.dict(os.environ, {"CAMPAIA_PLAN_CATALOG_PATH": str(config),
+                                         "ASAAS_WEBHOOK_TOKEN": "pg-webhook-proof"}):
+                clients = [TestClient(create_app(database_url=DSN, env="test")) for _ in range(2)]
+                setup = clients[0].put("/billing/subscription",
+                    headers={**with_step_up(OWNER), **unique_idem()}, json={
+                        "plan_id": plans[0]["plan_id"], "customer_document": "11144477735", "start_trial": True})
+                self.assertEqual(setup.status_code, 200, setup.text)
+                charge = clients[0].post("/billing/charges",
+                    headers={**with_step_up(OWNER), **unique_idem()}, json={"competence": "ignored"})
+                self.assertEqual(charge.status_code, 202, charge.text)
+                payload = {"id": "pg-paid-event", "event": "PAYMENT_RECEIVED", "payment": {
+                    "id": charge.json()["gateway_charge_id"], "status": "RECEIVED"}}
+                def deliver(client):
+                    return client.post("/webhooks/asaas", headers={"asaas-access-token": "pg-webhook-proof"}, json=payload)
+                with patch("api.routes_billing.grant_current_cycle", side_effect=RuntimeError("injected")):
+                    with self.assertRaises(RuntimeError):
+                        deliver(clients[0])
+                self.assertFalse(clients[1].app.state.campaia.asaas_webhook.already_seen("pg-paid-event"))
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    responses = list(pool.map(deliver, clients))
+                self.assertTrue(all(r.status_code == 200 for r in responses))
+                self.assertEqual(sum(r.json().get("processed", False) for r in responses), 1)
+                usage = clients[1].get("/billing/usage", headers=OWNER).json()
+                self.assertEqual(usage["balance"]["included_credits"], 10)
+                entries = clients[1].app.state.campaia.credit_ledger.entries("demo-tenant")
+                self.assertEqual(sum(e.kind == "OPEN" for e in entries), 2)
+
     def test_credit_journal_workers_replay_caps_and_immutable_history(self) -> None:
         from api.credit_store import PersistentCreditLedger
         from campaia_core.credit_ledger import CreditLimitExceeded

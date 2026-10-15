@@ -141,6 +141,18 @@ _BILLING_OBSERVATION_FIELDS = {
 }
 
 
+# New authoritative commercial terms are isolated from legacy constructor fields.
+# Old binaries can decode the envelope but MUST NOT write V1 contracts on rollback.
+# Disable billing/AI mutation and drain workers before any old-code rollback.
+_COMMERCIAL_FIELDS = {
+    ("campaia_core.subscription", "PlanDefinition"): frozenset({"credit_policy"}),
+    ("campaia_core.subscription", "Subscription"): frozenset({"paid_cycle_schedule", "extra_credit_consent"}),
+    ("campaia_core.subscription", "SubscriptionCharge"): frozenset({
+        "commercial_cycle_index", "commercial_lifecycle_id",
+    }),
+}
+
+
 def _original_class(obj: Any) -> type:
     return getattr(type(obj), "_notify_orig", type(obj))
 
@@ -176,9 +188,13 @@ def encode(value: Any) -> Any:
         fields = {f.name: encode(getattr(value, f.name)) for f in dataclasses.fields(value)}
         extension_keys = _BILLING_OBSERVATION_FIELDS.get((cls.__module__, cls.__qualname__), ())
         extensions = {key: fields.pop(key) for key in extension_keys if key in fields}
+        commercial_keys = _COMMERCIAL_FIELDS.get((cls.__module__, cls.__qualname__), ())
+        commercial = {key: fields.pop(key) for key in commercial_keys if key in fields}
         envelope = {"__type__": "dataclass", "mod": cls.__module__, "qual": cls.__qualname__, "fields": fields}
         if extensions:
             envelope["billing_observations"] = extensions
+        if any(value is not None for value in commercial.values()):
+            envelope["commercial_v1"] = commercial
         return envelope
     raise TypeError(f"api.db.encode: no encoding rule for {type(value)!r} (value={value!r})")
 
@@ -217,6 +233,13 @@ def decode(value: Any) -> Any:
             if set(extensions).intersection(fields):
                 raise ValueError("Duplicate billing observation fields.")
             fields.update({k: decode(v) for k, v in extensions.items()})
+            commercial = value.get("commercial_v1", {})
+            allowed_commercial = _COMMERCIAL_FIELDS.get((value["mod"], value["qual"]), ())
+            if (not isinstance(commercial, dict)
+                    or not set(commercial).issubset(allowed_commercial)
+                    or set(commercial).intersection(fields)):
+                raise ValueError("Unsupported or duplicate commercial terms.")
+            fields.update({k: decode(v) for k, v in commercial.items()})
             return cls(**fields)
         return {k: decode(v) for k, v in value.items()}
     if isinstance(value, list):

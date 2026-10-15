@@ -526,6 +526,7 @@ class BillingPlanResponse(BaseModel):
     included_credits: str
     extra_credit_unit_price: str
     trial_days: int | None
+    credit_policy: dict | None = None
     cancellation_mode: str | None
     reactivation_mode: str | None
     reactivation_billing_mode: str | None
@@ -557,6 +558,13 @@ class BillingSubscriptionResponse(BaseModel):
     next_dunning_reminder_at: datetime | None = None
     entitlement_access_active: bool
     entitlements: BillingEntitlementsResponse | None = None
+
+
+class BillingCreditConsentRequest(ApiModel):
+    cycle_id: str = Field(min_length=1, max_length=256)
+    policy_version: str = Field(min_length=1, max_length=256)
+    extra_credit_price: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+    cap: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
 
 
 class BillingChargeCreate(ApiModel):

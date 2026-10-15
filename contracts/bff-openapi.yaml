@@ -1102,6 +1102,56 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /billing/usage:
+    get:
+      tags: [Billing]
+      summary: Consulta franquia e reservas persistidas do ciclo do tenant
+      operationId: getBillingUsage
+      security: [cookieAuth: []]
+      responses:
+        '200':
+          description: Medicao autoritativa ou indisponibilidade explicita, nunca saldo presumido
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingUsage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Sem permissao BILLING_VIEW
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /billing/usage/consent:
+    post:
+      tags: [Billing]
+      summary: OWNER ou FINANCE autoriza ou revoga teto de excedente com step-up
+      operationId: setBillingCreditConsent
+      security: [cookieAuth: []]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BillingCreditConsent' }
+      responses:
+        '200':
+          description: Consentimento auditado; preco e versao conferidos pelo servidor
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingUsage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '409':
+          description: Ciclo, versao ou preco mudou; trial ou ausencia de ciclo pago
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
   /billing/subscription:
     get:
       tags: [Billing]
@@ -1528,6 +1578,10 @@ components:
         included_credits: { type: string }
         extra_credit_unit_price: { type: string }
         trial_days: { type: [integer, 'null'] }
+        credit_policy:
+          anyOf:
+            - { $ref: '#/components/schemas/BillingCreditPolicy' }
+            - { type: 'null' }
         cancellation_mode: { type: [string, 'null'] }
         reactivation_mode: { type: [string, 'null'] }
         reactivation_billing_mode: { type: [string, 'null'] }
@@ -1612,6 +1666,78 @@ components:
           type: array
           items: { $ref: '#/components/schemas/BillingChargeHistoryItem' }
         next_cursor: { type: [string, 'null'] }
+
+    BillingCreditPolicy:
+      type: object
+      required: [version, trial_credits, trial_max_users, trial_max_active_campaigns, action_weights]
+      properties:
+        version: { type: string }
+        trial_credits: { type: integer, minimum: 1 }
+        trial_max_users: { type: integer, minimum: 1 }
+        trial_max_active_campaigns: { type: integer, minimum: 1 }
+        action_weights:
+          type: object
+          additionalProperties: { type: integer, minimum: 1 }
+
+    BillingCreditConsent:
+      type: object
+      additionalProperties: false
+      required: [cycle_id, policy_version, extra_credit_price, cap]
+      properties:
+        cycle_id: { type: string, minLength: 1, maxLength: 256 }
+        policy_version: { type: string, minLength: 1, maxLength: 256 }
+        extra_credit_price: { type: string }
+        cap: { type: string }
+
+    BillingUsage:
+      type: object
+      required: [availability, cycle, balance, actions, alerts]
+      properties:
+        availability: { type: string, enum: [AVAILABLE, UNAVAILABLE] }
+        cycle:
+          anyOf:
+            - { $ref: '#/components/schemas/BillingUsageCycle' }
+            - { type: 'null' }
+        balance:
+          anyOf:
+            - { $ref: '#/components/schemas/BillingUsageBalance' }
+            - { type: 'null' }
+        actions:
+          type: array
+          items:
+            type: object
+            required: [action, credits]
+            properties:
+              action: { type: string }
+              credits: { type: integer }
+        alerts:
+          type: array
+          items: { type: string, enum: [INCLUDED_80, INCLUDED_100, EXTRA_CAP_80, EXTRA_CAP_100] }
+
+    BillingUsageCycle:
+      type: object
+      required: [id, starts_at, ends_at, trial, policy_version]
+      properties:
+        id: { type: string }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        trial: { type: boolean }
+        policy_version: { type: string }
+
+    BillingUsageBalance:
+      type: object
+      required: [included_credits, reserved_credits, consumed_credits, included_available,
+                 extra_committed_amount, extra_consumed_amount, extra_cap, extra_credit_price, currency]
+      properties:
+        included_credits: { type: integer }
+        reserved_credits: { type: integer }
+        consumed_credits: { type: integer }
+        included_available: { type: integer }
+        extra_committed_amount: { type: string }
+        extra_consumed_amount: { type: string }
+        extra_cap: { type: string }
+        extra_credit_price: { type: string }
+        currency: { type: string, enum: [BRL] }
 
     BillingChargeCreate:
       type: object

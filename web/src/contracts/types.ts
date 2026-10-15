@@ -28,3 +28,6 @@ export type BillingChargeHistory = components["schemas"]["BillingChargeHistory"]
 export type BillingChargeHistoryItem = components["schemas"]["BillingChargeHistoryItem"];
 
 export type BillingSubscriptionInput = components["schemas"]["BillingSubscriptionUpsert"];
+
+export type BillingUsage = components["schemas"]["BillingUsage"];
+export type BillingCreditConsent = components["schemas"]["BillingCreditConsent"];

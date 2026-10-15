@@ -330,7 +330,7 @@ class AsaasWebhookTests(unittest.TestCase):
         finally:
             self._restore_webhook_token(old)
 
-    def test_unknown_payment_id_is_accepted_but_not_processed(self) -> None:
+    def test_unknown_payment_id_requests_retry_without_poisoning_dedupe(self) -> None:
         app, client = self._app_and_client()
         old = self._set_webhook_token("expected-token")
         try:
@@ -343,8 +343,9 @@ class AsaasWebhookTests(unittest.TestCase):
                     "payment": {"id": "pay_does_not_exist", "status": "RECEIVED"},
                 },
             )
-            assert r.status_code == 200, r.text
-            assert r.json() == {"accepted": True, "processed": False}
+            assert r.status_code == 503, r.text
+            assert r.json()["code"] == "BILLING_CHARGE_NOT_READY"
+            assert not app.state.campaia.asaas_webhook.already_seen("evt_1")
         finally:
             self._restore_webhook_token(old)
 
@@ -739,12 +740,21 @@ class AsaasWebhookTests(unittest.TestCase):
 
     def test_duplicate_event_id_is_rejected_the_second_time(self) -> None:
         app, client = self._app_and_client()
+        with _with_catalog():
+            configured = client.put("/billing/subscription",
+                headers={**with_step_up(OWNER), **unique_idem()},
+                json={"plan_id": "exemplo-essencial", "customer_document": "11144477735"})
+        assert configured.status_code == 200, configured.text
+        created = client.post("/billing/charges",
+            headers={**with_step_up(OWNER), **unique_idem()}, json={"competence": "2026-09"})
+        assert created.status_code == 202, created.text
+        gateway_id = created.json()["gateway_charge_id"]
         old = self._set_webhook_token("expected-token")
         try:
             payload = {
                 "id": "evt_dup_1",
                 "event": "PAYMENT_RECEIVED",
-                "payment": {"id": "pay_does_not_exist", "status": "RECEIVED"},
+                "payment": {"id": gateway_id, "status": "RECEIVED"},
             }
             first = client.post(
                 "/webhooks/asaas", headers={"asaas-access-token": "expected-token"}, json=payload
@@ -777,7 +787,7 @@ class AsaasWebhookTests(unittest.TestCase):
                         "payment": {"id": "pay_does_not_exist", "status": "RECEIVED"},
                     },
                 )
-                assert r.status_code == 200, r.text
+                assert r.status_code == 503, r.text
 
             over_limit = client.post(
                 "/webhooks/asaas",

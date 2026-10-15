@@ -14,6 +14,12 @@ from datetime import datetime, timezone
 from dataclasses import asdict, replace
 from hashlib import sha256
 import json
+from decimal import Decimal
+from uuid import uuid4
+
+from campaia_core.credit_ledger import ExtraCreditConsent
+from campaia_core.billing_cycles import PaidCycleSchedule, period_index
+from .billing_credits import grant_current_cycle, usage_payload, cycle_snapshot
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -28,6 +34,7 @@ from campaia_core.permissions import Permission, Resource, authorize
 from campaia_core.plan_catalog import PlanCatalogError, get_plan, load_plan_catalog
 from campaia_core.subscription import (
     ChargePurpose,
+    ChargeLineItem,
     PlanChangeBillingMode,
     PlanDefinition,
     ReactivationBillingMode,
@@ -56,6 +63,7 @@ from .deps import (
 from .errors import ApiError
 from .helpers import parse_body
 from .models import (
+    BillingCreditConsentRequest,
     BillingChargeCreate,
     BillingChargeResponse,
     BillingChargeHistoryItem,
@@ -91,6 +99,8 @@ def _serialize_plan(plan: PlanDefinition) -> BillingPlanResponse:
         included_credits=str(plan.included_credits),
         extra_credit_unit_price=str(plan.extra_credit_unit_price),
         trial_days=plan.trial_days,
+        credit_policy=({**asdict(plan.credit_policy), "action_weights": dict(plan.credit_policy.action_weights)}
+                       if plan.credit_policy else None),
         cancellation_mode=plan.cancellation_mode,
         reactivation_mode=plan.reactivation_mode,
         reactivation_billing_mode=plan.reactivation_billing_mode,
@@ -129,8 +139,12 @@ def _serialize_subscription(sub: Subscription) -> dict:
     entitlement_payload = None
     if entitlements is not None:
         entitlement_payload = BillingEntitlementsResponse(
-            max_users=current.plan.effective_max_users,
-            max_active_campaigns=entitlements.max_active_campaigns,
+            max_users=(current.plan.credit_policy.trial_max_users
+                       if current.status is SubscriptionStatus.TRIAL and current.plan.credit_policy
+                       else current.plan.effective_max_users),
+            max_active_campaigns=(current.plan.credit_policy.trial_max_active_campaigns
+                                  if current.status is SubscriptionStatus.TRIAL and current.plan.credit_policy
+                                  else entitlements.max_active_campaigns),
             channels=list(entitlements.channels),
             ai_capabilities=list(entitlements.ai_capabilities),
             resources=list(entitlements.resources),
@@ -237,6 +251,7 @@ async def put_subscription(request: Request) -> JSONResponse:
                     customer_document=body.customer_document,
                     plan=plan,
                     status=SubscriptionStatus.PENDING_PAYMENT,
+                    paid_cycle_schedule=(PaidCycleSchedule(uuid4().hex) if plan.credit_policy else None),
                 )
             else:
                 subscription = Subscription(
@@ -257,6 +272,8 @@ async def put_subscription(request: Request) -> JSONResponse:
                     grace_period_ends_at=existing.grace_period_ends_at,
                     dunning_reminders_sent=existing.dunning_reminders_sent,
                     last_dunning_at=existing.last_dunning_at,
+                    paid_cycle_schedule=existing.paid_cycle_schedule,
+                    extra_credit_consent=existing.extra_credit_consent,
                 )
 
             if body.start_trial:
@@ -267,6 +284,7 @@ async def put_subscription(request: Request) -> JSONResponse:
         except ValueError as exc:
             raise ApiError("VALIDATION_FAILED", str(exc)) from exc
 
+        grant_current_cycle(state, subscription, at=datetime.now(timezone.utc))
         state.subscriptions[fixture.tenant_id] = subscription
         state.audit.append(
             tenant_id=fixture.tenant_id,
@@ -295,6 +313,10 @@ async def change_subscription_plan(request: Request) -> JSONResponse:
 
     def _do_change() -> dict:
         subscription = _require_subscription(state, fixture.tenant_id)
+        if subscription.plan.credit_policy is not None:
+            raise ApiError("BILLING_LIFECYCLE_PENDING",
+                           "Este contrato exige o fluxo por aniversário; alteração indisponível até homologação.",
+                           status_code=409)
         try:
             catalog = load_plan_catalog()
             target = get_plan(body.target_plan_id, catalog)
@@ -325,6 +347,10 @@ async def cancel_billing_subscription(request: Request) -> JSONResponse:
 
     def _do_cancel() -> dict:
         subscription = _require_subscription(state, fixture.tenant_id)
+        if subscription.plan.credit_policy is not None:
+            raise ApiError("BILLING_LIFECYCLE_PENDING",
+                           "Este contrato exige o fluxo por aniversário; alteração indisponível até homologação.",
+                           status_code=409)
         try:
             updated = cancel_subscription(subscription, now=datetime.now(timezone.utc))
         except ValueError as exc:
@@ -350,6 +376,10 @@ async def reactivate_billing_subscription(request: Request) -> JSONResponse:
 
     def _do_reactivate() -> dict:
         subscription = _require_subscription(state, fixture.tenant_id)
+        if subscription.plan.credit_policy is not None:
+            raise ApiError("BILLING_LIFECYCLE_PENDING",
+                           "Este contrato exige o fluxo por aniversário; alteração indisponível até homologação.",
+                           status_code=409)
         try:
             updated = request_reactivation(subscription, now=datetime.now(timezone.utc))
         except ValueError as exc:
@@ -373,6 +403,47 @@ async def get_subscription(request: Request) -> JSONResponse:
     fixture, state = _authorize_billing(request, Permission.BILLING_VIEW)
     subscription = _require_subscription(state, fixture.tenant_id)
     return JSONResponse(_serialize_subscription(subscription))
+
+
+async def get_billing_usage(request: Request) -> JSONResponse:
+    fixture, state = _authorize_billing(request, Permission.BILLING_VIEW)
+    subscription = _require_subscription(state, fixture.tenant_id)
+    return JSONResponse(usage_payload(state, subscription))
+
+
+async def set_credit_consent(request: Request) -> JSONResponse:
+    fixture, state = _authorize_billing(request, Permission.BILLING_MANAGE)
+    key = require_idempotency_key(request)
+    body = await parse_body(request, BillingCreditConsentRequest)
+
+    def _do_consent():
+        subscription = _require_subscription(state, fixture.tenant_id)
+        now = datetime.now(timezone.utc)
+        snapshot = cycle_snapshot(subscription, at=now)
+        if (state.credit_ledger is None or snapshot is None or snapshot.trial
+                or not snapshot.starts_at <= now < snapshot.ends_at
+                or not entitlement_access_is_active(subscription, now=now)):
+            raise ApiError("BILLING_CONSENT_REJECTED", "Excedente exige ciclo pago vigente.", status_code=409)
+        if (body.policy_version != snapshot.policy_version
+                or body.extra_credit_price != snapshot.extra_credit_price
+                or body.cycle_id != snapshot.cycle_id):
+            raise ApiError("BILLING_TERMS_CHANGED", "Revise o ciclo, a versão e o preço antes de autorizar.", status_code=409)
+        state.credit_ledger.decide(fixture.tenant_id, 'consent', cycle_id=snapshot.cycle_id,
+                                  cap=body.cap, actor=fixture.user_id,
+                                  reference='http:' + key, at=now)
+        subscription = replace(subscription, extra_credit_consent=ExtraCreditConsent(
+            tenant_id=fixture.tenant_id, reference='http:' + key, actor=fixture.user_id,
+            at=now, cap=body.cap, policy_version=body.policy_version,
+            extra_credit_price=body.extra_credit_price))
+        state.subscriptions[fixture.tenant_id] = subscription
+        state.audit.append(tenant_id=fixture.tenant_id, actor=fixture.user_id,
+                           action="BILLING_EXTRA_CREDIT_CONSENT", target=snapshot.cycle_id,
+                           details={"cap": str(body.cap), "version": body.policy_version,
+                                    "price": str(body.extra_credit_price)})
+        return usage_payload(state, subscription, at=now)
+
+    result, _ = state.idempotency.execute(fixture.tenant_id, 'http:credit-consent:' + key, _do_consent)
+    return JSONResponse(result)
 
 
 async def list_billing_charges(request: Request) -> JSONResponse:
@@ -418,9 +489,8 @@ async def create_charge(request: Request) -> JSONResponse:
     fixture, state = _authorize_billing(request, Permission.BILLING_MANAGE)
     idem_key = require_idempotency_key(request)
     body = await parse_body(request, BillingChargeCreate)
-    subscription = _require_subscription(state, fixture.tenant_id)
-
     def _do_charge() -> dict:
+        subscription = _require_subscription(state, fixture.tenant_id)
         try:
             billing_plan = None
             purpose = ChargePurpose.REGULAR
@@ -440,13 +510,47 @@ async def create_charge(request: Request) -> JSONResponse:
                     raise ValueError("modo de cobranca da reativacao nao suportado.")
                 purpose = ChargePurpose.REACTIVATION
 
+            commercial_schedule = subscription.paid_cycle_schedule
+            if subscription.plan.credit_policy is not None:
+                if commercial_schedule is None or state.credit_ledger is None:
+                    raise ValueError("Contrato comercial sem identidade/persistência de ciclo.")
+                if body.extra_credits_used != 0:
+                    raise ValueError("Consumo comercial é calculado pelo servidor, nunca pelo cliente.")
+                if subscription.pending_plan is not None or subscription.reactivation_requested_at is not None:
+                    raise ValueError("Lifecycle comercial exige agendamento de vigência homologado.")
+                index = commercial_schedule.paid_through_index + 1
+                now = datetime.now(timezone.utc)
+                if commercial_schedule.anchor_at is not None:
+                    if period_index(commercial_schedule.anchor_at, now) < index:
+                        raise ValueError("A renovação é emitida somente no aniversário.")
+                closed_extra = Decimal("0.00")
+                if index > 0:
+                    previous_id = commercial_schedule.obligation_id(subscription.tenant_id, index - 1)
+                    previous = state.credit_ledger.balance(subscription.tenant_id, previous_id)
+                    if previous.reserved_credits:
+                        raise ValueError("Uso anterior pendente de reconciliação; não fechar estimativa como consumo.")
+                    closed_extra = previous.extra_consumed_amount
+                competence = f"cycle:{index}"
+            else:
+                competence = body.competence
+
             charge = compute_cycle_charge(
                 subscription,
-                competence=body.competence,
+                competence=competence,
                 extra_credits_used=body.extra_credits_used,
                 billing_plan=billing_plan,
                 purpose=purpose,
             )
+            if subscription.plan.credit_policy is not None:
+                lines = [ChargeLineItem(f"Mensalidade antecipada — ciclo {index}", subscription.plan.monthly_price)]
+                if closed_extra:
+                    start, end = commercial_schedule.bounds(index - 1)
+                    lines.append(ChargeLineItem(
+                        f"Excedente fechado — {start.isoformat()} / {end.isoformat()}", closed_extra))
+                charge = replace(charge,
+                    billing_id=commercial_schedule.obligation_id(subscription.tenant_id, index),
+                    line_items=tuple(lines), commercial_cycle_index=index,
+                    commercial_lifecycle_id=commercial_schedule.lifecycle_id)
         except ValueError as exc:
             raise ApiError("VALIDATION_FAILED", str(exc)) from exc
 
@@ -499,9 +603,8 @@ async def asaas_webhook(request: Request) -> JSONResponse:
     autenticidade vem do token estatico verificado por `AsaasWebhookReceiver`, nunca de um
     Bearer token de sessao (o Asaas nao tem um).
 
-    Sempre responde 200 para um token valido, mesmo em duplicata ou payment_id desconhecido
-    -- o Asaas reenvia em qualquer resposta que nao seja 2xx, e "ja processado"/"cobranca
-    desconhecida" nao sao falhas que justifiquem esse reenvio. So token invalido vira 401.
+    Duplicata processada retorna 200. Cobrança autenticada ainda não persistida retorna
+    503 sem marcar dedupe, permitindo retry após o commit da emissão. Token inválido vira 401.
 
     Item 1.2 do cronograma mestre (24/09/2026): unico endpoint sem autenticacao de usuario
     deste app, entao o unico alvo publico de flood de aplicacao -- rate limit por IP de
@@ -521,174 +624,200 @@ async def asaas_webhook(request: Request) -> JSONResponse:
     except ValueError as exc:
         raise ApiError("VALIDATION_FAILED", f"Corpo do webhook nao e JSON valido: {exc}") from exc
 
-    event_id = payload.get("id", "") if isinstance(payload, dict) else ""
-    verdict = state.asaas_webhook.receive(received_token=received_token, event_id=event_id)
-    if not verdict:
-        from campaia_core.webhooks import RejectionReason
+    def _process_event():
+        authenticated = state.asaas_webhook.authenticate(received_token)
+        if not authenticated:
+            from campaia_core.webhooks import RejectionReason
+            status_code = 401 if authenticated.reason is RejectionReason.SIGNATURE_INVALID else 200
+            return JSONResponse({"accepted": False, "reason": authenticated.reason}, status_code=status_code)
+        try:
+            event = parse_asaas_payment_event(payload)
+        except ValueError:
+            return JSONResponse({"accepted": True, "processed": False})
+        charge = state.charges.get(event.payment_id)
+        if charge is None:
+            # A valid callback can beat the charge-creation transaction commit.
+            # Do not acknowledge or mark seen before the durable obligation exists.
+            raise ApiError("BILLING_CHARGE_NOT_READY", "Cobrança ainda não disponível para reconciliação.",
+                           status_code=503)
+        if state.db is not None:
+            # Match the existing HTTP idempotency tenant lock before any mutations.
+            state.idempotency._table.lock_key(f"tenant:{charge.tenant_id}")
+            charge = state.charges.get(event.payment_id)
+        verdict = state.asaas_webhook.receive(received_token=received_token, event_id=event.event_id)
+        if not verdict:
+            return JSONResponse({"accepted": False, "reason": verdict.reason})
 
-        status_code = 401 if verdict.reason is RejectionReason.SIGNATURE_INVALID else 200
-        return JSONResponse({"accepted": False, "reason": verdict.reason}, status_code=status_code)
+        if event.event_type in {
+            "PAYMENT_CREDIT_CARD_CAPTURE_REFUSED",
+            "PAYMENT_REPROVED_BY_RISK_ANALYSIS",
+        }:
+            state.audit.append(
+                tenant_id=charge.tenant_id,
+                actor="asaas",
+                actor_kind="EXTERNAL_PROVIDER",
+                action="BILLING_PAYMENT_ATTEMPT_FAILED",
+                target=charge.billing_id,
+                details={
+                    "event_type": event.event_type,
+                    "payment_status": event.asaas_status,
+                },
+            )
+            return JSONResponse(
+                {
+                    "accepted": True,
+                    "processed": True,
+                    "billing_id": charge.billing_id,
+                    "event": event.event_type,
+                }
+            )
 
-    try:
-        event = parse_asaas_payment_event(payload)
-    except ValueError:
-        # Token valido mas corpo malformado -- aceitar o recebimento (200, nao repetir).
-        # Nao ha tenant real identificavel ainda neste ponto, entao nao ha em nome de quem
-        # registrar auditoria; jamais processar um evento parcialmente interpretado.
-        return JSONResponse({"accepted": True, "processed": False})
+        observed_at = datetime.now(timezone.utc)
+        status = map_asaas_status(event.asaas_status)
+        # Receipt observation only: never a fresh provider poll or a synthesized ledger.
+        state.charges[event.payment_id] = replace(
+            charge, gateway_status=status.value, status_observed_at=observed_at,
+            status_source="WEBHOOK",
+        )
 
-    charge = state.charges.get(event.payment_id)
-    if charge is None:
-        # payment_id que este processo nao originou (ou cobranca de uma execucao anterior,
-        # em memoria, ja perdida) -- aceitar o recebimento sem erro, nao ha o que liquidar.
-        return JSONResponse({"accepted": True, "processed": False})
+        if status is GatewayChargeStatus.OVERDUE:
+            subscription = state.subscriptions.get(charge.tenant_id)
+            if subscription is None:
+                return JSONResponse(
+                    {"accepted": True, "processed": False, "status": status.value}
+                )
 
-    if event.event_type in {
-        "PAYMENT_CREDIT_CARD_CAPTURE_REFUSED",
-        "PAYMENT_REPROVED_BY_RISK_ANALYSIS",
-    }:
+            if (subscription.paid_cycle_schedule is not None
+                    and any(identity == charge.billing_id for identity, _index
+                            in subscription.paid_cycle_schedule.settled_obligations)):
+                state.audit.append(tenant_id=charge.tenant_id, actor="asaas",
+                    actor_kind="EXTERNAL_PROVIDER", action="BILLING_STALE_OVERDUE_IGNORED",
+                    target=charge.billing_id)
+                return JSONResponse({"accepted": True, "processed": False, "status": status.value})
+
+            try:
+                past_due = mark_past_due(
+                    subscription,
+                    overdue_at=observed_at,
+                    billed_plan_id=charge.plan_id,
+                    billed_purpose=charge.purpose,
+                )
+            except ValueError as exc:
+                state.audit.append(
+                    tenant_id=charge.tenant_id,
+                    actor="asaas",
+                    actor_kind="EXTERNAL_PROVIDER",
+                    action="BILLING_SUBSCRIPTION_PAST_DUE_SKIPPED",
+                    target=subscription.plan.plan_id,
+                    details={
+                        "billing_id": charge.billing_id,
+                        "billed_plan_id": charge.plan_id,
+                        "charge_purpose": charge.purpose.value,
+                        "reason": str(exc),
+                    },
+                )
+                return JSONResponse(
+                    {"accepted": True, "processed": False, "status": status.value}
+                )
+
+            state.subscriptions[charge.tenant_id] = past_due
+            if past_due != subscription:
+                state.audit.append(
+                    tenant_id=charge.tenant_id,
+                    actor="asaas",
+                    actor_kind="EXTERNAL_PROVIDER",
+                    action="BILLING_SUBSCRIPTION_PAST_DUE",
+                    target=past_due.plan.plan_id,
+                    details={
+                        "billing_id": charge.billing_id,
+                        "grace_period_ends_at": (
+                            past_due.grace_period_ends_at.isoformat()
+                            if past_due.grace_period_ends_at is not None
+                            else None
+                        ),
+                    },
+                )
+            return JSONResponse(
+                {
+                    "accepted": True,
+                    "processed": True,
+                    "billing_id": charge.billing_id,
+                    "status": status.value,
+                }
+            )
+
+        fact = try_settle_from_status(charge, status, settled_at=observed_at)
+        if fact is None:
+            return JSONResponse({"accepted": True, "processed": False, "status": status.value})
+
+        handoff = build_campaia_fiscal_handoff(fact)
+
+        subscription = state.subscriptions.get(charge.tenant_id)
+        if subscription is not None:
+            was_past_due = subscription.status is SubscriptionStatus.PAST_DUE
+            try:
+                schedule = subscription.paid_cycle_schedule
+                if subscription.plan.credit_policy is not None:
+                    if (schedule is None or charge.commercial_lifecycle_id != schedule.lifecycle_id
+                            or charge.commercial_cycle_index is None):
+                        raise ValueError("Pagamento sem vínculo ao ciclo/lifecycle comercial vigente.")
+                    schedule = schedule.confirm_payment(subscription.tenant_id, charge.billing_id,
+                                                        charge.commercial_cycle_index, fact.settled_at)
+                activated = activate_from_settled_payment(
+                    subscription,
+                    settled_at=fact.settled_at,
+                    billed_plan_id=charge.plan_id,
+                    billed_purpose=charge.purpose,
+                )
+            except ValueError as exc:
+                # A liquidacao financeira do gateway e um fato independente do estado comercial
+                # atual. Uma cobranca antiga pode chegar depois de cancelamento ou depois de uma
+                # troca de plano ter sido solicitada. Nunca reative/libere entitlement por isso,
+                # mas tambem nao responda 409 ao Asaas: isso so provocaria retries de um pagamento
+                # que ja aconteceu. Registre a divergencia para reconciliacao humana/operacional.
+                state.audit.append(
+                    tenant_id=charge.tenant_id,
+                    actor="asaas",
+                    actor_kind="EXTERNAL_PROVIDER",
+                    action="BILLING_SUBSCRIPTION_ACTIVATION_SKIPPED",
+                    target=subscription.plan.plan_id,
+                    details={
+                        "billing_id": charge.billing_id,
+                        "billed_plan_id": charge.plan_id,
+                        "charge_purpose": charge.purpose.value,
+                        "reason": str(exc),
+                    },
+                )
+            else:
+                if subscription.plan.credit_policy is not None:
+                    activated = replace(activated, paid_cycle_schedule=schedule,
+                                        activated_at=schedule.anchor_at)
+                    grant_current_cycle(state, activated, at=fact.settled_at)
+                state.subscriptions[charge.tenant_id] = activated
+                state.audit.append(
+                    tenant_id=charge.tenant_id,
+                    actor="asaas",
+                    actor_kind="EXTERNAL_PROVIDER",
+                    action=(
+                        "BILLING_SUBSCRIPTION_RECOVERED"
+                        if was_past_due
+                        else "BILLING_SUBSCRIPTION_ACTIVATED"
+                    ),
+                    target=activated.plan.plan_id,
+                    details={"billing_id": charge.billing_id},
+                )
+
         state.audit.append(
             tenant_id=charge.tenant_id,
             actor="asaas",
             actor_kind="EXTERNAL_PROVIDER",
-            action="BILLING_PAYMENT_ATTEMPT_FAILED",
+            action="BILLING_CHARGE_SETTLED",
             target=charge.billing_id,
-            details={
-                "event_type": event.event_type,
-                "payment_status": event.asaas_status,
-            },
+            details={"fiscal_handoff_idempotency_key": handoff.idempotency_key},
         )
-        return JSONResponse(
-            {
-                "accepted": True,
-                "processed": True,
-                "billing_id": charge.billing_id,
-                "event": event.event_type,
-            }
-        )
+        return JSONResponse({"accepted": True, "processed": True, "billing_id": charge.billing_id})
 
-    observed_at = datetime.now(timezone.utc)
-    status = map_asaas_status(event.asaas_status)
-    # Receipt observation only: never a fresh provider poll or a synthesized ledger.
-    state.charges[event.payment_id] = replace(
-        charge, gateway_status=status.value, status_observed_at=observed_at,
-        status_source="WEBHOOK",
-    )
-
-    if status is GatewayChargeStatus.OVERDUE:
-        subscription = state.subscriptions.get(charge.tenant_id)
-        if subscription is None:
-            return JSONResponse(
-                {"accepted": True, "processed": False, "status": status.value}
-            )
-
-        try:
-            past_due = mark_past_due(
-                subscription,
-                overdue_at=observed_at,
-                billed_plan_id=charge.plan_id,
-                billed_purpose=charge.purpose,
-            )
-        except ValueError as exc:
-            state.audit.append(
-                tenant_id=charge.tenant_id,
-                actor="asaas",
-                actor_kind="EXTERNAL_PROVIDER",
-                action="BILLING_SUBSCRIPTION_PAST_DUE_SKIPPED",
-                target=subscription.plan.plan_id,
-                details={
-                    "billing_id": charge.billing_id,
-                    "billed_plan_id": charge.plan_id,
-                    "charge_purpose": charge.purpose.value,
-                    "reason": str(exc),
-                },
-            )
-            return JSONResponse(
-                {"accepted": True, "processed": False, "status": status.value}
-            )
-
-        state.subscriptions[charge.tenant_id] = past_due
-        if past_due != subscription:
-            state.audit.append(
-                tenant_id=charge.tenant_id,
-                actor="asaas",
-                actor_kind="EXTERNAL_PROVIDER",
-                action="BILLING_SUBSCRIPTION_PAST_DUE",
-                target=past_due.plan.plan_id,
-                details={
-                    "billing_id": charge.billing_id,
-                    "grace_period_ends_at": (
-                        past_due.grace_period_ends_at.isoformat()
-                        if past_due.grace_period_ends_at is not None
-                        else None
-                    ),
-                },
-            )
-        return JSONResponse(
-            {
-                "accepted": True,
-                "processed": True,
-                "billing_id": charge.billing_id,
-                "status": status.value,
-            }
-        )
-
-    fact = try_settle_from_status(charge, status, settled_at=observed_at)
-    if fact is None:
-        return JSONResponse({"accepted": True, "processed": False, "status": status.value})
-
-    handoff = build_campaia_fiscal_handoff(fact)
-
-    subscription = state.subscriptions.get(charge.tenant_id)
-    if subscription is not None:
-        was_past_due = subscription.status is SubscriptionStatus.PAST_DUE
-        try:
-            activated = activate_from_settled_payment(
-                subscription,
-                settled_at=fact.settled_at,
-                billed_plan_id=charge.plan_id,
-                billed_purpose=charge.purpose,
-            )
-        except ValueError as exc:
-            # A liquidacao financeira do gateway e um fato independente do estado comercial
-            # atual. Uma cobranca antiga pode chegar depois de cancelamento ou depois de uma
-            # troca de plano ter sido solicitada. Nunca reative/libere entitlement por isso,
-            # mas tambem nao responda 409 ao Asaas: isso so provocaria retries de um pagamento
-            # que ja aconteceu. Registre a divergencia para reconciliacao humana/operacional.
-            state.audit.append(
-                tenant_id=charge.tenant_id,
-                actor="asaas",
-                actor_kind="EXTERNAL_PROVIDER",
-                action="BILLING_SUBSCRIPTION_ACTIVATION_SKIPPED",
-                target=subscription.plan.plan_id,
-                details={
-                    "billing_id": charge.billing_id,
-                    "billed_plan_id": charge.plan_id,
-                    "charge_purpose": charge.purpose.value,
-                    "reason": str(exc),
-                },
-            )
-        else:
-            state.subscriptions[charge.tenant_id] = activated
-            state.audit.append(
-                tenant_id=charge.tenant_id,
-                actor="asaas",
-                actor_kind="EXTERNAL_PROVIDER",
-                action=(
-                    "BILLING_SUBSCRIPTION_RECOVERED"
-                    if was_past_due
-                    else "BILLING_SUBSCRIPTION_ACTIVATED"
-                ),
-                target=activated.plan.plan_id,
-                details={"billing_id": charge.billing_id},
-            )
-
-    state.audit.append(
-        tenant_id=charge.tenant_id,
-        actor="asaas",
-        actor_kind="EXTERNAL_PROVIDER",
-        action="BILLING_CHARGE_SETTLED",
-        target=charge.billing_id,
-        details={"fiscal_handoff_idempotency_key": handoff.idempotency_key},
-    )
-    return JSONResponse({"accepted": True, "processed": True, "billing_id": charge.billing_id})
+    if state.db is not None:
+        with state.db.transaction():
+            return _process_event()
+    return _process_event()

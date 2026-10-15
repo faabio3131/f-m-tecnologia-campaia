@@ -19,6 +19,8 @@ import os
 from decimal import Decimal
 from pathlib import Path
 
+from .credit_ledger import CreditPolicy
+
 from .subscription import (
     CancellationMode,
     DunningPolicy,
@@ -140,6 +142,24 @@ def _parse_dunning_policy(entry: dict, *, source: Path) -> DunningPolicy | None:
         ) from exc
 
 
+def _parse_credit_policy(entry: dict) -> CreditPolicy | None:
+    raw = entry.get("credit_policy")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict) or not isinstance(raw.get("action_weights"), dict):
+        raise PlanCatalogError("credit_policy exige objeto e action_weights versionados.")
+    try:
+        return CreditPolicy(
+            version=raw["version"],
+            action_weights=tuple(sorted(raw["action_weights"].items())),
+            trial_credits=raw["trial_credits"],
+            trial_max_users=raw["trial_max_users"],
+            trial_max_active_campaigns=raw["trial_max_active_campaigns"],
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise PlanCatalogError("credit_policy incompleta ou inválida.") from exc
+
+
 def _to_plan_definition(entry: dict, *, source: Path) -> PlanDefinition:
     required = {"plan_id", "name", "monthly_price", "included_credits", "extra_credit_unit_price"}
     missing = required - entry.keys()
@@ -184,6 +204,7 @@ def _to_plan_definition(entry: dict, *, source: Path) -> PlanDefinition:
                 else None
             ),
             dunning_policy=_parse_dunning_policy(entry, source=source),
+            credit_policy=_parse_credit_policy(entry),
         )
     except (ValueError, ArithmeticError) as exc:
         raise PlanCatalogError(f"Plano invalido em {source}: {entry!r} — {exc}") from exc
