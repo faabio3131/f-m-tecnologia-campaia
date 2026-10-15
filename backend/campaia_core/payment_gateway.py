@@ -96,6 +96,8 @@ class ChargeResult:
     observed_due_date: str | None = None
     source_status: str | None = None
     deleted: bool | None = None
+    refund_observations: tuple[tuple[str, Decimal | None], ...] | None = None
+    refunds_present: bool = False
 
 
 def parse_observed_amount(value) -> Decimal | None:
@@ -109,6 +111,19 @@ def parse_observed_amount(value) -> Decimal | None:
     except (InvalidOperation, ValueError, TypeError):
         pass
     return None
+
+
+def parse_refund_observations(value) -> tuple[tuple[str, Decimal | None], ...] | None:
+    """Only status/value, preserving multiplicity and unknown enums; no raw payer data."""
+    if not isinstance(value, list) or len(value) > 1000:
+        return None
+    observations = []
+    for item in value:
+        if not isinstance(item, dict) or not isinstance(item.get('status'), str) or not item['status'].strip():
+            return None
+        amount = parse_observed_amount(item.get('value'))
+        observations.append((item['status'], amount if amount is not None and amount > 0 else None))
+    return tuple(observations)
 
 
 def require_idempotency(command: ChargeCommand) -> None:
@@ -166,6 +181,7 @@ class PaymentGatewayConnector(Protocol):
 
 __all__ = [
     "parse_observed_amount",
+    "parse_refund_observations",
     "ChargeCommand",
     "ChargeResult",
     "GatewayChargeStatus",

@@ -92,6 +92,33 @@ class AsaasGatewayRequestShapeTests(unittest.TestCase):
     """Verifica a forma da requisicao e o parsing da resposta contra um transporte HTTP
     falso — nunca uma chamada de rede real (nenhuma credencial existe nesta sandbox)."""
 
+    def test_refund_inspection_keeps_only_status_and_value_preserving_multiple_refunds(self):
+        from campaia_core.payment_gateway import parse_refund_observations
+        values = [{'status': 'DONE', 'value': '10.00', 'description': 'PRIVATE-PAYER', 'creditCardToken': 'NO-TOKEN'},
+                  {'status': 'PENDING', 'value': '5.00'}, {'status': 'CANCELLED', 'value': '3.00'}]
+        def handler(request):
+            return httpx.Response(200, json={'id': 'pay-known', 'externalReference': 'idem-1',
+                'status': 'RECEIVED', 'value': '199.90', 'refunds': values})
+        result = self._gateway(handler).inspect_charge('pay-known', _command())
+        self.assertEqual(result.refund_observations, (('DONE', Decimal('10.00')),
+                         ('PENDING', Decimal('5.00')), ('CANCELLED', Decimal('3.00'))))
+        self.assertTrue(result.refunds_present)
+        self.assertNotIn('PRIVATE-PAYER', str(result.refund_observations))
+        self.assertNotIn('NO-TOKEN', str(result.refund_observations))
+        self.assertEqual(parse_refund_observations([values[0], values[0]]),
+                         (('DONE', Decimal('10.00')), ('DONE', Decimal('10.00'))))
+
+    def test_refund_observation_parser_preserves_unknown_and_invalid_as_unconfirmed(self):
+        from campaia_core.payment_gateway import parse_refund_observations
+        self.assertIsNone(parse_refund_observations(None))
+        self.assertIsNone(parse_refund_observations({'status': 'DONE', 'value': '1.00'}))
+        self.assertIsNone(parse_refund_observations([{'value': '1.00'}]))
+        self.assertEqual(parse_refund_observations([]), ())
+        self.assertEqual(parse_refund_observations([{'status': 'FUTURE_STATUS', 'value': '1.00'}]),
+                         (('FUTURE_STATUS', Decimal('1.00')),))
+        for value in (None, True, 'NaN', '1.001', 0, -1):
+            self.assertEqual(parse_refund_observations([{'status': 'DONE', 'value': value}]), (('DONE', None),))
+
     def test_withdrawal_checks_unpaid_identity_then_delete_and_readback_without_refund(self):
         calls = []; deleted = False
         def handler(request):

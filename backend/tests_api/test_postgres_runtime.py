@@ -409,6 +409,20 @@ class PostgresRuntimeTests(unittest.TestCase):
                 self.assertEqual(recovered.json()['state'], 'VOID')
                 self.assertEqual(a.get('/billing/closure', headers=OWNER).json()['state'], 'NO_CHARGE')
                 self.assertEqual(len(a.app.state.campaia.charges.items_for_tenant('demo-tenant')), 2)
+                # Refund proof persists across connections without restoring entitlement.
+                refunded = a.post('/webhooks/asaas', headers={'asaas-access-token': 'pg-void-proof'},
+                    json={'id': 'pg-refund-observation', 'event': 'PAYMENT_REFUNDED', 'payment': {
+                        'id': first.json()['gateway_charge_id'], 'status': 'REFUNDED',
+                        'value': first.json()['amount'], 'refunds': [
+                            {'status': 'DONE', 'value': first.json()['amount']}]}})
+                self.assertEqual(refunded.status_code, 200, refunded.text)
+                refund_item = next(item for item in b.get('/billing/charges', headers=OWNER).json()['items']
+                                   if item['gateway_charge_id'] == first.json()['gateway_charge_id'])
+                self.assertEqual(refund_item['gateway_refund_state'], 'FULL_DONE')
+                self.assertEqual(refund_item['gateway_refund_amount'], first.json()['amount'])
+                self.assertEqual(b.get('/billing/closure', headers=OWNER).json()['state'], 'RECONCILIATION_REQUIRED')
+                self.assertIsNotNone(b.app.state.campaia.idempotency.get('demo-tenant', 'billing-receipt:pg-refund-observation'))
+
 
     def test_credit_journal_workers_replay_caps_and_immutable_history(self) -> None:
         from api.credit_store import PersistentCreditLedger

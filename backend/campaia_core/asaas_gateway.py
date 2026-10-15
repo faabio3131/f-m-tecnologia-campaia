@@ -34,6 +34,7 @@ from .infra import IdempotencyStore
 from .payment_gateway import (
     ChargeCommand,
     parse_observed_amount,
+    parse_refund_observations,
     ChargeResult,
     GatewayChargeStatus,
     GatewayMode,
@@ -313,6 +314,8 @@ class AsaasGateway:
             observed_amount=parse_observed_amount(body.get('value')),
             observed_due_date=body.get('dueDate'), source_status=body['status'],
             deleted=body.get('deleted') if isinstance(body.get('deleted'), bool) else None,
+            refund_observations=parse_refund_observations(body.get('refunds')),
+            refunds_present=body.get('refunds') not in (None, []),
             invoice_url=safe_asaas_invoice_url(body.get('invoiceUrl'), self.mode))
 
     def void_charge(self, gateway_charge_id: str, command: ChargeCommand) -> ChargeResult:

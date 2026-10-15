@@ -22,7 +22,7 @@ from campaia_core.credit_ledger import ExtraCreditConsent
 from campaia_core.billing_cycles import PaidCycleSchedule, period_index, COMMERCIAL_TIMEZONE
 from .billing_closure import record_closed_lifecycle, closure_quote, final_charge, close_without_invoice, require_final_usage_resolved, result_key as closure_result_key
 from .billing_void import withdrawal_quote, withdrawal_state, withdrawal_observed_at, withdraw_unpaid_renewal, verified_void, intent_key as void_intent_key
-from .billing_receipts import observe_payment, require_no_payment_review, has_payment_review, payment_access_is_blocked
+from .billing_receipts import has_reversal_signal, observe_payment, require_no_payment_review, has_payment_review, payment_access_is_blocked
 from .billing_checkout import checkout_quote
 from .billing_dispatch import execute_invoice, obligation_key
 from .billing_credits import grant_current_cycle, grant_paid_cycle, usage_payload, cycle_snapshot
@@ -553,6 +553,9 @@ async def list_billing_charges(request: Request) -> JSONResponse:
         status_source=charge.status_source,
         gateway_observed_amount=(str(charge.gateway_observed_amount) if charge.gateway_observed_amount is not None else None),
         payment_reconciliation_state=charge.payment_reconciliation_state,
+        gateway_refund_amount=(str(charge.gateway_refund_amount) if charge.gateway_refund_amount is not None else None),
+        gateway_refund_state=charge.gateway_refund_state,
+        gateway_refund_observed_at=charge.gateway_refund_observed_at,
         withdrawal_state=withdrawal_state(state, charge),
         withdrawal_observed_at=withdrawal_observed_at(state, charge),
         withdrawal_fingerprint=withdrawal_quote(state, key, charge),
@@ -847,7 +850,8 @@ async def reconcile_billing_payment(request: Request) -> JSONResponse:
         raise ApiError("BILLING_RECONCILIATION_REQUIRED", "Status externo inválido.", status_code=503)
     event_type = "PAYMENT_REFUND_RECONCILIATION" if ("REFUND" in raw_status or "CHARGEBACK" in raw_status) else "PAYMENT_RECONCILIATION"
     event = AsaasPaymentEvent('reconcile:' + sha256((fixture.tenant_id + ':' + key).encode()).hexdigest(),
-        event_type, gateway_id, raw_status, inspected.observed_amount)
+        event_type, gateway_id, raw_status, inspected.observed_amount,
+        inspected.refund_observations, inspected.refunds_present)
     observed_at = datetime.now(timezone.utc)
     def _commit():
         fresh = owned_charge()
@@ -902,7 +906,8 @@ def _apply_verified_payment_event(state, charge, event, *, observed_at, source="
         )
 
     status = mapped_status if mapped_status is not None else map_asaas_status(event.asaas_status)
-    if source == "WEBHOOK" and charge.status is ChargeStatus.SETTLED and status in {GatewayChargeStatus.OVERDUE, GatewayChargeStatus.PENDING}:
+    if (source == "WEBHOOK" and charge.status is ChargeStatus.SETTLED
+            and status in {GatewayChargeStatus.OVERDUE, GatewayChargeStatus.PENDING} and not has_reversal_signal(event)):
         state.audit.append(tenant_id=charge.tenant_id, actor="asaas", actor_kind="EXTERNAL_PROVIDER",
                            action="BILLING_STALE_OVERDUE_IGNORED", target=charge.billing_id)
         return JSONResponse({"accepted": True, "processed": False, "status": status.value})
@@ -914,8 +919,7 @@ def _apply_verified_payment_event(state, charge, event, *, observed_at, source="
             action="BILLING_WITHDRAWN_INVOICE_RESTORED", target=charge.billing_id)
         return JSONResponse({"accepted": True, "processed": True, "reconciled": False,
                              "reconciliation_state": "CANCELLATION_CONFLICT"})
-    is_reversal = (event.event_type.startswith("PAYMENT_REFUND") or "CHARGEBACK" in event.event_type
-                   or event.event_type in {"PAYMENT_PARTIALLY_REFUNDED", "PAYMENT_RECEIVED_IN_CASH_UNDONE"})
+    is_reversal = has_reversal_signal(event)
     if charge.commercial_lifecycle_id is not None and (
             status is GatewayChargeStatus.CONFIRMED or event.event_type == "PAYMENT_UPDATED" or is_reversal
             or (source == "RECONCILIATION" and charge.status is ChargeStatus.SETTLED)):
