@@ -29,3 +29,7 @@ Cenários externos desta rodada observados: login e step-up; administração de 
 Encerrada execução externa após o último print às 12:55. Próxima ação imediata: Diretor executar activationPolicy NEVER e confirmar STOPPED / NEVER. Banco não declarado desligado antes da resposta. O membership de teste fica ACTIVE / VIEWER na unidade de homologação, unidade também ACTIVE; proprietário permanece na Principal e rascunho permanece DRAFT, preservando dados de teste e auditoria. Isso evita mutações adicionais desnecessárias para limpeza.
 
 G2 permanece PARTIAL neste commit, aguardando revisão da matriz/DoD e CI/documentação. O desligamento precede essa análise, que não requer banco ligado. PR #44 em Draft; nenhum merge/deploy/migration autorizado ou executado nesta rodada.
+
+## Desligamento confirmado — 15/10/2026 13:00
+
+Print image(20261015-160027).png inspecionado: patch activationPolicy NEVER concluído (done), instance campaia-staging-pg STATE STOPPED e ACTIVATION_POLICY NEVER. Janela externa encerrada. Não religar para revisão documental ou CI. Custos residuais de armazenamento/outros serviços não foram medidos e não são declarados zero.
