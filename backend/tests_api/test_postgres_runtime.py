@@ -190,6 +190,42 @@ class PostgresRuntimeTests(unittest.TestCase):
                 ).fetchall()
             }
 
+    def test_credit_journal_workers_replay_caps_and_immutable_history(self) -> None:
+        from api.credit_store import PersistentCreditLedger
+        from campaia_core.credit_ledger import CreditLimitExceeded
+        from tests_api.test_credit_ledger import NOW, cycle
+
+        stores = [PersistentCreditLedger(PostgresDatabase(DSN).table("credit_journal"))
+                  for _ in range(6)]
+        stores[0].decide("a", "open_cycle", cycle=cycle(), at=NOW)
+        def reserve(item):
+            index, store = item
+            try:
+                return store.decide("a", "reserve", cycle_id="cycle-1",
+                                    operation_id=str(index), action="strategy", at=NOW)
+            except CreditLimitExceeded:
+                return None
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            results = list(pool.map(reserve, enumerate(stores)))
+        self.assertEqual(sum(r is not None for r in results), 2)
+        winner = next(r.entry.operation_id for r in results if r)
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            settled = list(pool.map(lambda store: store.decide(
+                "a", "finish", operation_id=winner, kind="SETTLE",
+                reference="delivery-1", at=NOW + timedelta(seconds=1)), stores))
+        self.assertEqual(sum(not r.replayed for r in settled), 1)
+        fresh = PersistentCreditLedger(PostgresDatabase(DSN).table("credit_journal"))
+        self.assertEqual(fresh.balance("a", "cycle-1").consumed_credits, 5)
+        self.assertEqual(fresh.balance("a", "cycle-1").reserved_credits, 5)
+        self.assertEqual(fresh.entries("b"), ())
+        with self.assertRaises(Exception):
+            with psycopg.connect(DSN) as conn:
+                conn.execute("UPDATE campaia_runtime.credit_journal SET tenant_id = 'b'")
+        with self.assertRaises(Exception):
+            with psycopg.connect(DSN) as conn:
+                conn.execute("DELETE FROM campaia_runtime.credit_journal")
+        self.assertEqual(len(fresh.entries("a")), 4)
+
     def test_00_migration_up_down_up_is_reversible_and_covers_current_stores(self) -> None:
         self.assertEqual(
             set(self.runner.applied_versions()),
@@ -198,6 +234,7 @@ class PostgresRuntimeTests(unittest.TestCase):
                 "002_tenant_isolation_guard",
                 "003_distributed_rate_limit",
                 "004_billing_persistence",
+                "005_credit_journal",
             },
         )
         self.assertTrue(RUNTIME_TABLES.issubset(self._runtime_tables()))
@@ -205,6 +242,7 @@ class PostgresRuntimeTests(unittest.TestCase):
         self.assertEqual(
             self.runner.rollback_all(),
             [
+                "005_credit_journal",
                 "004_billing_persistence",
                 "003_distributed_rate_limit",
                 "002_tenant_isolation_guard",

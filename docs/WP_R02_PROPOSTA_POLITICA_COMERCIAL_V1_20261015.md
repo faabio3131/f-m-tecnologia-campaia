@@ -1,6 +1,6 @@
 # CampaIA — Proposta de política comercial V1
 
-**Data:** 15/10/2026 · **Status:** HUMAN_DECISION — proposta, não aprovada.
+**Data:** 15/10/2026 · **Status:** DONE_VERIFIED — decisão humana registrada; implementação PARTIAL.
 **Base técnica:** main@1586ec120ea8d5ee0a06a9ec704f3719f4cd4254.
 **Decisão solicitada:** aprovar o conjunto para implementação interna governada.
 **Não autoriza:** publicação de preços, venda, produção, credencial real, pagamento, deploy ou migration real.
@@ -268,7 +268,8 @@ Sugestão de resposta do Diretor:
 > trial, excedente com consentimento, ciclo, alteração/cancelamento, atraso e garantia.
 > Mantenho os gates de validação de custos, jurídico, credenciais, homologação e produção.
 
-Até receber essa decisão: HUMAN_DECISION. Não transformar este documento em catálogo ativo.
+Decisão recebida em 15/10/2026: o Diretor respondeu **“aprovo”** à proposta integral.
+Aprovação para implementação interna; não transformar este documento em catálogo ativo.
 Se aprovado, registrar data/autor/versão exata e iniciar o ledger durável e o ciclo/checkout,
 sem repetir as telas, motor, histórico ou integrações já verificadas.
 
@@ -284,3 +285,11 @@ sem repetir as telas, motor, histórico ou integrações já verificadas.
 - Consulta oficial em 15/10/2026: https://www.planalto.gov.br/ccivil_03/leis/l8078compilado.htm — art. 49.
 - Referência de contexto, não equivalente funcional nem validação destes preços:
   https://reportei.com/planos-e-precos/ — oferta de relatórios com condições distintas.
+
+## Registro efetivo da decisão — 15/10/2026
+
+Autoridade: Diretor Fábio, nesta conversa. Resposta literal: **“aprovo”**.
+Objeto aprovado: proposta integral no commit `cdaab0d37e3dfc0171e331943947a4882e33e841`,
+SHA-256 do documento original: `bdd8113cfbe09c07a86ce435ef9e7bbb4d8473b3bf0e6320696e7787dfe54222`.
+A aprovação mantém os gates de custos, jurídico, credenciais, homologação e produção.
+Não representa autorização de merge, deploy, migration externa ou cobrança real.
