@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@17fb87cdb171b78b719edb2decc4d89970bcd9f8`
+**CURRENT confirmado:** `main@aa8149beee25a2197bc27283c5e7faf927da0e4e`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -349,10 +349,12 @@ congelada antes do gateway e fence de emissão/recuperação sem redispatch; CI 
 aceite, vencimento contratado e ambiente congelado integrados; CI da PR e pós-merge verdes. Ver
 `docs/WP_R02_09_CHECKOUT_REVISADO_20261015.md`. WP-R02-10 / PR #54 integrada, CI da PR e pós-merge verdes: fechamento final
 sem nova mensalidade, residual e reserva durante encerramento. Ver
-`docs/WP_R02_10_FECHAMENTO_CONSUMO_FINAL_20261015.md`. WP-R02-11 em validação: conferência
+`docs/WP_R02_10_FECHAMENTO_CONSUMO_FINAL_20261015.md`. WP-R02-11 / PR #55 integrada, CI da PR e pós-merge verdes: conferência
 de valor/status, reversões e consulta somente leitura pelo histórico. Ver
-`docs/WP_R02_11_CONFERENCIA_RECEBIMENTOS_20261015.md`. Antes da ativação V1, resolver
-refunds/chargebacks e conciliar/cancelar faturas abertas; depois scheduler/dunning único. Catálogo real continua
+`docs/WP_R02_11_CONFERENCIA_RECEBIMENTOS_20261015.md`. WP-R02-12 em validação: retirada
+comprovada de renovação aberta após encerramento, sem repetir DELETE incerto ou duplicar
+excedente final. Ver `docs/WP_R02_12_RETIRADA_RENOVACAO_ABERTA_20261015.md`. Antes da ativação V1,
+resolver refunds/chargebacks, garantia e conflitos; depois scheduler/dunning único. Catálogo real continua
 desabilitado; não certificar G5 com simulador ou apenas CI.
 
 **Gate G5:** pagamento real ativa entitlement sem intervenção de desenvolvedor.

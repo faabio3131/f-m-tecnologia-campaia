@@ -590,6 +590,11 @@ class BillingCreditConsentRequest(ApiModel):
     cap: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
 
 
+class BillingWithdrawalRequest(ApiModel):
+    fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
+    accept: bool = Field(strict=True)
+
+
 class BillingClosureRequest(ApiModel):
     fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
     accept: bool = Field(strict=True)
@@ -661,6 +666,9 @@ class BillingChargeHistoryItem(BaseModel):
     gateway_observed_amount: str | None = None
     payment_reconciliation_state: str | None = None
     reconciliation_available: bool = False
+    withdrawal_state: str | None = None
+    withdrawal_observed_at: datetime | None = None
+    withdrawal_fingerprint: str | None = None
 
 
 class BillingChargeHistoryResponse(BaseModel):

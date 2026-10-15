@@ -1434,6 +1434,63 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationError' }
 
+  /billing/charges/{gatewayChargeId}/withdraw:
+    post:
+      tags: [Billing]
+      summary: Retira renovação aberta após encerramento, sem estornar ou apagar histórico
+      description: Fence durável permite apenas uma tentativa de exclusão; replay incerto consulta o provedor. Somente prova de exclusão de invoice não paga permite separar consumo final.
+      operationId: withdrawBillingRenewal
+      security: [cookieAuth: []]
+      parameters:
+        - name: gatewayChargeId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [fingerprint, accept]
+              properties:
+                fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+                accept: { type: boolean }
+      responses:
+        '200':
+          description: Retirada confirmada; não representa pagamento ou devolução
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [state, billing_id, gateway_charge_id, amount, observed_at]
+                properties:
+                  state: { type: string, enum: [VOID] }
+                  billing_id: { type: string }
+                  gateway_charge_id: { type: string }
+                  amount: { type: string }
+                  provider: { type: string }
+                  mode: { type: string }
+                  observed_at: { type: string, format: date-time }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '409':
+          description: Retirada indisponível ou revisão/contexto alterado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Retirada incerta; não repetir exclusão automaticamente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /billing/charges/{gatewayChargeId}/reconcile:
     post:
       tags: [Billing]
@@ -1843,6 +1900,9 @@ components:
         gateway_observed_amount: { type: [string, 'null'] }
         payment_reconciliation_state: { type: [string, 'null'] }
         reconciliation_available: { type: boolean }
+        withdrawal_state: { type: [string, 'null'], enum: [REQUESTED, VOID, REVIEW, null] }
+        withdrawal_fingerprint: { type: [string, 'null'] }
+        withdrawal_observed_at: { type: [string, 'null'], format: date-time }
         purpose: { type: string, enum: [REGULAR, PLAN_CHANGE, REACTIVATION, FINAL_USAGE] }
         created_at: { type: [string, 'null'], format: date-time }
         gateway_status: { type: [string, 'null'] }

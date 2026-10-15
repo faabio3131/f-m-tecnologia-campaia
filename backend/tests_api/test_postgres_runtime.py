@@ -354,6 +354,62 @@ class PostgresRuntimeTests(unittest.TestCase):
                 self.assertEqual(sum(entry.kind == "OPEN" for entry in
                     clients[1].app.state.campaia.credit_ledger.entries("demo-tenant")), 2)
 
+    def test_unpaid_renewal_withdrawal_fence_recovers_across_connections(self):
+        import json
+        from pathlib import Path
+        import tempfile
+        from unittest.mock import patch
+        from starlette.testclient import TestClient
+        from tests_api.test_helpers import OWNER, with_step_up, unique_idem
+        from tests_api.test_anniversary_lifecycle import clock
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / 'catalog.json'
+            plans = json.loads((Path(__file__).parents[1] / 'config/plans.example.json').read_text())
+            plans[0]['included_credits'] = 10
+            plans[0]['cancellation_mode'] = 'PERIOD_END'
+            plans[0]['credit_policy'] = {'version': 'pg-void-v1', 'action_weights': {'strategy': 5},
+                'trial_credits': 30, 'trial_max_users': 1, 'trial_max_active_campaigns': 1}
+            config.write_text(json.dumps(plans))
+            with patch.dict(os.environ, {'CAMPAIA_PLAN_CATALOG_PATH': str(config), 'ASAAS_WEBHOOK_TOKEN': 'pg-void-proof'}):
+                clients = [TestClient(create_app(database_url=DSN, env='test')) for _ in range(2)]
+                a, b = clients
+                def post(client, path, body=None):
+                    return client.post(path, headers={**with_step_up(OWNER), **unique_idem()}, json=body)
+                setup = a.put('/billing/subscription', headers={**with_step_up(OWNER), **unique_idem()},
+                    json={'plan_id': plans[0]['plan_id'], 'customer_document': '11144477735'})
+                self.assertEqual(setup.status_code, 200, setup.text)
+                first = post(a, '/billing/charges', {'competence': 'server-cycle'})
+                self.assertEqual(first.status_code, 202, first.text)
+                paid = a.post('/webhooks/asaas', headers={'asaas-access-token': 'pg-void-proof'},
+                    json={'id': 'pg-void-first-paid', 'event': 'PAYMENT_RECEIVED', 'payment': {
+                        'id': first.json()['gateway_charge_id'], 'status': 'RECEIVED', 'value': first.json()['amount']}})
+                self.assertEqual(paid.status_code, 200, paid.text)
+                sub = a.app.state.campaia.subscriptions['demo-tenant']
+                with clock(sub.paid_cycle_schedule.bounds(0)[1]):
+                    renewal = post(a, '/billing/charges', {'competence': 'server-cycle'})
+                    self.assertEqual(renewal.status_code, 202, renewal.text)
+                    self.assertEqual(post(a, '/billing/subscription/cancel', {'immediate': True}).status_code, 200)
+                gid = renewal.json()['gateway_charge_id']
+                item = next(item for item in b.get('/billing/charges', headers=OWNER).json()['items'] if item['gateway_charge_id'] == gid)
+                review = {'fingerprint': item['withdrawal_fingerprint'], 'accept': True}
+                self.assertIsNotNone(review['fingerprint'])
+                gateway = a.app.state.campaia.billing_gateway
+                original = gateway.void_charge
+                def uncertain(*args):
+                    self.assertFalse(a.app.state.campaia.db.in_transaction)
+                    self.assertIsNotNone(b.app.state.campaia.idempotency.get('demo-tenant', 'billing-void-intent:' + item['billing_id']))
+                    original(*args)
+                    raise TimeoutError('lost delete response')
+                with patch.object(gateway, 'void_charge', side_effect=uncertain) as dispatch:
+                    self.assertEqual(post(a, f'/billing/charges/{gid}/withdraw', review).status_code, 503)
+                self.assertEqual(dispatch.call_count, 1)
+                with patch.object(b.app.state.campaia.billing_gateway, 'void_charge', side_effect=AssertionError('No repeat DELETE')):
+                    recovered = post(b, f'/billing/charges/{gid}/withdraw', review)
+                self.assertEqual(recovered.status_code, 200, recovered.text)
+                self.assertEqual(recovered.json()['state'], 'VOID')
+                self.assertEqual(a.get('/billing/closure', headers=OWNER).json()['state'], 'NO_CHARGE')
+                self.assertEqual(len(a.app.state.campaia.charges.items_for_tenant('demo-tenant')), 2)
+
     def test_credit_journal_workers_replay_caps_and_immutable_history(self) -> None:
         from api.credit_store import PersistentCreditLedger
         from campaia_core.credit_ledger import CreditLimitExceeded

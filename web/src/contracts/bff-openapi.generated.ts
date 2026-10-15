@@ -926,6 +926,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/billing/charges/{gatewayChargeId}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retira renovação aberta após encerramento, sem estornar ou apagar histórico
+         * @description Fence durável permite apenas uma tentativa de exclusão; replay incerto consulta o provedor. Somente prova de exclusão de invoice não paga permite separar consumo final.
+         */
+        post: operations["withdrawBillingRenewal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/billing/charges/{gatewayChargeId}/reconcile": {
         parameters: {
             query?: never;
@@ -1136,6 +1156,11 @@ export interface components {
             gateway_observed_amount?: string | null;
             payment_reconciliation_state?: string | null;
             reconciliation_available?: boolean;
+            /** @enum {string|null} */
+            withdrawal_state?: "REQUESTED" | "VOID" | "REVIEW" | null;
+            withdrawal_fingerprint?: string | null;
+            /** Format: date-time */
+            withdrawal_observed_at?: string | null;
             /** @enum {string} */
             purpose: "REGULAR" | "PLAN_CHANGE" | "REACTIVATION" | "FINAL_USAGE";
             /** Format: date-time */
@@ -3601,6 +3626,78 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationError"];
+        };
+    };
+    withdrawBillingRenewal: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+                 *     login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+                 *     servidor. Ausente/invalido -> 403.
+                 */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao. */
+                "X-Step-Up-Token": components["parameters"]["StepUpToken"];
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                gatewayChargeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    fingerprint: string;
+                    accept: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Retirada confirmada; não representa pagamento ou devolução */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        state: "VOID";
+                        billing_id: string;
+                        gateway_charge_id: string;
+                        amount: string;
+                        provider?: string;
+                        mode?: string;
+                        /** Format: date-time */
+                        observed_at: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["StepUpRequired"];
+            404: components["responses"]["NotFound"];
+            /** @description Retirada indisponível ou revisão/contexto alterado */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
+            /** @description Retirada incerta; não repetir exclusão automaticamente */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     reconcileBillingPayment: {

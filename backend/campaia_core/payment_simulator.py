@@ -93,7 +93,15 @@ class PaymentGatewaySimulator:
         stored = self.idempotency.get(command.tenant_id, command.idempotency_key)
         if stored is None or stored.result.gateway_charge_id != gateway_charge_id:
             raise PaymentGatewayError(PaymentGatewayErrorCode.VALIDATION_REJECTED, "Cobrança simulada desconhecida.")
-        return replace(stored.result, status=self.get_charge_status(gateway_charge_id))
+        return replace(stored.result, status=self.get_charge_status(gateway_charge_id),
+                       deleted=self.idempotency.get(command.tenant_id, 'sim-void:' + gateway_charge_id) is not None)
+
+    def void_charge(self, gateway_charge_id: str, command: ChargeCommand) -> ChargeResult:
+        current = self.inspect_charge(gateway_charge_id, command)
+        if current.status not in {GatewayChargeStatus.PENDING, GatewayChargeStatus.OVERDUE}:
+            raise PaymentGatewayError(PaymentGatewayErrorCode.VALIDATION_REJECTED, "Cobrança simulada paga não admite retirada.")
+        self.idempotency.execute(command.tenant_id, 'sim-void:' + gateway_charge_id, lambda: {'deleted': True})
+        return self.inspect_charge(gateway_charge_id, command)
 
     def get_charge_status(self, gateway_charge_id: str) -> GatewayChargeStatus:
         return self.scripted_status.get(gateway_charge_id, GatewayChargeStatus.PENDING)

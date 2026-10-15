@@ -8,7 +8,7 @@ from dataclasses import replace
 from campaia_core.subscription import ChargeStatus
 from .errors import ApiError
 
-REVIEW_STATES = frozenset({'AMOUNT_MISSING', 'AMOUNT_MISMATCH', 'TERMS_MISMATCH', 'REVERSAL_PENDING', 'STATUS_MISMATCH'})
+REVIEW_STATES = frozenset({'AMOUNT_MISSING', 'AMOUNT_MISMATCH', 'TERMS_MISMATCH', 'REVERSAL_PENDING', 'STATUS_MISMATCH', 'CANCELLATION_CONFLICT'})
 
 
 def tenant_charges(state, tenant):
@@ -53,8 +53,8 @@ def observe_payment(state, charge, event, *, at, gateway_status, source="WEBHOOK
         'expected_amount': charge.amount, 'observed_amount': event.observed_amount,
         'observed_at': at, 'decision': decision, 'source': source}
     state.idempotency.execute(charge.tenant_id, 'billing-receipt:' + event.event_id, lambda: observation)
-    if charge.payment_reconciliation_state == 'REVERSAL_PENDING' and not reversal:
-        return 'REVERSAL_PENDING'  # A stale confirmation cannot erase a known refund/dispute.
+    if charge.payment_reconciliation_state in {'REVERSAL_PENDING', 'CANCELLATION_CONFLICT'} and not reversal:
+        return charge.payment_reconciliation_state  # A stale confirmation cannot erase a known refund/dispute.
     if charge.payment_reconciliation_state == 'AMOUNT_MISMATCH' and decision in {'TERMS_OBSERVED', 'TERMS_MISMATCH'}:
         return 'AMOUNT_MISMATCH'  # Editing invoice terms is not evidence of missing cash arriving.
     if charge.status is ChargeStatus.SETTLED and not reversal:

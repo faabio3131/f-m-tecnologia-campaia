@@ -7,7 +7,8 @@ from campaia_core.credit_ledger import CreditLedgerError
 from campaia_core.subscription import SubscriptionStatus, SubscriptionCharge, ChargeLineItem, ChargePurpose, ChargeStatus
 from .billing_dispatch import obligation_key
 from .errors import ApiError
-from .billing_receipts import REVIEW_STATES
+from .billing_receipts import REVIEW_STATES, has_payment_review
+from .billing_void import verified_void
 
 
 def closure_key(lifecycle):
@@ -71,7 +72,8 @@ def closure_quote(state, sub):
         # Never charge the same usage again if a renewal already included it. Even
         # an uncertain/unpaid renewal must be reconciled/canceled before separating it.
         next_base = schedule.obligation_id(sub.tenant_id, index + 1)
-        if state.idempotency.get(sub.tenant_id, obligation_key(next_base)) is not None:
+        if (has_payment_review(state, sub.tenant_id) or (state.idempotency.get(sub.tenant_id, obligation_key(next_base)) is not None
+                and not verified_void(state, sub.tenant_id, next_base))):
             status = 'RECONCILIATION_REQUIRED'
         elif amount == 0:
             status = 'NO_CHARGE'
@@ -81,6 +83,8 @@ def closure_quote(state, sub):
             status = 'ABSORBABLE'
         else:
             status = 'INVOICE_REQUIRED'
+    if has_payment_review(state, sub.tenant_id):
+        status = 'RECONCILIATION_REQUIRED'
     provider = (frozen.result.commercial_gateway_provider if frozen is not None else state.billing_gateway.provider)
     mode = (frozen.result.commercial_gateway_mode if frozen is not None else state.billing_gateway.mode.value)
     payload = {'provider': provider, 'mode': mode, 'state': status, 'amount': str(amount.quantize(Decimal('0.01'))),
