@@ -9,6 +9,9 @@ existir. Trocar este simulador por um adaptador real e configuracao, nao reescri
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from decimal import Decimal
+from hashlib import sha256
+import json
 
 from .billing_cycles import COMMERCIAL_TIMEZONE
 from .connectors import SecretRef
@@ -42,6 +45,7 @@ class PaymentGatewaySimulator:
     scripted_status: dict[str, GatewayChargeStatus] = field(default_factory=dict)
     idempotency: IdempotencyStoreLike = field(default_factory=IdempotencyStore)
     _counter: int = 0
+    minimum_charge_amount: Decimal | None = Decimal('0.01')
 
     def resolve_secret(self, account_handle: str) -> SecretRef:
         return SecretRef(handle=f"vault://{self.provider}/{account_handle}")
@@ -56,7 +60,8 @@ class PaymentGatewaySimulator:
 
             self._counter += 1
             resultado = ChargeResult(
-                gateway_charge_id=f"sim-charge-{self._counter:04d}",
+                gateway_charge_id="sim-charge-" + sha256(
+                    json.dumps([command.tenant_id, command.idempotency_key], separators=(",", ":")).encode()).hexdigest()[:24],
                 status=GatewayChargeStatus.PENDING,
                 provider=self.provider,
                 mode=self.mode,

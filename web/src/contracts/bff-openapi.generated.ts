@@ -888,6 +888,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/billing/closure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Consulta o excedente final do lifecycle encerrado */
+        get: operations["getBillingClosure"];
+        put?: never;
+        /** Confirma fechamento final sem conceder outro ciclo */
+        post: operations["closeBillingUsage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/billing/checkout": {
         parameters: {
             query?: never;
@@ -1095,7 +1113,7 @@ export interface components {
             amount: string;
             plan_id: string | null;
             /** @enum {string} */
-            purpose: "REGULAR" | "PLAN_CHANGE" | "REACTIVATION";
+            purpose: "REGULAR" | "PLAN_CHANGE" | "REACTIVATION" | "FINAL_USAGE";
             /** Format: date-time */
             created_at: string | null;
             gateway_status: string | null;
@@ -1184,6 +1202,19 @@ export interface components {
             /** @default 0 */
             extra_credits_used: number | string;
         };
+        BillingClosure: {
+            /** @enum {string} */
+            state: "UNAVAILABLE" | "PENDING_USAGE" | "NO_CHARGE" | "MINIMUM_UNAVAILABLE" | "ABSORBABLE" | "ABSORBED" | "INVOICE_REQUIRED" | "INVOICED" | "SETTLED" | "RECONCILIATION_REQUIRED";
+            fingerprint: string | null;
+            amount: string | null;
+            minimum: string | null;
+            lifecycle_id: string | null;
+            cycle_id: string | null;
+            invoice: string | null;
+            provider: string | null;
+            /** @enum {string|null} */
+            mode: "SIMULATOR" | "SANDBOX" | "PRODUCTION" | null;
+        };
         BillingCheckout: {
             /** @enum {string} */
             state: "READY" | "PENDING" | "REGISTERED" | "NOT_DUE" | "CLOSED" | "UNAVAILABLE";
@@ -1211,7 +1242,7 @@ export interface components {
             }[];
             policy_version: string;
             /** @enum {string} */
-            purpose: "REGULAR" | "PLAN_CHANGE" | "REACTIVATION";
+            purpose: "REGULAR" | "PLAN_CHANGE" | "REACTIVATION" | "FINAL_USAGE";
             cycle_index: number;
             /** Format: date-time */
             due_at: string | null;
@@ -3420,6 +3451,86 @@ export interface operations {
             404: components["responses"]["NotFound"];
             /** @description Assinatura ou politica incompativel */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getBillingClosure: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Consumo entregue, mínimo validado e situação financeira, sem nova mensalidade */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingClosure"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    closeBillingUsage: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+                 *     login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+                 *     servidor. Ausente/invalido -> 403.
+                 */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao. */
+                "X-Step-Up-Token": components["parameters"]["StepUpToken"];
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    fingerprint: string;
+                    accept: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Fechamento sem cobrança, residual absorvido ou invoice final registrado; não confirma pagamento */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingClosure"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["StepUpRequired"];
+            /** @description Revisão ou conciliação pendente */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Emissão incerta, sem segundo POST automático */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

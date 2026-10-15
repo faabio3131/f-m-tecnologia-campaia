@@ -157,6 +157,8 @@ class AsaasConfig:
     mode: GatewayMode
     account_handle: str
     due_in_days: int
+    # Account/method capability must be explicitly validated before residual write-off.
+    minimum_charge_amount: Decimal | None = None
 
     @classmethod
     def from_env(cls, prefix: str = "ASAAS_") -> "AsaasConfig":
@@ -173,11 +175,17 @@ class AsaasConfig:
                 PaymentGatewayErrorCode.VALIDATION_REJECTED,
                 "AsaasGateway nao roda em modo SIMULATOR — use PaymentGatewaySimulator.",
             )
+        minimum = os.environ.get(f"{prefix}MINIMUM_CHARGE_AMOUNT")
+        parsed_minimum = _observed_payment_amount(minimum) if minimum is not None else None
+        if minimum is not None and parsed_minimum is None:
+            raise PaymentGatewayError(PaymentGatewayErrorCode.VALIDATION_REJECTED,
+                                      "Mínimo configurado do gateway deve ser positivo e exato em centavos.")
         return cls(
             api_key=os.environ.get(f"{prefix}API_KEY"),
             mode=mode,
             account_handle=os.environ.get(f"{prefix}ACCOUNT_HANDLE", "default"),
             due_in_days=int(os.environ.get(f"{prefix}DUE_IN_DAYS", "3")),
+            minimum_charge_amount=parsed_minimum,
         )
 
 
@@ -199,6 +207,10 @@ class AsaasGateway:
     @property
     def mode(self) -> GatewayMode:
         return self.config.mode
+
+    @property
+    def minimum_charge_amount(self) -> Decimal | None:
+        return self.config.minimum_charge_amount
 
     def __post_init__(self) -> None:
         if not self.config.api_key:

@@ -57,6 +57,7 @@ class PlanChangeBillingMode(StrEnum):
 
 
 class ChargePurpose(StrEnum):
+    FINAL_USAGE = "FINAL_USAGE"
     REGULAR = "REGULAR"
     PLAN_CHANGE = "PLAN_CHANGE"
     REACTIVATION = "REACTIVATION"

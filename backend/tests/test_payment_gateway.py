@@ -14,6 +14,14 @@ from campaia_core.payment_simulator import PaymentGatewaySimulator
 
 
 class PaymentGatewaySimulatorTests(unittest.TestCase):
+    def test_distinct_workers_do_not_reuse_a_process_local_charge_counter(self) -> None:
+        shared = IdempotencyStore()
+        first = PaymentGatewaySimulator(idempotency=shared).create_charge(self.command('first'))
+        second = PaymentGatewaySimulator(idempotency=shared).create_charge(self.command('second'))
+        self.assertNotEqual(first.gateway_charge_id, second.gateway_charge_id)
+        replay = PaymentGatewaySimulator(idempotency=shared).create_charge(self.command('first'))
+        self.assertEqual(replay, first)
+
     def command(self, idempotency_key: str = "idem-1") -> ChargeCommand:
         return ChargeCommand(
             tenant_id="tenant-1",

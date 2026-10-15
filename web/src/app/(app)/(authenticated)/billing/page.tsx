@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { AdministrativeStepUpCard } from "@/components/AdministrativeStepUpCard";
 import { BillingSubscriptionSetup } from "@/components/BillingSubscriptionSetup";
 import { CommercialLifecycleActions } from "@/components/CommercialLifecycleActions";
+import { BillingClosurePanel } from "@/components/BillingClosurePanel";
 import { BillingCheckoutPanel } from "@/components/BillingCheckoutPanel";
 import { BillingUsagePanel } from "@/components/BillingUsagePanel";
 import { BillingChargeHistoryPanel } from "@/components/BillingChargeHistoryPanel";
@@ -95,6 +96,11 @@ function BillingContent({ canManage }: { canManage: boolean }) {
     }
   }
 
+  function refreshBillingRead() {
+    setHistoryVersion(value => value + 1);
+    void api.get<BillingSubscription>("/billing/subscription").then(setSubscription).catch(() => undefined);
+  }
+
   const terms = subscription?.commercial_terms;
   return <PageContainer>
     <PageHeader title="Plano e cobrança" description="Assinatura e condições comerciais da sua organização." />
@@ -125,7 +131,8 @@ function BillingContent({ canManage }: { canManage: boolean }) {
           { label: "Limite de campanhas ativas", value: String(subscription.entitlements?.max_active_campaigns ?? "Não configurado") },
           { label: "Canais", value: subscription.entitlements?.channels.join(", ") || "Nenhum configurado" },
         ]} /></Card>
-        {terms.credit_policy && canManage ? <BillingCheckoutPanel key={`checkout:${subscription.status}:${subscription.plan_id}:${subscription.activated_at}:${subscription.cancel_at_period_end}:${subscription.pending_plan_id}`} stepUp={stepUp} onIssued={() => { setHistoryVersion(value => value + 1); void api.get<BillingSubscription>("/billing/subscription").then(setSubscription).catch(() => undefined); }} /> : null}
+        {terms.credit_policy && canManage ? <BillingCheckoutPanel key={`checkout:${subscription.status}:${subscription.plan_id}:${subscription.activated_at}:${subscription.cancel_at_period_end}:${subscription.pending_plan_id}`} stepUp={stepUp} onIssued={refreshBillingRead} /> : null}
+        {terms.credit_policy && canManage && subscription.status === "CANCELED" ? <BillingClosurePanel key={`closure:${subscription.plan_id}:${subscription.activated_at}:${subscription.cancel_at_period_end}`} stepUp={stepUp} onClosed={refreshBillingRead} /> : null}
         <BillingUsagePanel key={`usage:${subscription.status}:${subscription.plan_id}:${subscription.activated_at}:${subscription.cancel_at_period_end}:${subscription.pending_plan_id}`} canManage={canManage} stepUp={stepUp} />
         {canManage && !terms.credit_policy ? <>
           <Card><h2 className={styles.title}>Gerenciar assinatura</h2>

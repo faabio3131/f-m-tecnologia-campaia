@@ -19,7 +19,7 @@ const MODES: Record<string, string> = {
   SIMULATOR: "Simulação", SANDBOX: "Sandbox (teste)", PRODUCTION: "Produção",
 };
 const PURPOSES: Record<string, string> = {
-  REGULAR: "Assinatura", PLAN_CHANGE: "Troca de plano", REACTIVATION: "Reativação",
+  FINAL_USAGE: "Excedente final", REGULAR: "Assinatura", PLAN_CHANGE: "Troca de plano", REACTIVATION: "Reativação",
 };
 
 export function BillingChargeHistoryPanel() {

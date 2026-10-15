@@ -36,6 +36,8 @@ from .routes_billing import (
     set_credit_consent,
     list_billing_charges,
     get_billing_checkout,
+    get_billing_closure,
+    close_billing_usage,
     put_subscription,
     reactivate_billing_subscription,
 )
@@ -194,6 +196,8 @@ routes = [
     Route("/billing/subscription/undo-plan", undo_billing_plan_change, methods=["POST"]),
     Route("/billing/subscription/cancel", cancel_billing_subscription, methods=["POST"]),
     Route("/billing/subscription/reactivate", reactivate_billing_subscription, methods=["POST"]),
+    Route("/billing/closure", get_billing_closure, methods=["GET"]),
+    Route("/billing/closure", close_billing_usage, methods=["POST"]),
     Route("/billing/checkout", get_billing_checkout, methods=["GET"]),
     Route("/billing/charges", create_charge, methods=["POST"]),
     Route("/billing/charges", list_billing_charges, methods=["GET"]),

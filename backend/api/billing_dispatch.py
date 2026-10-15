@@ -10,7 +10,7 @@ import json
 
 from campaia_core.billing_cycles import COMMERCIAL_TIMEZONE
 from campaia_core.billing_settlement import charge_command
-from campaia_core.subscription import SubscriptionStatus, refresh_trial_status
+from campaia_core.subscription import SubscriptionStatus, ChargePurpose, refresh_trial_status
 from .errors import ApiError
 
 
@@ -18,15 +18,17 @@ def obligation_key(billing_id):
     return 'billing-obligation:' + billing_id
 
 
-def execute_invoice(state, fixture, http_key, body, prepare, dispatch, persist):
+def execute_invoice(state, fixture, http_key, body, prepare, dispatch, persist, *, operation="billing_charge_create"):
     tenant = fixture.tenant_id
     context = sha256(json.dumps([fixture.user_id, fixture.business_unit_id, body],
                                sort_keys=True, default=str).encode()).hexdigest()
-    result_key = 'http:billing_charge_create:' + http_key
+    result_key = 'http:' + operation + ':' + http_key
+    request_key = ('billing-request:' + http_key if operation == 'billing_charge_create'
+                   else 'billing-request:' + operation + ':' + http_key)
     # A completed response from the previous implementation has no request claim.
     # Recover that tenant-scoped response without preparing/issuing another obligation.
     previous = state.idempotency.get(tenant, result_key)
-    request_claim = state.idempotency.get(tenant, 'billing-request:' + http_key)
+    request_claim = state.idempotency.get(tenant, request_key)
     if previous is not None and request_claim is None:
         return previous.result
 
@@ -43,7 +45,7 @@ def execute_invoice(state, fixture, http_key, body, prepare, dispatch, persist):
                                         'accepted': body.get('accept_quote') is True})
         return {'context': context, 'charge': frozen}
 
-    request, _ = state.idempotency.execute(tenant, 'billing-request:' + http_key, freeze)
+    request, _ = state.idempotency.execute(tenant, request_key, freeze)
     if request['context'] != context:
         raise ApiError('IDEMPOTENCY_CONFLICT', 'A chave já identifica outra solicitação ou contexto.', status_code=409)
     previous = state.idempotency.get(tenant, result_key)
@@ -63,8 +65,9 @@ def execute_invoice(state, fixture, http_key, body, prepare, dispatch, persist):
         current = refresh_trial_status(state.subscriptions[tenant])
         if (current.paid_cycle_schedule is None
                 or current.paid_cycle_schedule.lifecycle_id != charge.commercial_lifecycle_id
-                or current.status is SubscriptionStatus.CANCELED
-                or current.cancel_at_period_end is not None):
+                or (charge.purpose is ChargePurpose.FINAL_USAGE and current.status is not SubscriptionStatus.CANCELED)
+                or (charge.purpose is not ChargePurpose.FINAL_USAGE and (
+                    current.status is SubscriptionStatus.CANCELED or current.cancel_at_period_end is not None))):
             raise ApiError('BILLING_RECONCILIATION_REQUIRED', 'Contratação mudou após o fechamento; concilie antes de emitir.', status_code=409)
         state.audit.append(tenant_id=tenant, actor=fixture.user_id,
                            action='BILLING_DISPATCH_CLAIMED', target=charge.billing_id)

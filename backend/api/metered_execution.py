@@ -69,7 +69,7 @@ def execute_metered(state, fixture, key, request_identity, confirmation, action,
         except CreditLimitExceeded as exc:
             raise ApiError('QUOTA_EXHAUSTED', 'Franquia/teto insuficiente para a operação completa.', status_code=409) from exc
         state.audit.append(tenant_id=tenant, actor=fixture.user_id, action='AI_CREDITS_RESERVED', target=operation)
-        return {'fingerprint': fingerprint, 'operation_id': operation}
+        return {'fingerprint': fingerprint, 'operation_id': operation, 'cycle_id': quoted['cycle_id']}
 
     claimed, replayed = state.idempotency.execute(tenant, 'ai-dispatch:' + key, claim)
     if claimed['fingerprint'] != fingerprint:
@@ -94,6 +94,12 @@ def execute_metered(state, fixture, key, request_identity, confirmation, action,
         # The dispatch claim and reservation have COMMITTED before this callback.
         generated = generate()
         def settle_delivery():
+            current = commercial_subscription(state, tenant)
+            at = datetime.now(timezone.utc)
+            cycle = cycle_snapshot(current, at=at) if current is not None else None
+            if (current is None or not entitlement_access_is_active(current, now=at)
+                    or cycle is None or cycle.cycle_id != claimed['cycle_id']):
+                raise ApiError('AI_SUBSCRIPTION_CHANGED', 'A contratação encerrou ou mudou durante a geração; entrega descartada sem débito.', status_code=409)
             result = deliver(generated)
             state.credit_ledger.decide(tenant, 'finish', operation_id=operation, kind='SETTLE',
                                       reference='delivery:' + operation, at=datetime.now(timezone.utc))

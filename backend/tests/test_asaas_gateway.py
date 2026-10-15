@@ -41,6 +41,16 @@ def _command(idempotency_key: str = "idem-1") -> ChargeCommand:
 
 
 class AsaasConfigTests(unittest.TestCase):
+    def test_final_residual_minimum_requires_explicit_valid_configuration(self):
+        import os
+        from unittest.mock import patch
+        with patch.dict(os.environ, {'ASAAS_API_KEY': 'fixture-key', 'ASAAS_MINIMUM_CHARGE_AMOUNT': '5.00'}):
+            self.assertEqual(AsaasConfig.from_env().minimum_charge_amount, Decimal('5.00'))
+        for raw in ('0', 'NaN', '1.001'):
+            with patch.dict(os.environ, {'ASAAS_API_KEY': 'fixture-key', 'ASAAS_MINIMUM_CHARGE_AMOUNT': raw}):
+                with self.assertRaises(PaymentGatewayError):
+                    AsaasConfig.from_env()
+
     def test_from_env_defaults_to_sandbox(self) -> None:
         env = {"ASAAS_API_KEY": "$aact_hmlg_x"}
         import os

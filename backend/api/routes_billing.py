@@ -20,6 +20,7 @@ from uuid import uuid4
 
 from campaia_core.credit_ledger import ExtraCreditConsent
 from campaia_core.billing_cycles import PaidCycleSchedule, period_index, COMMERCIAL_TIMEZONE
+from .billing_closure import record_closed_lifecycle, closure_quote, final_charge, close_without_invoice, require_final_usage_resolved, result_key as closure_result_key
 from .billing_checkout import checkout_quote
 from .billing_dispatch import execute_invoice, obligation_key
 from .billing_credits import grant_current_cycle, grant_paid_cycle, usage_payload, cycle_snapshot
@@ -73,6 +74,7 @@ from .models import (
     BillingCreditConsentRequest,
     BillingCancellationRequest,
     BillingChargeCreate,
+    BillingClosureRequest,
     BillingCheckoutResponse,
     BillingChargeResponse,
     BillingChargeHistoryItem,
@@ -230,6 +232,7 @@ def _require_subscription(state: AppState, tenant_id: str) -> Subscription:
                       and refreshed.status is SubscriptionStatus.EXPIRED else "BILLING_SUBSCRIPTION_REFRESHED")
             state.audit.append(tenant_id=tenant_id, actor="system", actor_kind="SYSTEM",
                                action=action, target=refreshed.plan.plan_id)
+        record_closed_lifecycle(state, refreshed)
         return refreshed
 
 
@@ -412,6 +415,7 @@ async def cancel_billing_subscription(request: Request) -> JSONResponse:
         except ValueError as exc:
             raise ApiError("BILLING_CANCEL_REJECTED", str(exc), status_code=409) from exc
         state.subscriptions[fixture.tenant_id] = updated
+        record_closed_lifecycle(state, updated)
         state.audit.append(
             tenant_id=fixture.tenant_id,
             actor=fixture.user_id,
@@ -440,6 +444,7 @@ async def reactivate_billing_subscription(request: Request) -> JSONResponse:
                 if any(charge.gateway_status == "OVERDUE" and charge.status is not ChargeStatus.SETTLED
                        for _key, charge in state.charges.items_for_tenant(fixture.tenant_id)):
                     raise ValueError("Existe dívida vencida não conciliada; resolva antes de nova contratação.")
+            require_final_usage_resolved(state, subscription, actor=fixture.user_id)
             updated = request_reactivation(subscription, now=datetime.now(timezone.utc), lifecycle_id=uuid4().hex)
         except ValueError as exc:
             raise ApiError("BILLING_REACTIVATION_REJECTED", str(exc), status_code=409) from exc
@@ -553,6 +558,56 @@ def _review_checkout(state, charge, body):
     return charge
 
 
+async def get_billing_closure(request: Request) -> JSONResponse:
+    fixture, state = _authorize_billing(request, Permission.BILLING_VIEW)
+    with state.db.transaction() if state.db is not None else nullcontext():
+        if state.db is not None:
+            state.idempotency._table.lock_key(f"tenant:{fixture.tenant_id}")
+        sub = _require_subscription(state, fixture.tenant_id)
+        return JSONResponse(closure_quote(state, sub))
+
+
+async def close_billing_usage(request: Request) -> JSONResponse:
+    fixture, state = _authorize_billing(request, Permission.BILLING_MANAGE)
+    key = require_idempotency_key(request)
+    body = await parse_body(request, BillingClosureRequest)
+    context = sha256(json.dumps([fixture.user_id, fixture.business_unit_id, body.model_dump()], sort_keys=True).encode()).hexdigest()
+    def _claim_request():
+        sub = _require_subscription(state, fixture.tenant_id)
+        quote = closure_quote(state, sub)
+        if not body.accept or body.fingerprint != quote['fingerprint']:
+            raise ApiError("BILLING_QUOTE_CHANGED", "Revise e aceite o fechamento antes de confirmar.", status_code=409)
+        if quote['state'] not in {'NO_CHARGE', 'ABSORBABLE', 'ABSORBED', 'INVOICE_REQUIRED', 'INVOICED', 'SETTLED'}:
+            raise ApiError("BILLING_FINAL_USAGE_PENDING", "Fechamento ainda exige conciliação.", status_code=409)
+        state.audit.append(tenant_id=fixture.tenant_id, actor=fixture.user_id,
+                           action="BILLING_FINAL_USAGE_ACCEPTED", target=quote['lifecycle_id'],
+                           details={'fingerprint': quote['fingerprint']})
+        return {'context': context, 'sub': sub, 'quote': quote}
+    accepted, _ = state.idempotency.execute(fixture.tenant_id, 'billing-closure-request:' + key, _claim_request)
+    if accepted['context'] != context:
+        raise ApiError("IDEMPOTENCY_CONFLICT", "A chave identifica outro fechamento/contexto.", status_code=409)
+    sub = accepted['sub']; quote = accepted['quote']
+    if quote['state'] == 'SETTLED':
+        return JSONResponse(quote)
+    if quote['state'] in {'NO_CHARGE', 'ABSORBABLE', 'ABSORBED'}:
+        result, _ = state.idempotency.execute(fixture.tenant_id, 'http:billing_closure:' + key,
+            lambda: close_without_invoice(state, sub, actor=fixture.user_id))
+    else:
+        def _prepare():
+            fresh = closure_quote(state, sub)
+            if fresh['fingerprint'] != body.fingerprint:
+                raise ApiError("BILLING_QUOTE_CHANGED", "Fechamento mudou; atualize e revise novamente.", status_code=409)
+            return final_charge(state, sub)
+        def _persist(charge, gateway_result):
+            _persist_billing_charge(state, fixture, charge, gateway_result)
+            statement = {**quote, 'state': 'INVOICED', 'invoice': charge.billing_id}
+            saved, _ = state.idempotency.execute(fixture.tenant_id, closure_result_key(quote['lifecycle_id']), lambda: statement)
+            return saved
+        result = execute_invoice(state, fixture, key, body.model_dump(), _prepare, dispatch_frozen_charge,
+                                 _persist, operation='billing_final_usage')
+    return JSONResponse(result)
+
+
 async def get_billing_checkout(request: Request) -> JSONResponse:
     fixture, state = _authorize_billing(request, Permission.BILLING_VIEW)
     with state.db.transaction() if state.db is not None else nullcontext():
@@ -663,6 +718,41 @@ def _prepare_billing_charge(state, fixture, body):
 
 
 
+def _persist_billing_charge(state, fixture, charge, result):
+    # Guarda a cobranca pelo id real do gateway -- e assim que o webhook do Asaas
+    # (que so conhece o payment_id, nunca o billing_id interno) encontra de volta a
+    # cobranca a que um evento de pagamento pertence.
+    existing = state.charges.get(result.gateway_charge_id)
+    if existing is not None:
+        if existing.tenant_id != charge.tenant_id or existing.billing_id != charge.billing_id:
+            raise ApiError("INVALID_STATE", "Identificador de cobrança inconsistente.")
+        # Another HTTP key can replay the same durable gateway result. Preserve
+        # webhook observations rather than reverting them to the creation snapshot.
+    else:
+        observed_at = datetime.now(timezone.utc)
+        state.charges[result.gateway_charge_id] = replace(
+            charge, created_at=observed_at, status_observed_at=observed_at,
+            gateway_status=result.status.value, gateway_provider=result.provider,
+            gateway_mode=result.mode.value, status_source="CREATE",
+            invoice_url=result.invoice_url,
+        )
+    state.audit.append(
+        tenant_id=fixture.tenant_id,
+        actor=fixture.user_id,
+        action="BILLING_CHARGE_CREATE",
+        target=result.gateway_charge_id,
+    )
+    return BillingChargeResponse(
+        billing_id=charge.billing_id,
+        tenant_id=charge.tenant_id,
+        competence=charge.competence,
+        currency=charge.currency,
+        amount=charge.amount,
+        gateway_charge_id=result.gateway_charge_id,
+        gateway_status=result.status.value,
+    ).model_dump(mode="json")
+
+
 async def create_charge(request: Request) -> JSONResponse:
     fixture, state = _authorize_billing(request, Permission.BILLING_MANAGE)
     idem_key = require_idempotency_key(request)
@@ -671,38 +761,7 @@ async def create_charge(request: Request) -> JSONResponse:
         return _prepare_billing_charge(state, fixture, body)
 
     def _persist_charge(charge, result):
-        # Guarda a cobranca pelo id real do gateway -- e assim que o webhook do Asaas
-        # (que so conhece o payment_id, nunca o billing_id interno) encontra de volta a
-        # cobranca a que um evento de pagamento pertence.
-        existing = state.charges.get(result.gateway_charge_id)
-        if existing is not None:
-            if existing.tenant_id != charge.tenant_id or existing.billing_id != charge.billing_id:
-                raise ApiError("INVALID_STATE", "Identificador de cobrança inconsistente.")
-            # Another HTTP key can replay the same durable gateway result. Preserve
-            # webhook observations rather than reverting them to the creation snapshot.
-        else:
-            observed_at = datetime.now(timezone.utc)
-            state.charges[result.gateway_charge_id] = replace(
-                charge, created_at=observed_at, status_observed_at=observed_at,
-                gateway_status=result.status.value, gateway_provider=result.provider,
-                gateway_mode=result.mode.value, status_source="CREATE",
-                invoice_url=result.invoice_url,
-            )
-        state.audit.append(
-            tenant_id=fixture.tenant_id,
-            actor=fixture.user_id,
-            action="BILLING_CHARGE_CREATE",
-            target=result.gateway_charge_id,
-        )
-        return BillingChargeResponse(
-            billing_id=charge.billing_id,
-            tenant_id=charge.tenant_id,
-            competence=charge.competence,
-            currency=charge.currency,
-            amount=charge.amount,
-            gateway_charge_id=result.gateway_charge_id,
-            gateway_status=result.status.value,
-        ).model_dump(mode="json")
+        return _persist_billing_charge(state, fixture, charge, result)
 
     subscription = _require_subscription(state, fixture.tenant_id)
     if subscription.plan.credit_policy is not None:
@@ -807,6 +866,8 @@ async def asaas_webhook(request: Request) -> JSONResponse:
             status_source="WEBHOOK",
         )
 
+        if status is GatewayChargeStatus.OVERDUE and charge.purpose is ChargePurpose.FINAL_USAGE:
+            return JSONResponse({"accepted": True, "processed": True, "status": status.value})
         if status is GatewayChargeStatus.OVERDUE:
             subscription = state.subscriptions.get(charge.tenant_id)
             if subscription is None:
@@ -884,7 +945,7 @@ async def asaas_webhook(request: Request) -> JSONResponse:
         state.charges[event.payment_id] = replace(state.charges[event.payment_id], status=ChargeStatus.SETTLED)
 
         subscription = state.subscriptions.get(charge.tenant_id)
-        if subscription is not None:
+        if subscription is not None and charge.purpose is not ChargePurpose.FINAL_USAGE:
             was_past_due = subscription.status is SubscriptionStatus.PAST_DUE
             try:
                 schedule = subscription.paid_cycle_schedule

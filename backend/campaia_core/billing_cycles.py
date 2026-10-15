@@ -66,13 +66,15 @@ class PaidCycleSchedule:
         if len(ids) != len(set(ids)):
             raise ValueError('Obrigação liquidada duplicada.')
 
-    def obligation_id(self, tenant_id: str, index: int) -> str:
+    def obligation_id(self, tenant_id: str, index: int, *, purpose: str = 'BASE') -> str:
         if not tenant_id or type(index) is not int or index < 0:
             raise ValueError('Tenant e índice obrigatórios.')
+        if purpose not in {'BASE', 'FINAL_USAGE'}:
+            raise ValueError('Finalidade de obrigação inválida.')
         # A tuple encoded as JSON avoids delimiter collisions in arbitrary tenant IDs.
         import hashlib
         import json
-        raw = json.dumps(['CampaIA', tenant_id, self.lifecycle_id, 'BASE', index],
+        raw = json.dumps(['CampaIA', tenant_id, self.lifecycle_id, purpose, index],
                          separators=(',', ':'))
         return 'campaia_' + hashlib.sha256(raw.encode()).hexdigest()
 
