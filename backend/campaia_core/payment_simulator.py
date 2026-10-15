@@ -71,6 +71,15 @@ class PaymentGatewaySimulator:
         )
         return resultado
 
+    def dispatch_frozen_charge(self, command: ChargeCommand) -> ChargeResult:
+        # Simulated side effect only; its durable result is available for recovery.
+        return self.create_charge(command)
+
+    def recover_charge(self, command: ChargeCommand) -> ChargeResult | None:
+        require_idempotency(command)
+        stored = self.idempotency.get(command.tenant_id, command.idempotency_key)
+        return stored.result if stored is not None else None
+
     def get_charge_status(self, gateway_charge_id: str) -> GatewayChargeStatus:
         return self.scripted_status.get(gateway_charge_id, GatewayChargeStatus.PENDING)
 

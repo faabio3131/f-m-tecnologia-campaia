@@ -28,7 +28,19 @@ def charge_subscription(
 ) -> ChargeResult:
     """Envia a cobranca calculada ao gateway. Idempotente pelo `billing_id` do ciclo —
     recalcular ou reenviar o mesmo ciclo nunca cria uma segunda cobranca no gateway."""
-    command = ChargeCommand(
+    return gateway.create_charge(charge_command(charge))
+
+
+def dispatch_frozen_charge(charge: SubscriptionCharge, gateway: PaymentGatewayConnector) -> ChargeResult:
+    """Only after the API's V1 durable dispatch claim has committed."""
+    if charge.commercial_lifecycle_id is None:
+        raise ValueError("Emissão sem fence comercial exige o fluxo legado.")
+    return gateway.dispatch_frozen_charge(charge_command(charge))
+
+
+def charge_command(charge: SubscriptionCharge) -> ChargeCommand:
+    """Same deterministic identity for first dispatch and read-only recovery."""
+    return ChargeCommand(
         tenant_id=charge.tenant_id,
         billing_id=charge.billing_id,
         customer_ref=charge.customer_ref,
@@ -38,7 +50,6 @@ def charge_subscription(
         competence=charge.competence,
         idempotency_key=f"campaia:subscription:{charge.billing_id}",
     )
-    return gateway.create_charge(command)
 
 
 def try_settle_from_status(

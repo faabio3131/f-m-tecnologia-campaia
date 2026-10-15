@@ -213,8 +213,18 @@ class PostgresRuntimeTests(unittest.TestCase):
                     headers={**with_step_up(OWNER), **unique_idem()}, json={
                         "plan_id": plans[0]["plan_id"], "customer_document": "11144477735", "start_trial": True})
                 self.assertEqual(setup.status_code, 200, setup.text)
-                charge = clients[0].post("/billing/charges",
-                    headers={**with_step_up(OWNER), **unique_idem()}, json={"competence": "ignored"})
+                from campaia_core.billing_settlement import dispatch_frozen_charge
+                from api.billing_dispatch import obligation_key
+                def prove_committed(obligation, gateway):
+                    state = clients[0].app.state.campaia
+                    self.assertFalse(state.db.in_transaction)
+                    frozen = clients[1].app.state.campaia.idempotency.get(
+                        "demo-tenant", obligation_key(obligation.billing_id))
+                    self.assertEqual(frozen.result, obligation)
+                    return dispatch_frozen_charge(obligation, gateway)
+                with patch("api.routes_billing.dispatch_frozen_charge", side_effect=prove_committed):
+                    charge = clients[0].post("/billing/charges",
+                        headers={**with_step_up(OWNER), **unique_idem()}, json={"competence": "ignored"})
                 self.assertEqual(charge.status_code, 202, charge.text)
                 payload = {"id": "pg-paid-event", "event": "PAYMENT_RECEIVED", "payment": {
                     "id": charge.json()["gateway_charge_id"], "status": "RECEIVED"}}

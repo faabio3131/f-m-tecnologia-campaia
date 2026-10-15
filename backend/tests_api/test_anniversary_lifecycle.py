@@ -143,8 +143,19 @@ class AnniversaryLifecycleTests(BillingCreditHarness, unittest.TestCase):
         self.assertEqual(self.action('reactivate').status_code, 200)
         mismatch = ChargeResult('mismatch-id', GatewayChargeStatus.PENDING, 'SIMULATOR', GatewayMode.SIMULATOR,
                                 observed_amount=Decimal('999.00'))
-        with patch('api.routes_billing.charge_subscription', return_value=mismatch):
+        with patch('api.routes_billing.dispatch_frozen_charge', return_value=mismatch):
             response = self.client.post('/billing/charges', headers={**with_step_up(OWNER), **unique_idem()}, json={'competence': 'ignored'})
         self.assertEqual(response.status_code, 503, response.text)
         self.assertIsNone(self.state.charges.get('mismatch-id'))
         self.assertEqual(self.state.subscriptions['demo-tenant'].status.value, 'PENDING_PAYMENT')
+
+    def test_frozen_obligation_blocks_plan_withdrawal_even_before_gateway_history_exists(self):
+        self.assertEqual(self.change('exemplo-pro').status_code, 200)
+        with clock(self.end):
+            with patch('api.routes_billing.dispatch_frozen_charge', side_effect=RuntimeError('uncertain dispatch')):
+                response = self.client.post('/billing/charges', headers={**with_step_up(OWNER), **unique_idem()},
+                                            json={'competence': 'untrusted'})
+            self.assertEqual(response.status_code, 503, response.text)
+            self.assertEqual(self.action('undo-plan').status_code, 409)
+        self.assertEqual(len(self.state.charges), 1)
+        self.assertIsNotNone(self.state.subscriptions['demo-tenant'].pending_plan)

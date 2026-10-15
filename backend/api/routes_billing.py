@@ -20,6 +20,7 @@ from uuid import uuid4
 
 from campaia_core.credit_ledger import ExtraCreditConsent
 from campaia_core.billing_cycles import PaidCycleSchedule, period_index
+from .billing_dispatch import execute_invoice, obligation_key
 from .billing_credits import grant_current_cycle, grant_paid_cycle, usage_payload, cycle_snapshot
 
 from starlette.requests import Request
@@ -27,7 +28,7 @@ from starlette.responses import JSONResponse
 
 from campaia_core.asaas_gateway import map_asaas_status
 from campaia_core.asaas_webhook import parse_asaas_payment_event
-from campaia_core.billing_settlement import charge_subscription, try_settle_from_status
+from campaia_core.billing_settlement import charge_subscription, dispatch_frozen_charge, try_settle_from_status
 from campaia_core.fiscal_handoff import build_campaia_fiscal_handoff
 from campaia_core.payment_gateway import GatewayChargeStatus, PaymentGatewayError
 from campaia_core.payment_urls import safe_asaas_invoice_url
@@ -382,7 +383,8 @@ async def undo_billing_plan_change(request: Request) -> JSONResponse:
                 schedule = subscription.paid_cycle_schedule
                 index = period_index(schedule.anchor_at, subscription.pending_plan_effective_at)
                 obligation = schedule.obligation_id(fixture.tenant_id, index)
-                if (schedule.paid_through_index >= index or any(
+                if (state.idempotency.get(fixture.tenant_id, obligation_key(obligation)) is not None
+                        or schedule.paid_through_index >= index or any(
                         charge.billing_id == obligation for _key, charge in state.charges.items_for_tenant(fixture.tenant_id))):
                     raise ValueError("Obrigação já fechada; desistência exige conciliação financeira.")
             updated = undo_commercial_plan_change(subscription)
@@ -544,7 +546,7 @@ async def create_charge(request: Request) -> JSONResponse:
     fixture, state = _authorize_billing(request, Permission.BILLING_MANAGE)
     idem_key = require_idempotency_key(request)
     body = await parse_body(request, BillingChargeCreate)
-    def _do_charge() -> dict:
+    def _prepare_charge():
         subscription = _require_subscription(state, fixture.tenant_id)
         try:
             billing_plan = None
@@ -578,6 +580,10 @@ async def create_charge(request: Request) -> JSONResponse:
                 if commercial_schedule.anchor_at is not None:
                     if period_index(commercial_schedule.anchor_at, now) < index:
                         raise ValueError("A renovação é emitida somente no aniversário.")
+                frozen = state.idempotency.get(fixture.tenant_id, obligation_key(
+                    commercial_schedule.obligation_id(fixture.tenant_id, index)))
+                if frozen is not None:
+                    return frozen.result
                 closed_extra = Decimal("0.00")
                 if index > 0:
                     previous_id = commercial_schedule.obligation_id(subscription.tenant_id, index - 1)
@@ -615,13 +621,9 @@ async def create_charge(request: Request) -> JSONResponse:
                                         if c.billing_id == charge.billing_id), None)
             if existing_obligation is not None:
                 charge = existing_obligation
-        try:
-            result = charge_subscription(charge, state.billing_gateway)
-        except PaymentGatewayError as exc:
-            raise ApiError(exc.code, exc.message, details=dict(exc.details)) from exc
-        if subscription.plan.credit_policy is not None and result.observed_amount != charge.amount:
-            raise ApiError("BILLING_RECONCILIATION_REQUIRED", "Valor externo diverge da obrigação; concilie antes de ativar.", status_code=503)
+        return charge
 
+    def _persist_charge(charge, result):
         # Guarda a cobranca pelo id real do gateway -- e assim que o webhook do Asaas
         # (que so conhece o payment_id, nunca o billing_id interno) encontra de volta a
         # cobranca a que um evento de pagamento pertence.
@@ -655,9 +657,20 @@ async def create_charge(request: Request) -> JSONResponse:
             gateway_status=result.status.value,
         ).model_dump(mode="json")
 
-    result, _replay = state.idempotency.execute(
-        fixture.tenant_id, f"http:billing_charge_create:{idem_key}", _do_charge
-    )
+    subscription = _require_subscription(state, fixture.tenant_id)
+    if subscription.plan.credit_policy is not None:
+        result = execute_invoice(state, fixture, idem_key, body.model_dump(mode="json"),
+                                 _prepare_charge, dispatch_frozen_charge, _persist_charge)
+    else:
+        def _do_charge():
+            charge = _prepare_charge()
+            try:
+                result = charge_subscription(charge, state.billing_gateway)
+            except PaymentGatewayError as exc:
+                raise ApiError(exc.code, exc.message, details=dict(exc.details)) from exc
+            return _persist_charge(charge, result)
+        result, _replay = state.idempotency.execute(
+            fixture.tenant_id, f"http:billing_charge_create:{idem_key}", _do_charge)
     return JSONResponse(result, status_code=202)
 
 

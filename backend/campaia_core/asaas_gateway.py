@@ -229,47 +229,61 @@ class AsaasGateway:
                 f"'Pergunte ao Cliente' (R$ {MINIMUM_CHARGE_AMOUNT}).",
             )
 
-        def _do_create() -> ChargeResult:
-            # Crash-recovery fence: the local idempotency transaction cannot atomically
-            # commit together with an external Asaas POST. If a process dies after Asaas
-            # creates the payment but before the local result is persisted, a retry starts
-            # with no local record. Reconcile by the deterministic externalReference before
-            # creating anything new.
-            existing = self._find_payment_by_external_reference(command.idempotency_key)
-            if existing is not None:
-                return existing
-
-            customer_id = self._ensure_customer(command.customer_ref, command.customer_document)
-            due_date = date.today() + timedelta(days=self.config.due_in_days)
-            response = self._client.post(
-                "/payments",
-                json={
-                    "customer": customer_id,
-                    "billingType": "UNDEFINED",
-                    "value": float(command.amount.quantize(Decimal("0.01"))),
-                    "dueDate": due_date.isoformat(),
-                    "description": f"CampaIA — competencia {command.competence}",
-                    "externalReference": command.idempotency_key,
-                },
-            )
-            _raise_for_response(response)
-            body = response.json()
-            return ChargeResult(
-                gateway_charge_id=body["id"],
-                status=map_asaas_status(body["status"]),
-                provider=self.provider,
-                mode=self.mode,
-                invoice_url=safe_asaas_invoice_url(body.get("invoiceUrl"), self.mode),
-                observed_amount=_observed_payment_amount(body.get("value")),
-            )
-
-        # A camada local persiste o resultado por (tenant_id, idempotency_key). O lookup
-        # por externalReference acima fecha tambem a janela de crash entre o efeito externo
-        # no Asaas e o commit local do resultado.
+        # Legacy entrypoint retains its original idempotency contract. V1 billing uses
+        # dispatch_frozen_charge only after the API commits the financial dispatch fence;
+        # an empty externalReference lookup cannot prove absence after uncertain POST.
         result, _replay = self.idempotency.execute(
-            command.tenant_id, command.idempotency_key, _do_create
+            command.tenant_id, command.idempotency_key, lambda: self._create_charge_once(command)
         )
         return result
+
+    def dispatch_frozen_charge(self, command: ChargeCommand) -> ChargeResult:
+        """Caller MUST commit a durable obligation/dispatch fence before calling once.
+
+        Unlike the legacy adapter entrypoint, no DB idempotency transaction wraps HTTP.
+        Any uncertain retry must use recover_charge, which never creates a payment.
+        """
+        require_idempotency(command)
+        if command.amount < MINIMUM_CHARGE_AMOUNT:
+            raise PaymentGatewayError(PaymentGatewayErrorCode.VALIDATION_REJECTED,
+                                      "Valor inferior ao mínimo do gateway; conciliação necessária.")
+        return self._create_charge_once(command, strict=True)
+
+    def _create_charge_once(self, command: ChargeCommand, *, strict=False) -> ChargeResult:
+        # Initial dispatch checks for an existing reference before creating. After an
+        # uncertain V1 dispatch, callers MUST use recover_charge instead of this method.
+        existing = self._find_payment_by_external_reference(command.idempotency_key, strict=strict)
+        if existing is not None:
+            return existing
+
+        customer_id = self._ensure_customer(command.customer_ref, command.customer_document)
+        due_date = date.today() + timedelta(days=self.config.due_in_days)
+        response = self._client.post(
+            "/payments",
+            json={
+                "customer": customer_id,
+                "billingType": "UNDEFINED",
+                "value": float(command.amount.quantize(Decimal("0.01"))),
+                "dueDate": due_date.isoformat(),
+                "description": f"CampaIA — competencia {command.competence}",
+                "externalReference": command.idempotency_key,
+            },
+        )
+        _raise_for_response(response)
+        body = response.json()
+        return ChargeResult(
+            gateway_charge_id=body["id"],
+            status=map_asaas_status(body["status"]),
+            provider=self.provider,
+            mode=self.mode,
+            invoice_url=safe_asaas_invoice_url(body.get("invoiceUrl"), self.mode),
+            observed_amount=_observed_payment_amount(body.get("value")),
+        )
+
+    def recover_charge(self, command: ChargeCommand) -> ChargeResult | None:
+        """Read-only recovery; missing results never cause a payment POST."""
+        require_idempotency(command)
+        return self._find_payment_by_external_reference(command.idempotency_key, strict=True)
 
     def get_charge_status(self, gateway_charge_id: str) -> GatewayChargeStatus:
         response = self._client.get(f"/payments/{gateway_charge_id}")
@@ -279,7 +293,7 @@ class AsaasGateway:
     # ------------------------------------------------------------------ apoio
 
     def _find_payment_by_external_reference(
-        self, external_reference: str
+        self, external_reference: str, *, strict: bool = False
     ) -> ChargeResult | None:
         """Recover a payment created by a previous process before local commit.
 
@@ -292,10 +306,14 @@ class AsaasGateway:
             params={"externalReference": external_reference, "limit": 2},
         )
         _raise_for_response(response)
-        data = response.json().get("data", [])
-        if not data:
+        listing = response.json()
+        if not isinstance(listing, dict) or not isinstance(listing.get("data"), list):
+            raise PaymentGatewayError(PaymentGatewayErrorCode.UNKNOWN,
+                                      "Resposta de conciliação sem listagem válida.")
+        data = listing["data"]
+        if not data and not listing.get("hasMore", False):
             return None
-        if len(data) != 1:
+        if len(data) != 1 or listing.get("hasMore", False):
             raise PaymentGatewayError(
                 PaymentGatewayErrorCode.UNKNOWN,
                 "Mais de uma cobranca Asaas encontrada para a mesma externalReference.",
@@ -303,6 +321,9 @@ class AsaasGateway:
                 match_count=len(data),
             )
         payment = data[0]
+        if strict and payment.get("externalReference") != external_reference:
+            raise PaymentGatewayError(PaymentGatewayErrorCode.UNKNOWN,
+                                      "Referência externa divergente na conciliação.")
         return ChargeResult(
             gateway_charge_id=payment["id"],
             status=map_asaas_status(payment["status"]),
