@@ -304,6 +304,32 @@ class PostgresRuntimeTests(unittest.TestCase):
             self.assertEqual(refreshed["status_source"], "WEBHOOK")
             self.assertEqual(refreshed["gateway_mode"], "SIMULATOR")
 
+    def test_initial_billing_entry_is_create_only_across_workers(self) -> None:
+        from pathlib import Path
+        from unittest.mock import patch
+        from starlette.testclient import TestClient
+        from tests_api.test_helpers import OWNER, OTHER_OWNER, with_step_up
+        catalog = str(Path(__file__).resolve().parent.parent / "config" / "plans.example.json")
+        with patch.dict(os.environ, {"CAMPAIA_PLAN_CATALOG_PATH": catalog}):
+            clients = [TestClient(create_app(database_url=DSN, env="test")) for _ in range(2)]
+            plan = clients[0].get("/billing/plans", headers=OWNER).json()["items"][0]
+            payload = {"plan_id": plan["plan_id"], "customer_document": "11144477735",
+                       "start_trial": True, "initial_only": True,
+                       "expected_plan_fingerprint": plan["fingerprint"]}
+            def create(args):
+                client, key = args
+                return client.put("/billing/subscription", json=payload,
+                    headers={**with_step_up(OWNER), "Idempotency-Key": key})
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(create, [(clients[0], "pg-initial-worker-one"),
+                                                  (clients[1], "pg-initial-worker-two")]))
+            self.assertEqual(sorted(result.status_code for result in results), [200, 409])
+            winner = next(result.json() for result in results if result.status_code == 200)
+            self.assertEqual(clients[1].get("/billing/subscription", headers=OWNER).json(), winner)
+            self.assertEqual(winner["status"], "TRIAL")
+            self.assertEqual(clients[0].get("/billing/subscription", headers=OTHER_OWNER).status_code, 404)
+            self.assertEqual(clients[0].get("/billing/charges", headers=OWNER).json()["items"], [])
+
     def test_sessions_are_explicit_pre_tenant_exception_to_rehome_trigger(self) -> None:
         with psycopg.connect(DSN) as conn:
             triggers = {

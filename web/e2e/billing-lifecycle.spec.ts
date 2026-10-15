@@ -17,15 +17,17 @@ test.describe("WP-R02 billing lifecycle", () => {
       return { status: response.status, body: await response.json() };
     });
     expect(onboarding.status).toBe(201);
-    const created = await page.evaluate(async (csrf: string) => {
-      const response = await fetch("/api/campaia/billing/subscription", {
-        method: "PUT", credentials: "include",
-        headers: { "content-type": "application/json", "x-csrf-token": csrf, "x-step-up-token": "test-step-up", "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify({ plan_id: "exemplo-essencial", customer_document: "11144477735", start_trial: true }),
-      });
-      return response.status;
-    }, onboarding.body.session.csrf_token);
-    expect(created).toBe(200);
+    await page.goto("/billing");
+    await page.getByLabel("Plano", { exact: true }).selectOption("exemplo-essencial");
+    await page.getByLabel("CPF ou CNPJ do titular").fill("11144477735");
+    await page.getByLabel("Iniciar período de teste de 7 dias").check();
+    await page.getByRole("button", { name: "Revisar contratação" }).click();
+    const subscriptionResponse = page.waitForResponse((response) =>
+      response.url().endsWith("/billing/subscription") && response.request().method() === "PUT");
+    await page.getByRole("button", { name: "Confirmar contratação" }).click();
+    expect((await subscriptionResponse).status()).toBe(200);
+    await expect(page.getByRole("region", { name: "Assinatura atual" })).toBeVisible();
+    await expect(page.getByText("Liberado", { exact: true })).toBeVisible();
     // Existing billing API emits a SIMULATOR charge only in this explicit test harness.
     const chargeStatus = await page.evaluate(async (csrf: string) => {
       const response = await fetch("/api/campaia/billing/charges", {

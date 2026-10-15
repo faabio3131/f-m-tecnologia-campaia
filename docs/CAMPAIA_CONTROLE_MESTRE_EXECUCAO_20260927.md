@@ -420,3 +420,23 @@ sem janela de competência persistida nem regra aprovada de conversão para cré
 Não expor custo interno da IA como saldo comercial nem tratar ausência de medição como zero.
 Contratação/checkout completo e teste financeiro real continuam pendentes.
 Cloud SQL não foi ligado; nenhuma conta/gateway/credencial real ou política comercial alterada.
+
+## Checkpoint WP-R02-03 — 15/10/2026 — entrada inicial/trial pela Web
+
+CURRENT main@f3428e6eb4a2c476a258d1f2bb7c2cb4c6907ce2, checkout inicialmente limpo, sem PR
+aberta na consulta inicial. PR #46 integrada com autorização e CI pós-merge verde nas três
+trilhas: Backend/PostgreSQL 38775081449, Frontend/E2E 38775081492, F4 38775081381.
+WP-R02-02 DONE_VERIFIED no escopo integrado; o checkpoint anterior de integração pendente
+é SUPERSEDED para essa entrega. G5 continua PARTIAL.
+
+Branch feat/wp-r02-subscription-entry: formulário de seleção explícita de plano do catálogo,
+documento do titular, trial opt-in e confirmação via PUT existente; sem emissão financeira.
+Fingerprint do plano protege preço/condições revisadas contra drift; initial_only protege
+assinatura existente e trial contra segunda criação, com replay seguro. Atualização legada
+de documento preserva o plano contratado, sem repricing implícito pelo catálogo atual.
+Evidência: WP_R02_INITIAL_ENTRY_20261015.md. Integração da nova branch pendente de CI/revisão.
+
+Consumo por competência, conversão em créditos, política comercial real, contratação/checkout
+financeiro completo e prova de pagamento real seguem pendentes. Sem custo interno da IA
+exposto como crédito do cliente. Sem credenciais reais, migration, pagamento, deploy ou
+religamento Cloud SQL nesta execução.

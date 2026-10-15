@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AdministrativeStepUpCard } from "@/components/AdministrativeStepUpCard";
+import { BillingSubscriptionSetup } from "@/components/BillingSubscriptionSetup";
 import { BillingChargeHistoryPanel } from "@/components/BillingChargeHistoryPanel";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
@@ -95,6 +96,7 @@ function BillingContent({ canManage }: { canManage: boolean }) {
     <PageHeader title="Plano e cobrança" description="Assinatura e condições comerciais da sua organização." />
     {loading ? <Spinner label="Carregando assinatura" /> : loadError ?
       <ErrorState title="Não foi possível consultar a assinatura" description="Verifique sua permissão de cobrança e tente recarregar a página." /> : <>
+      {canManage ? <AdministrativeStepUpCard {...stepUp} description="Contratação, alterações de plano, cancelamento e reativação exigem autenticação Google recente." onError={setActionError} /> : null}
       {subscription && terms ? <>
         <Card><StatusPanel title="Assinatura atual" items={[
           { label: "Plano", value: subscription.plan_name },
@@ -121,7 +123,6 @@ function BillingContent({ canManage }: { canManage: boolean }) {
           { label: "Consumo de créditos", value: "Medição de consumo ainda indisponível" },
         ]} /></Card>
         {canManage ? <>
-          <AdministrativeStepUpCard {...stepUp} description="Alterações de plano, cancelamento e reativação exigem autenticação Google recente." onError={setActionError} />
           <Card><h2 className={styles.title}>Gerenciar assinatura</h2>
             <div className={styles.actions}>
               {subscription.status !== "CANCELED" && terms.cancellation_mode === "IMMEDIATE" ?
@@ -136,7 +137,9 @@ function BillingContent({ canManage }: { canManage: boolean }) {
             <p>Trocas de plano e reativações liberam recursos após o pagamento confirmado. O cancelamento imediato bloqueia o acesso aos recursos contratados.</p>
           </Card>
         </> : null}
-      </> : <EmptyState title="Nenhuma assinatura configurada" description="Sua organização ainda não possui uma assinatura. A contratação e o pagamento serão disponibilizados após a configuração comercial." />}
+      </> : <EmptyState title="Nenhuma assinatura configurada" description="Sua organização ainda não possui uma assinatura." />}
+      {!subscription && canManage && !catalogError && plans.length > 0 ?
+        <BillingSubscriptionSetup plans={plans} stepUp={stepUp} onCreated={setSubscription} /> : null}
       {action ? <Card><section aria-label="Confirmar alteração de assinatura">
         <h2 className={styles.title}>{action.label}</h2>
         <p>Confirme para registrar esta alteração na assinatura da organização.</p>

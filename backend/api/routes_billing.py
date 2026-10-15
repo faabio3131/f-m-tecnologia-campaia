@@ -11,7 +11,9 @@ proprio `AsaasWebhookReceiver` (`asaas-access-token`), nunca de um Bearer token 
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from dataclasses import replace
+from dataclasses import asdict, replace
+from hashlib import sha256
+import json
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -81,6 +83,7 @@ def _authorize_billing(request: Request, permission: Permission):
 
 def _serialize_plan(plan: PlanDefinition) -> BillingPlanResponse:
     return BillingPlanResponse(
+        fingerprint=_plan_fingerprint(plan),
         plan_id=plan.plan_id,
         name=plan.name,
         currency=plan.currency,
@@ -97,6 +100,12 @@ def _serialize_plan(plan: PlanDefinition) -> BillingPlanResponse:
             "billing_mode": rule.billing_mode.value if rule.billing_mode else None,
         } for rule in plan.plan_changes],
     )
+
+
+def _plan_fingerprint(plan: PlanDefinition) -> str:
+    # Includes entitlements/lifecycle rules too: changing anything the customer is
+    # selecting requires a fresh review. No secret or tenant identifier is included.
+    return sha256(json.dumps(asdict(plan), sort_keys=True, default=str).encode()).hexdigest()
 
 
 async def list_billing_plans(request: Request) -> JSONResponse:
@@ -193,17 +202,26 @@ async def put_subscription(request: Request) -> JSONResponse:
     fixture, state = _authorize_billing(request, Permission.BILLING_MANAGE)
     idem_key = require_idempotency_key(request)
     body = await parse_body(request, BillingSubscriptionUpsert)
+    if body.initial_only and body.expected_plan_fingerprint is None:
+        raise ApiError("VALIDATION_FAILED", "Revise as condições do plano antes de confirmar.")
 
     def _do_upsert() -> dict:
         try:
             catalog = load_plan_catalog()
             plan = get_plan(body.plan_id, catalog)
-        except PlanCatalogError as exc:
+        except (PlanCatalogError, OSError, ValueError) as exc:
             raise ApiError(
-                "BILLING_CATALOG_UNAVAILABLE", str(exc), status_code=503
+                "BILLING_CATALOG_UNAVAILABLE", "Catálogo de planos indisponível neste ambiente.", status_code=503
             ) from exc
 
         existing = state.subscriptions.get(fixture.tenant_id)
+        if existing is not None and body.initial_only:
+            raise ApiError("BILLING_SUBSCRIPTION_ALREADY_EXISTS",
+                           "Já existe uma assinatura. Recarregue a página para consultá-la.", status_code=409)
+        if (body.expected_plan_fingerprint is not None
+                and body.expected_plan_fingerprint != _plan_fingerprint(plan)):
+            raise ApiError("BILLING_PLAN_CHANGED",
+                           "As condições do plano mudaram. Recarregue a página e revise a seleção.", status_code=409)
         if existing is not None and existing.plan.plan_id != plan.plan_id:
             raise ApiError(
                 "BILLING_PLAN_CHANGE_REQUIRES_EXPLICIT_FLOW",
@@ -225,7 +243,7 @@ async def put_subscription(request: Request) -> JSONResponse:
                     tenant_id=existing.tenant_id,
                     customer_ref=existing.customer_ref,
                     customer_document=body.customer_document,
-                    plan=plan,
+                    plan=existing.plan,
                     status=existing.status,
                     trial_started_at=existing.trial_started_at,
                     trial_ends_at=existing.trial_ends_at,
@@ -258,6 +276,8 @@ async def put_subscription(request: Request) -> JSONResponse:
             details={
                 "status": subscription.status.value,
                 "trial_requested": body.start_trial,
+                "initial_only": body.initial_only,
+                "plan_fingerprint": _plan_fingerprint(subscription.plan),
             },
         )
         return _serialize_subscription(subscription)

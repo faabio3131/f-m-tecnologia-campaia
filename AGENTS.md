@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@20727bcb23c64b339bde746f7c5c06c445c6ceca`
+**CURRENT confirmado:** `main@f3428e6eb4a2c476a258d1f2bb7c2cb4c6907ce2`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -244,7 +244,7 @@ No CURRENT:
 - optimizer/pacing/reconciliation existem, mas não estão ligados a métricas externas reais;
 - Brand Kit ainda não possui upload/assets completos;
 - fluxo de criativos/imagem/preview ainda não está completo;
-- Billing Web inicial integrada na PR #45; consumo, histórico completo e contratação/checkout ainda em conclusão;
+- Billing Web inicial e histórico/fatura hospedada integrados nas PRs #45/#46; entrada inicial/trial em implementação WP-R02-03; consumo e checkout completo pendentes;
 - Premium final ainda não foi executado;
 - G18/G19/G20 ainda não ocorreram.
 
@@ -310,12 +310,16 @@ WP-R02-01 integrado na PR #45, main@20727bcb, com CI pós-merge verde:
 Web de plano/condições contratadas/catálogo/entitlements/trial/PAST_DUE/grace e
 solicitações de troca/cancelamento/reativação. Não reconstruir essas superfícies.
 
+WP-R02-02 integrado na PR #46, main@f3428e6e, com CI pós-merge verde:
+histórico paginado por tenant, observações de gateway/ambiente e fatura hospedada Asaas validada.
+Não reconstruir histórico, cursor ou preservação do link do provedor.
+
 ### Falta
 1. decisão real de planos/preços/trial/grace/dunning/refund;
 2. arquivo/catálogo comercial real;
 3. Billing Web restante:
    - medição comercial persistente de uso/créditos (CostLedger em memória não é franquia mensal);
-   - histórico/fatura hospedada: WP-R02-02 proposto nesta branch, integração ainda condicionada à CI/revisão/merge;
+   - entrada inicial/trial Web: WP-R02-03 proposto nesta branch, integração condicionada à CI/revisão/merge;
    - contratação inicial/checkout completo;
 4. credenciais/conta Asaas produção quando apropriado;
 5. checkout/fluxo de pagamento real;
