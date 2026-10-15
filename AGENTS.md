@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@2bfbe10425387432f792e4bb86856d9e4d22f5c1`
+**CURRENT confirmado:** `main@f0849f118661d23e2c95ee82f1880025448cc9c6`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -332,10 +332,14 @@ Não integrada às chamadas IA/checkout nem ativada no produto. Ver
 `docs/WP_R02_04_LEDGER_CREDITOS_20261015.md` para limites, testes e próximos passos.
 Não confundir a aprovação da política com conclusão de F5/G5.
 
-WP-R02-05: candidato de ciclo/franquia/consentimento em implementação na branch
-feat/wp-r02-credit-cycle-integration. Escopo e pendências em
+WP-R02-05 / PR #49: ciclo/franquia/consentimento integrado, CI pós-merge verde. Escopo e pendências em
 `docs/WP_R02_05_CICLO_FRANQUIA_CONSENTIMENTO_20261015.md`. Não ativar catálogo V1 antes de
 fechar lifecycle, enforcement, medição por entrega e checkout operacional.
+
+WP-R02-06: estratégia com claim/reserva antes do provider e limites contratuais em
+implementação na branch feat/wp-r02-metered-strategy-limits. Ver
+`docs/WP_R02_06_EXECUCAO_IA_CREDITOS_LIMITES_20261015.md`. F5 continua PARTIAL;
+nenhum componente simulado certifica G5 externo.
 
 **Gate G5:** pagamento real ativa entitlement sem intervenção de desenvolvedor.
 

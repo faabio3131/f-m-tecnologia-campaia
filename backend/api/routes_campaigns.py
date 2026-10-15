@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from copy import deepcopy
 from decimal import Decimal
 
 from starlette.requests import Request
@@ -39,9 +40,12 @@ from .models import (
     InsightSeriesResponse,
     KillSwitchRequest,
     PlanResponse,
+    PlanRegenerateRequest,
     PublishRequest,
 )
 from .repositories import ExternalResourceState
+from .metered_execution import commercial_subscription, execute_metered, quote_action
+from .commercial_limits import enforce_campaign_capacity
 
 
 def _authorize(request: Request, permission: Permission, *, amount: Decimal | None = None):
@@ -175,7 +179,7 @@ async def get_campaign(request: Request) -> JSONResponse:
 
 
 def _run_strategist(state, fixture, record) -> dict:
-    """Wire to agents.AgentRunner + the SimulatedAIProvider. Never a real provider."""
+    """Use the configured AgentRunner/provider; preserve structured provenance."""
     context = {
         "objetivo": record.brief.get("objective", ""),
         "orcamento": str(record.brief.get("total_budget", "")),
@@ -190,7 +194,12 @@ def _run_strategist(state, fixture, record) -> dict:
             "provider": result.provenance.provider,
             "model": result.provenance.model,
         }
-    # AgentFailure
+    # An external timeout/provider error may already have incurred provider cost.
+    # Commercial replays must reconcile instead of redispatching that operation.
+    if (commercial_subscription(state, fixture.tenant_id) is not None
+            and str(result.status) in {"TIMEOUT", "PROVIDER_ERROR"}):
+        raise ApiError('AI_OPERATION_PENDING', 'Execução externa incerta; reserva mantida para reconciliação.', status_code=503)
+    # AgentFailure with a known no-delivery outcome.
     raise ApiError(
         "VALIDATION_FAILED",
         f"Plan generation failed: {result.reason}",
@@ -208,10 +217,54 @@ async def get_plan(request: Request) -> JSONResponse:
     )
 
 
+async def quote_strategy(request: Request) -> JSONResponse:
+    fixture, state, principal = _authorize(request, Permission.CAMPAIGN_EDIT)
+    _get_campaign_or_404(state, fixture.tenant_id, request.path_params["campaignId"], principal=principal)
+    return JSONResponse(quote_action(state, fixture.tenant_id, 'strategy'))
+
+
 async def regenerate_plan(request: Request) -> JSONResponse:
     fixture, state, principal = _authorize(request, Permission.CAMPAIGN_EDIT)
     idem_key = require_idempotency_key(request)
     campaign_id = request.path_params["campaignId"]
+
+    # Resource authorization always precedes cache/replay, including across units.
+    scoped_record = _get_campaign_or_404(state, fixture.tenant_id, campaign_id, principal=principal)
+    if commercial_subscription(state, fixture.tenant_id) is not None:
+        body = await parse_body(request, PlanRegenerateRequest)
+        confirmation = (body.credit_confirmation.model_dump(mode='json')
+                        if body.credit_confirmation else None)
+        brief_snapshot = deepcopy(dict(scoped_record.brief))
+        version_snapshot = scoped_record.plan_version
+        def generate():
+            plan = _run_strategist(state, fixture, scoped_record)
+            # Reuse the deterministic policy authority. Approval/publication remains
+            # a separate operation; this check does not authorize publication.
+            decision = PolicyEngine().evaluate(PolicyRequest(
+                tenant_id=fixture.tenant_id, campaign_id=campaign_id,
+                plan_version=version_snapshot + 1, action=ActionKind.FIRST_PUBLISH,
+                autonomy=scoped_record.autonomy, budget=scoped_record.budget,
+                plan_text=str(plan.get('output', ''))), now=datetime.now(timezone.utc))
+            if decision.outcome.value == 'BLOCKED':
+                raise ApiError('POLICY_VIOLATION', 'Entrega bloqueada pela política, sem consumo comercial.', status_code=422)
+            return plan
+        def deliver(plan):
+            record = _get_campaign_or_404(state, fixture.tenant_id, campaign_id, principal=principal)
+            if dict(record.brief) != brief_snapshot or record.plan_version != version_snapshot:
+                raise ApiError('AI_INPUT_CHANGED', 'A campanha mudou durante a geração; entrega descartada sem débito.', status_code=409)
+            record.plan = plan
+            record.plan_version += 1
+            if record.campaign.state is CampaignState.DRAFT:
+                record.campaign.transition_to(CampaignState.STRATEGY_READY, reason='plan:regenerated')
+            state.audit.append(tenant_id=fixture.tenant_id, actor=fixture.user_id,
+                               action='PLAN_REGENERATE', target=campaign_id,
+                               details={'plan_version': record.plan_version})
+            return PlanResponse(campaign_id=campaign_id, plan_version=record.plan_version,
+                                plan=record.plan).model_dump(mode='json')
+        key = f'http:metered-strategy:{campaign_id}:{idem_key}'
+        result = execute_metered(state, fixture, key, {'campaign_id': campaign_id},
+                                 confirmation, 'strategy', generate, deliver)
+        return JSONResponse(result, status_code=202)
 
     def _do_regenerate():
         record = _get_campaign_or_404(
@@ -341,6 +394,7 @@ async def publish_campaign(request: Request) -> JSONResponse:
         record = _get_campaign_or_404(
             state, fixture.tenant_id, campaign_id, principal=principal
         )
+        enforce_campaign_capacity(state, fixture.tenant_id, record)
         decision = record.last_policy_decision
         if decision is None or decision.policy_decision_id != body.policy_decision_id:
             raise ApiError(
@@ -563,6 +617,7 @@ async def resume_campaign(request: Request) -> JSONResponse:
         record = _get_campaign_or_404(
             state, fixture.tenant_id, campaign_id, principal=principal
         )
+        enforce_campaign_capacity(state, fixture.tenant_id, record)
         try:
             # TransitionContext() default (kill_switch_active=False) -- mesmo padrao ja
             # usado por publish_campaign/validate_campaign para transition_to() nesta API:

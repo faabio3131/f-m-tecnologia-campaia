@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { StrategyGenerateButton } from "@/components/StrategyGenerateButton";
 import { BudgetPanel } from "../../../../../components/BudgetPanel";
 import { Button } from "../../../../../components/Button";
 import { Card } from "../../../../../components/Card";
@@ -92,25 +93,6 @@ export default function CampaignDetailPage() {
     };
   }, [campaignId]);
 
-  async function handleGeneratePlan() {
-    setActionError(null);
-    setBusy(true);
-    try {
-      await api.post(
-        `/campaigns/${campaignId}/plan/regenerate`,
-        {},
-        { idempotencyKey: `plan-regenerate-${campaignId}-${crypto.randomUUID()}` },
-      );
-      await loadCampaignAndPlan();
-    } catch (err) {
-      setActionError(
-        err instanceof ApiClientError ? err.message : "Falha ao gerar a estratégia.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function handleValidate() {
     setActionError(null);
     setBusy(true);
@@ -190,9 +172,8 @@ export default function CampaignDetailPage() {
         ) : (
           <p className={styles.muted}>Nenhuma estratégia gerada ainda.</p>
         )}
-        <Button disabled={busy} onClick={handleGeneratePlan}>
-          {plan?.plan ? "Regenerar estratégia" : "Gerar estratégia"}
-        </Button>
+        <StrategyGenerateButton key={campaignId} campaignId={campaignId} hasPlan={Boolean(plan?.plan)}
+          busy={busy} onBusy={setBusy} onError={setActionError} onGenerated={loadCampaignAndPlan} />
       </Card>
 
       <Card>

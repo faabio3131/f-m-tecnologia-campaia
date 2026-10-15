@@ -502,6 +502,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/campaigns/{campaignId}/plan/quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Consulta debito da estrategia antes de confirmar, sem executar IA */
+        get: operations["quoteStrategy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/campaigns/{campaignId}/plan/regenerate": {
         parameters: {
             query?: never;
@@ -511,7 +528,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Solicita nova versao do plano com ajustes do usuario */
+        /** Gera estrategia; contrato comercial exige debito revisado e confirmado */
         post: operations["regeneratePlan"];
         delete?: never;
         options?: never;
@@ -1045,6 +1062,22 @@ export interface components {
         BillingChargeHistory: {
             items: components["schemas"]["BillingChargeHistoryItem"][];
             next_cursor: string | null;
+        };
+        CreditConfirmation: {
+            cycle_id: string;
+            policy_version: string;
+            credits: number;
+            extra_amount: string;
+        };
+        StrategyCreditQuote: {
+            /** @enum {string} */
+            mode: "COMMERCIAL" | "LEGACY";
+            action: string;
+            cycle_id: string | null;
+            policy_version: string | null;
+            credits: number | null;
+            extra_amount: string | null;
+            included_available: number | null;
         };
         BillingCreditPolicy: {
             version: string;
@@ -2500,6 +2533,39 @@ export interface operations {
             };
         };
     };
+    quoteStrategy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaignId: components["parameters"]["CampaignId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cotacao server-side ou medicao comercial legada nao ativada */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyCreditQuote"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description Sem franquia ou acesso comercial para executar a operacao inteira */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     regeneratePlan: {
         parameters: {
             query?: never;
@@ -2515,7 +2581,7 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": {
-                    adjustments?: string;
+                    credit_confirmation?: components["schemas"]["CreditConfirmation"];
                 };
             };
         };

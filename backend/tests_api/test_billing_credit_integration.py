@@ -17,7 +17,7 @@ from campaia_core.credit_ledger import CreditLimitExceeded
 from tests_api.test_helpers import OWNER, OTHER_OWNER, FINANCE, APPROVER, VIEWER, with_step_up, unique_idem
 
 
-class BillingCreditIntegrationTests(unittest.TestCase):
+class BillingCreditHarness:
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         root = Path(self.tmp.name)
@@ -31,7 +31,8 @@ class BillingCreditIntegrationTests(unittest.TestCase):
         config = root / 'catalog.json'
         config.write_text(json.dumps(catalog))
         self.environ = patch.dict(os.environ, {'CAMPAIA_PLAN_CATALOG_PATH': str(config),
-                                              'ASAAS_WEBHOOK_TOKEN': 'test-webhook-secret'})
+                                              'ASAAS_WEBHOOK_TOKEN': 'test-webhook-secret',
+                                              'GEMINI_API_KEY': '', 'ASAAS_API_KEY': ''})
         self.environ.start()
         self.client = TestClient(create_app(env='test', db_path=str(self.path)))
         self.state = self.client.app.state.campaia
@@ -71,6 +72,9 @@ class BillingCreditIntegrationTests(unittest.TestCase):
         return self.client.post('/billing/usage/consent',
              headers=headers or {**with_step_up(OWNER), **unique_idem()}, json=body)
 
+
+
+class BillingCreditIntegrationTests(BillingCreditHarness, unittest.TestCase):
     def test_trial_granted_once_no_extras_restart_and_cross_tenant(self):
         sub = self.setup_subscription(trial=True)
         self.assertEqual(sub['entitlements']['max_users'], 1)

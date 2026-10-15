@@ -324,6 +324,17 @@ class CampaignListResponse(BaseModel):
     next_cursor: str | None = None
 
 
+class CreditConfirmation(ApiModel):
+    cycle_id: str = Field(min_length=1, max_length=256)
+    policy_version: str = Field(min_length=1, max_length=256)
+    credits: int = Field(gt=0, strict=True)
+    extra_amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
+
+
+class PlanRegenerateRequest(ApiModel):
+    credit_confirmation: CreditConfirmation | None = None
+
+
 class PlanResponse(BaseModel):
     campaign_id: str
     plan_version: int

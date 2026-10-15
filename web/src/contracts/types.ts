@@ -31,3 +31,6 @@ export type BillingSubscriptionInput = components["schemas"]["BillingSubscriptio
 
 export type BillingUsage = components["schemas"]["BillingUsage"];
 export type BillingCreditConsent = components["schemas"]["BillingCreditConsent"];
+
+export type StrategyCreditQuote = components["schemas"]["StrategyCreditQuote"];
+export type CreditConfirmation = components["schemas"]["CreditConfirmation"];
