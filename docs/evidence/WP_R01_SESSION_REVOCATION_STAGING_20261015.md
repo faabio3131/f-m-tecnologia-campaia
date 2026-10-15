@@ -26,3 +26,9 @@ Ainda pendentes: reativação/relogin e autoridade final; revogação por ediç�
 ## Segurança e continuidade
 
 Conta A2 permanece INACTIVE neste checkpoint. Não alterar o proprietário. Não instruir criação de empresa como solução para o acesso revogado. Preparar próximos testes antes de prolongar a janela de custos. Ao concluir ou bloquear, Diretor deve executar desligamento e comprovar STOPPED / NEVER, conforme compromisso vigente. Nenhum merge, deploy, migration ou segredo alterado.
+
+## Adendo — reativação e novo login confirmados
+
+Após registrar revogação, proprietário concluiu novo step-up Google e reativou somente A2 pela UI normal. UI confirmou VIEWER / ACTIVE. O Diretor então efetuou novo login na janela anônima. Print image(20261015-145146).png, recebido às 11:51 e inspecionado, confirma /dashboard, o mesmo membership de teste, o mesmo tenant/unidade originais, papel VIEWER e 2 permissões concedidas. Nenhum novo tenant foi criado como workaround. Estado anterior INACTIVE descrito acima é checkpoint histórico, substituído por ACTIVE para A2 neste adendo. MFA aparece como sim na UI, sem recertificação independente desse indicador.
+
+Prova real de ciclo convite -> aceite -> desativação -> recusa de sessão/acesso -> reativação -> novo login com autoridade VIEWER observada. G2 permanece PARTIAL, pendentes os demais negativos, alteração de papel/unidade, isolamento cross-tenant/business-unit e replay externo aplicável. Banco continua com última confirmação RUNNABLE / ALWAYS nesta janela; desligar e comprovar STOPPED / NEVER ao terminar ou bloquear.
