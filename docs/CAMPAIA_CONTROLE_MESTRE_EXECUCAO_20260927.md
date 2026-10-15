@@ -374,3 +374,14 @@ A auditoria encontrou pendência transversal: rotas de billing ausentes do OpenA
 ### Dívida documental reconciliada
 
 Arquitetura V2, ADR-0021, ADR-0022 e Threat Model receberam adendos CURRENT. PRs históricas #5, #6 e #28 são `SUPERSEDED` pelo takeover/PR #31 e pela `main` atual.
+
+
+## Checkpoint WP-R01 — 15/10/2026 — provas externas G2
+
+**Status de integração F2/G2: PARTIAL.** A pendência externa genérica do checkpoint de 02/10 foi exercitada em staging: Google Login e step-up reais; CRUD/lifecycle de unidade; convite/aceite; desativação e revogação da sessão; reativação e autoridade VIEWER; negativa RBAC na API; leitura própria positiva e leitura cross-tenant negativa; alteração de unidade com sessão antiga recusada; novo login no escopo atualizado e leitura cross-unit negativa. Eventos reais de auditoria foram conferidos.
+
+Fonte da revisão: `docs/evidence/WP_R01_G2_REVIEW_MATRIX_20261015.md` e evidências relacionadas. Os registros anteriores de ausência dessas provas são históricos, SUPERSEDED para esse delta; não significam que as funcionalidades precisam ser reconstruídas. Não confundir leitura isolada de um recurso com pentest completo ou publicação real de canais.
+
+PR #44 continua Draft, sem merge. Gate remanescente: CI no HEAD documental final, revisão/inclusão autorizada do SSOT e CI pós-merge antes da promoção global para DONE_VERIFIED. Main não foi modificada nesta execução. PR #43 também permanece separada; sem merge inferido.
+
+**Banco:** campaia-staging-pg confirmado STOPPED / NEVER às 13:00 de 15/10/2026 pelo print do Cloud Shell. Não religar para documentação/CI. Nenhum deploy, migration, produção, pagamento ou anúncio publicado. Próxima fase funcional WP-R02 somente após o gate aplicável, com política comercial como HUMAN_DECISION e credenciais externas mantidas como tal.
