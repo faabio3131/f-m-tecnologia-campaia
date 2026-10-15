@@ -6,7 +6,7 @@ import type { BillingUsage } from "@/contracts/types";
 import { setCsrfToken } from "@/lib/api/client";
 
 const usage: BillingUsage = {
-  availability: "AVAILABLE", alerts: ["INCLUDED_80"], actions: [{ action: "strategy", credits: 5 }],
+  access_active: true, can_authorize_extras: true, availability: "AVAILABLE", alerts: ["INCLUDED_80"], actions: [{ action: "strategy", credits: 5 }],
   cycle: { id: "cycle-a", trial: false, starts_at: "2026-10-15T12:00:00Z", ends_at: "2026-11-15T12:00:00Z", policy_version: "test-v1" },
   balance: { included_credits: 10, consumed_credits: 5, reserved_credits: 3, included_available: 2,
     extra_cap: "0.00", extra_credit_price: "1.00", extra_consumed_amount: "0.00", extra_committed_amount: "0.00", currency: "BRL" },
@@ -20,6 +20,14 @@ beforeEach(() => setCsrfToken("csrf-test"));
 afterEach(() => { vi.restoreAllMocks(); setCsrfToken(null); });
 
 describe("Persisted credit usage", () => {
+  it("keeps recorded balance readable after closure without offering extra authorization", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(response({ ...usage, access_active: false, can_authorize_extras: false }));
+    render(<BillingUsagePanel canManage stepUp={stepUp()} />);
+    await screen.findByRole("region", { name: "Franquia do ciclo pago" });
+    expect(screen.queryByLabelText("Teto adicional por ciclo (R$)")).not.toBeInTheDocument();
+    expect(screen.getByText(/Consulta do saldo registrado/)).toBeInTheDocument();
+  });
+
   it("separates delivered, reserved, available and extra cap without inventing provider costs", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(response(usage));
     render(<BillingUsagePanel canManage={false} stepUp={stepUp()} />);

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AdministrativeStepUpCard } from "@/components/AdministrativeStepUpCard";
 import { BillingSubscriptionSetup } from "@/components/BillingSubscriptionSetup";
+import { CommercialLifecycleActions } from "@/components/CommercialLifecycleActions";
 import { BillingUsagePanel } from "@/components/BillingUsagePanel";
 import { BillingChargeHistoryPanel } from "@/components/BillingChargeHistoryPanel";
 import { Button } from "@/components/Button";
@@ -107,7 +108,7 @@ function BillingContent({ canManage }: { canManage: boolean }) {
           { label: "Preço por crédito extra", value: money(terms.extra_credit_unit_price, terms.currency) },
           { label: "Acesso aos recursos", value: subscription.entitlement_access_active ? "Liberado" : "Bloqueado" },
           ...(subscription.trial_ends_at ? [{ label: "Fim do período de teste", value: date(subscription.trial_ends_at) }] : []),
-          ...(subscription.pending_plan_name ? [{ label: "Troca aguardando pagamento", value: subscription.pending_plan_name }] : []),
+          ...(subscription.pending_plan_name ? [{ label: terms.credit_policy ? "Troca agendada" : "Troca aguardando pagamento", value: subscription.pending_plan_name }] : []),
           ...(subscription.reactivation_requested_at ? [{ label: "Reativação", value: "Aguardando pagamento confirmado" }] : []),
         ]} /></Card>
         {subscription.status === "PAST_DUE" ? <Card><StatusPanel title="Pagamento em atraso" items={[
@@ -122,7 +123,7 @@ function BillingContent({ canManage }: { canManage: boolean }) {
           { label: "Limite de campanhas ativas", value: String(subscription.entitlements?.max_active_campaigns ?? "Não configurado") },
           { label: "Canais", value: subscription.entitlements?.channels.join(", ") || "Nenhum configurado" },
         ]} /></Card>
-        <BillingUsagePanel canManage={canManage} stepUp={stepUp} />
+        <BillingUsagePanel key={`${subscription.status}:${subscription.plan_id}:${subscription.activated_at}:${subscription.cancel_at_period_end}:${subscription.pending_plan_id}`} canManage={canManage} stepUp={stepUp} />
         {canManage && !terms.credit_policy ? <>
           <Card><h2 className={styles.title}>Gerenciar assinatura</h2>
             <div className={styles.actions}>
@@ -137,7 +138,7 @@ function BillingContent({ canManage }: { canManage: boolean }) {
             </div>
             <p>Trocas de plano e reativações liberam recursos após o pagamento confirmado. O cancelamento imediato bloqueia o acesso aos recursos contratados.</p>
           </Card>
-        </> : terms.credit_policy && canManage ? <p>Alterações de plano e encerramento por aniversário aguardam homologação deste contrato.</p> : null}
+        </> : terms.credit_policy && canManage ? <CommercialLifecycleActions subscription={subscription} plans={plans} stepUp={stepUp} onUpdated={setSubscription} /> : null}
       </> : <EmptyState title="Nenhuma assinatura configurada" description="Sua organização ainda não possui uma assinatura." />}
       {!subscription && canManage && !catalogError && plans.length > 0 ?
         <BillingSubscriptionSetup plans={plans} stepUp={stepUp} onCreated={setSubscription} /> : null}

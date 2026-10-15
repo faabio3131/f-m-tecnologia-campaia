@@ -511,6 +511,7 @@ class BillingSubscriptionUpsert(ApiModel):
 
 
 class BillingPlanChangeRequest(ApiModel):
+    expected_plan_fingerprint: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     target_plan_id: str
 
 
@@ -522,7 +523,12 @@ class BillingEntitlementsResponse(BaseModel):
     resources: list[str]
 
 
+class BillingCancellationRequest(ApiModel):
+    immediate: bool = Field(default=False, strict=True)
+
+
 class BillingPlanChangeRuleResponse(BaseModel):
+    activation: str | None = None
     target_plan_id: str
     kind: str
     billing_mode: str | None
@@ -559,6 +565,11 @@ class BillingSubscriptionResponse(BaseModel):
     pending_plan_name: str | None = None
     pending_plan_change_kind: str | None = None
     pending_plan_change_billing_mode: str | None = None
+    cancel_at_period_end: datetime | None = None
+    pending_plan_effective_at: datetime | None = None
+    paid_period_starts_at: datetime | None = None
+    paid_period_ends_at: datetime | None = None
+    pending_plan_entitlements: BillingEntitlementsResponse | None = None
     canceled_at: datetime | None = None
     reactivation_requested_at: datetime | None = None
     past_due_at: datetime | None = None

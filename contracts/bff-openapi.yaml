@@ -1272,6 +1272,30 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /billing/subscription/undo-plan:
+    post:
+      tags: [Billing]
+      summary: Desiste da troca agendada antes do fechamento financeiro
+      operationId: undoBillingPlanChange
+      security: [cookieAuth: []]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Agendamento removido; plano atual preservado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingSubscription' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '409':
+          description: Obrigacao ja fechada ou paga; exige conciliacao
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /billing/subscription/cancel:
     post:
       tags: [Billing]
@@ -1282,6 +1306,15 @@ paths:
         - $ref: '#/components/parameters/CsrfToken'
         - $ref: '#/components/parameters/StepUpToken'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                immediate: { type: boolean, default: false }
       responses:
         '200':
           description: Assinatura cancelada
@@ -1576,6 +1609,7 @@ components:
       additionalProperties: false
       required: [target_plan_id]
       properties:
+        expected_plan_fingerprint: { type: [string, 'null'], pattern: '^[a-f0-9]{64}$' }
         target_plan_id: { type: string }
 
     BillingEntitlements:
@@ -1617,6 +1651,7 @@ components:
             properties:
               target_plan_id: { type: string }
               kind: { type: string }
+              activation: { type: [string, 'null'] }
               billing_mode: { type: [string, 'null'] }
 
     BillingSubscription:
@@ -1643,6 +1678,14 @@ components:
         pending_plan_name: { type: [string, 'null'] }
         pending_plan_change_kind: { type: [string, 'null'] }
         pending_plan_change_billing_mode: { type: [string, 'null'] }
+        cancel_at_period_end: { type: [string, 'null'], format: date-time }
+        pending_plan_effective_at: { type: [string, 'null'], format: date-time }
+        paid_period_starts_at: { type: [string, 'null'], format: date-time }
+        paid_period_ends_at: { type: [string, 'null'], format: date-time }
+        pending_plan_entitlements:
+          anyOf:
+            - { $ref: '#/components/schemas/BillingEntitlements' }
+            - { type: 'null' }
         canceled_at: { type: [string, 'null'], format: date-time }
         reactivation_requested_at: { type: [string, 'null'], format: date-time }
         past_due_at: { type: [string, 'null'], format: date-time }
@@ -1737,8 +1780,10 @@ components:
 
     BillingUsage:
       type: object
-      required: [availability, cycle, balance, actions, alerts]
+      required: [availability, cycle, balance, actions, alerts, access_active, can_authorize_extras]
       properties:
+        access_active: { type: boolean }
+        can_authorize_extras: { type: boolean }
         availability: { type: string, enum: [AVAILABLE, UNAVAILABLE] }
         cycle:
           anyOf:

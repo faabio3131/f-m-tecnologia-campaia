@@ -59,6 +59,7 @@ class PaymentGatewaySimulator:
                 status=GatewayChargeStatus.PENDING,
                 provider=self.provider,
                 mode=self.mode,
+                observed_amount=command.amount,
             )
             self.scripted_status.setdefault(
                 resultado.gateway_charge_id, GatewayChargeStatus.PENDING

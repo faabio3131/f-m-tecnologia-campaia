@@ -202,6 +202,7 @@ class PostgresRuntimeTests(unittest.TestCase):
             config = Path(directory) / "catalog.json"
             plans = json.loads((Path(__file__).parents[1] / "config/plans.example.json").read_text())
             plans[0]["included_credits"] = 10
+            plans[0]["cancellation_mode"] = "PERIOD_END"
             plans[0]["credit_policy"] = {"version": "pg-test-v1", "action_weights": {"strategy": 5},
                 "trial_credits": 30, "trial_max_users": 1, "trial_max_active_campaigns": 1}
             config.write_text(json.dumps(plans))
@@ -219,7 +220,7 @@ class PostgresRuntimeTests(unittest.TestCase):
                     "id": charge.json()["gateway_charge_id"], "status": "RECEIVED"}}
                 def deliver(client):
                     return client.post("/webhooks/asaas", headers={"asaas-access-token": "pg-webhook-proof"}, json=payload)
-                with patch("api.routes_billing.grant_current_cycle", side_effect=RuntimeError("injected")):
+                with patch("api.routes_billing.grant_paid_cycle", side_effect=RuntimeError("injected")):
                     with self.assertRaises(RuntimeError):
                         deliver(clients[0])
                 self.assertFalse(clients[1].app.state.campaia.asaas_webhook.already_seen("pg-paid-event"))
@@ -265,6 +266,18 @@ class PostgresRuntimeTests(unittest.TestCase):
                 usage = clients[1].get("/billing/usage", headers=OWNER).json()
                 self.assertEqual(usage["balance"]["consumed_credits"], 5)
                 self.assertEqual(usage["balance"]["reserved_credits"], 0)
+
+                canceled = clients[0].post("/billing/subscription/cancel",
+                    headers={**with_step_up(OWNER), **unique_idem()})
+                self.assertEqual(canceled.status_code, 200, canceled.text)
+                self.assertEqual(canceled.json()["status"], "ACTIVE")
+                observed = clients[1].get("/billing/subscription", headers=OWNER).json()
+                self.assertEqual(observed["cancel_at_period_end"], canceled.json()["cancel_at_period_end"])
+                kept = clients[1].post("/billing/subscription/reactivate",
+                    headers={**with_step_up(OWNER), **unique_idem()})
+                self.assertEqual(kept.status_code, 200, kept.text)
+                self.assertIsNone(kept.json()["cancel_at_period_end"])
+                self.assertEqual(len(clients[1].app.state.campaia.charges.items_for_tenant("demo-tenant")), 1)
 
     def test_credit_journal_workers_replay_caps_and_immutable_history(self) -> None:
         from api.credit_store import PersistentCreditLedger

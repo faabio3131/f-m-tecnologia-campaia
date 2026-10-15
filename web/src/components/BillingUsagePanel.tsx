@@ -86,9 +86,10 @@ export function BillingUsagePanel({ canManage, stepUp }: Props) {
         { label: "Excedente consumido", value: money(balance.extra_consumed_amount) },
         { label: "Teto adicional autorizado", value: money(balance.extra_cap) },
       ]} />
+      {!usage?.access_active ? <p>Consulta do saldo registrado. A assinatura atual não permite novas gerações.</p> : null}
       <p>Reservas aguardam entrega ou reconciliação e ainda não são consumo cobrado. A franquia não acumula entre ciclos.</p>
       {usage.alerts.map((alert) => <p role="status" key={alert}>{ALERTS[alert]}</p>)}
-      {cycle.trial ? <p>O teste não permite excedente nem conversão paga automática.</p> : canManage ? <>
+      {cycle.trial ? <p>O teste não permite excedente nem conversão paga automática.</p> : canManage && usage?.can_authorize_extras ? <>
         <p>Excedente: {money(balance.extra_credit_price)} por crédito entregue. A autorização permanece até revogação; o teto reinicia a cada ciclo. Não é compra antecipada de créditos.</p>
         {!confirmation ? <form onSubmit={review}>
           <Input label="Teto adicional por ciclo (R$)" type="number" min="0" max="1000000000000" step="0.01" required value={cap} onChange={(event) => setCap(event.target.value)} />
