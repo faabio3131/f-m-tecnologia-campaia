@@ -1,1206 +1,768 @@
 # CampaIA — AGENTS.md
 
-## Cronograma Mestre Operacional das Tarefas Restantes até Pronto Comercial
+## Cronograma Mestre Operacional — DELTA REAL RESTANTE
 
 **Data de reconciliação:** 14/10/2026  
-**Repositório canônico:** faabio3131/f-m-tecnologia-campaia  
-**CURRENT confirmado na criação deste arquivo:** main@4d17f41c35d95ff473ab420be5164407c9166bb5  
-**Produção:** não autorizada e não tocada nesta reconciliação  
-**Fonte mestra:** docs/CRONOGRAMA_MESTRE_EXECUCAO_TOTAL_CAMPAIA_20260927.md quando presente no repositório, e o documento “CAMPAIA - CRONOGRAMA MESTRE DE EXECUCAO TOTAL ATE PRONTO COMERCIAL” v1.0 de 27/09/2026.  
-**Tracker complementar:** docs/CAMPAIA_CONTROLE_MESTRE_EXECUCAO_20260927.md
+**Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
+**CURRENT confirmado:** `main@4d17f41c35d95ff473ab420be5164407c9166bb5`  
+**Produção:** não autorizada  
+**Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
+**Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
 
-Este arquivo é a camada operacional para futuros agentes/executores. Ele organiza o trabalho restante a partir do CURRENT real. Ele NÃO substitui a fonte mestra, ADRs, evidências nem o CURRENT técnico.
-
----
-
-## 1. REGRA SUPREMA
-
-Antes de executar qualquer tarefa relevante:
-
-1. Confirmar repositório canônico.
-2. Confirmar branch, HEAD e estado real da main.
-3. Confirmar PRs abertas relacionadas ao bloco.
-4. Ler este AGENTS.md.
-5. Ler somente o Cronograma Mestre, ADRs e evidências diretamente ligados ao Work Package.
-6. Comparar CURRENT x TARGET.
-7. Preservar tudo que já estiver DONE_VERIFIED.
-8. Executar um Work Package por vez, salvo trilhas explicitamente paralelas.
-9. Testar antes de commit.
-10. Gerar evidência reproduzível.
-11. Atualizar tracker/evidência do bloco.
-12. Parar antes de merge, deploy, produção, GO/NO-GO, alteração irreversível ou HUMAN_DECISION sem autorização expressa do Diretor.
-
-Documentação histórica nunca prevalece silenciosamente sobre o CURRENT.
+Este arquivo orienta futuros agentes/executores sobre **o que ainda falta**.  
+Ele existe para impedir retrabalho sobre funcionalidades, integrações de infraestrutura ou ativos externos que já existem.
 
 ---
 
-## 2. STATUS OFICIAIS
+# 1. REGRA SUPREMA
+
+Antes de qualquer execução relevante:
+
+1. confirmar repo, branch e HEAD reais;
+2. confirmar PRs abertas e estado da main;
+3. ler este arquivo e o Cronograma Mestre;
+4. ler apenas ADRs/evidências ligadas ao WP;
+5. comparar CURRENT x TARGET;
+6. provar a lacuna antes de implementar;
+7. preservar tudo que estiver DONE_VERIFIED;
+8. executar um WP por vez, salvo trilhas explicitamente paralelas;
+9. testar, gerar evidência e só então atualizar status;
+10. parar antes de merge/deploy/produção/GO-NO-GO/HUMAN_DECISION sem autorização expressa.
+
+**Nunca criar novamente um ativo externo sem primeiro provar que o ativo vigente foi perdido, invalidado ou substituído.**
+
+---
+
+# 2. STATUS OFICIAIS
 
 Usar somente:
 
-- DONE_VERIFIED — construído e comprovado por código/evidência/teste no CURRENT.
-- PARTIAL — parte existe, mas o bloco ainda não satisfaz a Definition of Done.
-- TARGET — ainda precisa ser construído.
-- HUMAN_DECISION — exige decisão explícita do Diretor.
-- EXTERNAL_CREDENTIAL — depende de credencial externa.
-- EXTERNAL_INFRASTRUCTURE — depende de infraestrutura/conta externa.
-- EXTERNAL_APPROVAL — depende de aprovação de terceiro.
-- PRODUCTION_GATE — funciona antes de produção, mas exige gate específico para promoção.
-- BLOCKED — bloqueado por dependência real.
-- SUPERSEDED — substituído por estado/documento/fluxo mais novo.
+- DONE_VERIFIED
+- PARTIAL
+- TARGET
+- HUMAN_DECISION
+- EXTERNAL_CREDENTIAL
+- EXTERNAL_INFRASTRUCTURE
+- EXTERNAL_APPROVAL
+- PRODUCTION_GATE
+- BLOCKED
+- SUPERSEDED
 
-Nunca declarar “100% pronto”, “homologado”, “produção pronta” ou “comercialmente disponível” sem evidência correspondente ao gate.
+Nunca usar “100% pronto”, “homologado”, “produção pronta” ou equivalente sem evidência correspondente.
 
 ---
 
-## 3. INVARIANTES CONSTITUCIONAIS DO CAMPAIA
+# 3. INVARIANTES
 
-- CampaIA é SaaS comercial multi-tenant.
-- Nova FM Tecnologia e FM Tecnologia são tenants comuns de teste/homologação.
-- Nenhuma conta FM pode possuir privilégio oculto, ID hardcoded, código exclusivo, token manual de desenvolvedor ou deploy especial.
+- SaaS comercial multi-tenant.
+- Nova FM Tecnologia e FM Tecnologia são tenants comuns de homologação.
+- Nenhum cliente exige mudança de código, commit especial, deploy específico, ID hardcoded ou inclusão manual no banco.
 - PLATFORM e TENANT são configurações distintas.
-- Segredos de tenant ficam em Vault/Secret Manager e domínio referencia segredo por SecretRef ou mecanismo equivalente.
+- Segredo de tenant fica em Vault/Secret Manager e domínio usa SecretRef/mecanismo equivalente.
 - Nenhum segredo real entra no Git.
-- Mutação crítica cobre happy path, negative path, replay/idempotência e cross-tenant; quando aplicável também restart, concorrência, atomicidade e multi-worker.
-- Campanha nova exige aprovação humana conforme política vigente.
-- Simulador, mock, sandbox, staging, homologação e produção são estados diferentes.
-- Sucesso em mock/sandbox não prova integração real de produção.
-- Visual Premium integral somente após fechamento funcional principal.
-- Nenhum merge/deploy/produção/GO-NO-GO sem autorização expressa.
+- Mutação crítica: happy path, negative path, replay/idempotência e cross-tenant; quando aplicável restart, concorrência, atomicidade e multi-worker.
+- Mock/simulador/sandbox/staging/produção são estados diferentes.
+- Visual Premium integral só depois do fechamento funcional principal.
+- Merge, deploy, produção, alteração irreversível e GO/NO-GO exigem autorização expressa.
 
 ---
 
-## 4. CURRENT CERTIFICADO A PRESERVAR
+# 4. NÃO REFAZER — CURRENT JÁ CONSTRUÍDO/CERTIFICADO
 
-### F0 / G0
-- G0 DONE_VERIFIED.
-- Matriz CURRENT/TARGET e reconciliação documental já realizadas.
-- Documentos históricos superseded preservados sem orientar nova implementação.
+## F0/G0
+- CURRENT/SSOT, matriz e reconciliação: DONE_VERIFIED.
 
-### F1 / G1
+## F1/G1
+- Google Identity Platform real em staging;
+- login Google real;
+- onboarding cria tenant + unidade Principal + OWNER;
+- convite/aceite/lifecycle de usuários;
+- tenant switching;
+- sessão autenticada real;
 - G1 DONE_VERIFIED.
-- Login Google real em staging já comprovado.
-- Onboarding explícito cria tenant, unidade Principal e OWNER sem inclusão manual em banco.
-- F1 permanece PARTIAL somente porque entrada comercial trial/compra precisa ser fechada com F5/G5.
 
-### F2 / G2
-- F2/G2 PARTIAL.
-- CRUD de unidades, usuários/memberships/roles, ownership transfer, revogação de sessões, RBAC, step-up e Web já existem e foram certificados internamente.
-- Pendência concreta: E2E externo em staging de administração sensível completa com reautenticação Google real, mutação administrativa e prova de autoridade/revogação/cross-tenant.
+F1 só mantém dependência comercial residual até G5.
 
-### F3 / G3
-- G3 DONE_VERIFIED.
-- PostgreSQL/Cloud SQL runtime adapter, migrations, atomicidade, locks, idempotência persistente, shared sessions/OAuth/approvals/dedupe e multi-process já certificados.
-- Não refazer runtime base.
+## F2
+Já existem:
+- CRUD de unidades;
+- memberships/roles;
+- ownership transfer;
+- RBAC;
+- step-up;
+- session revocation;
+- isolamento cross-tenant/business unit;
+- Web de Organização e Usuários.
 
-### F4 / G4
-- F4/G4 DONE_VERIFIED.
-- Staging real, Cloud Run, Cloud SQL, KMS, Secret Manager, OIDC/WIF, migration gate, rollback e login/onboarding real já certificados.
-- Não reprovisionar arquitetura por documentação antiga.
+Não reimplementar. Falta somente homologação externa específica de mutações sensíveis.
 
-### F5 / G5
-- F5/G5 PARTIAL.
-- WP-F05-01 persistência billing: DONE_VERIFIED.
-- WP-F05-02 entitlements/trial lifecycle: DONE_VERIFIED.
-- WP-F05-03 upgrade/downgrade/cancelamento/reativação: DONE_VERIFIED.
-- WP-F05-04 PAST_DUE/grace/dunning/recovery: DONE_VERIFIED.
-- PR #42 pós-merge certificada em main@4d17f41c35d95ff473ab420be5164407c9166bb5.
-- Backend #223, Frontend #161 e F4 Platform CI #57: success.
-- Correção de security audit frontend da PR #41 permanece DONE_VERIFIED.
+## F3/G3
+Já existem e estão DONE_VERIFIED:
+- PostgreSQL;
+- migrations;
+- atomicidade;
+- advisory locks;
+- idempotência exactly-once;
+- shared sessions/OAuth/approvals/dedupe;
+- multi-process;
+- tenant isolation;
+- rate limit persistente.
 
-### F6 — CURRENT parcial
-- Brand Profile textual já possui create/list, persistência e tenant scoping.
-- Ainda não é Brand Kit completo com assets reais.
+## F4/G4
+Já existem e estão DONE_VERIFIED:
+- Cloud Run;
+- Cloud SQL PostgreSQL 16;
+- KMS;
+- Secret Manager;
+- Cloud Storage/PubSub;
+- WIF/OIDC;
+- CI/CD;
+- migration gate;
+- rollback real;
+- staging real;
+- login/onboarding real.
 
-### F7 — CURRENT parcial
-- AIGateway e provider Gemini real já existem quando configurados.
-- SimulatedAIProvider permanece fallback de dev/test sem fingir produção.
-- Estratégia textual, state machine, policy base e approvals já possuem componentes.
-- Geração de imagens, criativos completos, preview por canal e fluxo completo até aprovação ainda não estão fechados.
+## F5
+Já estão DONE_VERIFIED:
+- WP-F05-01 persistência billing;
+- WP-F05-02 entitlements/trial;
+- WP-F05-03 upgrade/downgrade/cancelamento/reativação;
+- WP-F05-04 PAST_DUE/grace/dunning/recovery.
 
-### F8 — CURRENT ainda não real
-- OAuth de Connections permanece explicitamente simulado no produto atual.
-- State single-use, tenant binding, step-up e Vault já possuem fundação reutilizável.
-- Conector Google Ads real multi-tenant ainda precisa ser implementado/homologado.
+Também já existem:
+- AsaasGateway real;
+- Asaas Sandbox real testado com criação/consulta de cobrança;
+- webhook Asaas;
+- settlement;
+- dedupe;
+- externalReference para crash/replay;
+- fiscal handoff.
 
-### F9 — CURRENT
-- Publicação real Google Ads ainda não existe.
-- Publish/pause atuais usam ProviderSimulator.
-- Insights atuais retornam placeholder vazio de forma honesta.
+## Brand/briefing/campanhas
+Já existem:
+- Brand Profile textual GET/POST + Web;
+- briefing API/Web;
+- estratégia;
+- Policy Engine;
+- approvals;
+- segregation of duties;
+- budget;
+- autonomy;
+- kill switch;
+- audit;
+- connection lifecycle;
+- capability panel.
 
-### F12 — CURRENT parcial
-- PublicationSaga e state machine de publicação existem.
-- Ainda operam sem três conectores reais; não reimplementar Saga do zero.
+## IA
+Já existem:
+- AIGateway;
+- GeminiProvider real;
+- chamadas reais Gemini já validadas;
+- structured output nativo;
+- schema fail-closed;
+- provenance/custo;
+- sanitizer;
+- retry/fallback/circuit behavior;
+- agentes: business_context, strategist, copy, audience, policy, performance.
 
-### F13 — CURRENT parcial
-- Budget engine, autonomy, kill switch, audit e endpoint de insights existem.
-- Analytics real e loop de otimização ainda faltam.
+Não recriar gateway/agentes do zero.
 
-### F14 — CURRENT parcial
-- Organização, usuários, permissões, connections, audit, autonomy e parte das telas administrativas existem.
-- Self-service comercial completo, exportações, notificações, suporte e lifecycle legal ainda faltam.
+## Orquestração/otimização
+Já existem e possuem testes:
+- PublicationSaga;
+- Reconciler;
+- Outbox/Webhook primitives;
+- BudgetEngine;
+- PacingEngine;
+- Optimizer;
+- Autonomy;
+- Policy Engine.
+
+O trabalho restante é wiring com providers reais e API/Web, não reescrita.
 
 ---
 
-## 5. CAMINHO CRÍTICO RESTANTE
+# 5. ATIVOS EXTERNOS JÁ EXISTENTES — NÃO RECRIAR
 
-A ordem preferencial é:
+## Google Ads
 
-1. Fechar resíduo G2 quando ambiente estiver disponível.
-2. Fechar F5/G5.
-3. F6 Brand Kit/assets reais.
-4. F7 IA/criativos/policy/previews.
-5. F8 Google connect real.
-6. F9 Google publish/reconciliation/metrics.
-7. F10 Meta real.
-8. F11 WhatsApp real.
-9. F12 orquestração multicanal.
-10. F13 analytics/alertas/otimização.
-11. F14 administração/support self-service.
-12. F15 Visual Premium total.
-13. F16 security/LGPD/compliance.
-14. F17 performance/resiliência/observabilidade/DR.
-15. F18 homologação ponta a ponta.
-16. F19 release candidate + GO/NO-GO.
-17. F20 produção + liberação comercial controlada.
+Evidências registram:
 
-Não iniciar F15 antes do freeze funcional principal F5-F14.
+- conta gerenciadora Google Ads criada;
+- developer token criado;
+- nível inicial Test Account Access confirmado;
+- conta de teste/homologação criada;
+- OAuth Desktop Client existente para uso manual/teste;
+- projeto `campaia-google-ads-integration` reportado como ativo/candidato;
+- arquitetura multi-tenant já definida;
+- Credential Vault já construído.
+
+**Não criar novo MCC nem novo developer token como tarefa padrão.**
+
+O que falta é verificar/reutilizar esses ativos e completar OAuth Web comercial + adapter real.
+
+## Meta
+
+Evidências registram:
+
+- Meta Business Manager/portfólio criado;
+- Página Facebook da empresa criada;
+- App `CampaIA` criado no Meta for Developers;
+- use cases Marketing API + WhatsApp configurados.
+
+**Não recriar Business Manager, Página ou App sem prova de necessidade.**
+
+## WhatsApp
+
+Evidências registram:
+
+- WhatsApp Cloud API adicionada ao App CampaIA;
+- WABA/test account criada;
+- número de teste criado;
+- destinatário validado;
+- template de teste enviado;
+- mensagem real recebida com sucesso.
+
+Webhook foi deliberadamente pausado à época porque não havia backend público.  
+G4 resolveu essa dependência de infraestrutura.
+
+**Não repetir criação da conta de teste nem o teste básico de mensagem.**
 
 ---
 
-# 6. FILA MESTRA DE WORK PACKAGES RESTANTES
+# 6. PROVA DO DELTA REAL AINDA ABERTO
 
-## WP-G2-01 — Homologação externa IAM/RBAC sensível
+No CURRENT:
 
-**Status:** PARTIAL / EXTERNAL_INFRASTRUCTURE  
-**Pode rodar em paralelo com F5 quando staging estiver disponível.**
+- `routes_connections.oauth_start` ainda gera URL `.invalid`;
+- callback de Connections continua simulado;
+- Connection comercial ainda não recebe token por OAuth real;
+- `routes_campaigns` ainda usa `ProviderSimulator`;
+- capabilities reais TEST/PRODUCTION não estão mapeadas;
+- não existe adapter real Google Ads/Meta/WhatsApp em `campaia_core`;
+- Insights devolve `points=[]` honestamente;
+- optimizer/pacing/reconciliation existem, mas não estão ligados a métricas externas reais;
+- Brand Kit ainda não possui upload/assets completos;
+- fluxo de criativos/imagem/preview ainda não está completo;
+- Billing Web comercial ainda não existe;
+- Premium final ainda não foi executado;
+- G18/G19/G20 ainda não ocorreram.
 
-### TARGET
-Executar no staging real:
+Esses são os blocos prioritários restantes.
+
+---
+
+# 7. MATRIZ CURRENT RECONCILIADA
+
+| Fase | Status real | Delta restante |
+|---|---|---|
+| F0 | DONE_VERIFIED | nenhum |
+| F1 | PARTIAL / G1 DONE_VERIFIED | reconciliar dependência comercial após G5 |
+| F2 | PARTIAL | E2E externo de administração sensível |
+| F3 | DONE_VERIFIED | nenhum core |
+| F4 | DONE_VERIFIED | nenhum core |
+| F5 | PARTIAL avançado | política comercial + Billing Web + produção Asaas + E2E real |
+| F6 | PARTIAL | upload/assets + aplicação do Brand Kit |
+| F7 | PARTIAL avançado | wiring dos agentes, imagem/criativos, preview/ajustes |
+| F8 | PARTIAL | ativos Google existem; OAuth Ads real por tenant falta |
+| F9 | PARTIAL | Saga/reconcile existem; Google publish/metrics reais faltam |
+| F10 | PARTIAL / EXTERNAL_APPROVAL | BM/Page/App existem; Meta OAuth/API real + aprovações faltam |
+| F11 | PARTIAL / EXTERNAL_APPROVAL | Cloud API de teste funciona; webhook/prod connector faltam |
+| F12 | PARTIAL avançado | ligar Saga/reconcile/outbox aos adapters reais |
+| F13 | PARTIAL avançado | ingestão real + alertas + wiring optimizer/pacing |
+| F14 | PARTIAL | fechar self-service/export/notificações/admin |
+| F15 | TARGET | Premium final |
+| F16 | PARTIAL | hardening/pentest/LGPD final |
+| F17 | PARTIAL | load/restore/RPO-RTO/tracing/alerting final |
+| F18 | TARGET | UAT final |
+| F19 | PRODUCTION_GATE | RC + GO/NO-GO |
+| F20 | TARGET | deploy comercial controlado |
+
+---
+
+# 8. ORDEM MESTRA DAS TAREFAS RESTANTES
+
+## WP-R01 — Fechar G2 externo
+**Status:** PARTIAL / EXTERNAL_INFRASTRUCTURE
+
+No staging real:
 
 - login Google real;
-- step-up por reautenticação Google;
-- criar/renomear/desativar/reativar unidade;
-- convidar/alterar membership/role;
-- promover novo OWNER;
-- rebaixar OWNER anterior sem remover último OWNER;
-- provar revogação imediata de sessão;
-- provar cross-tenant e business-unit isolation;
-- provar que admin de tenant não recebe autoridade de plataforma;
-- registrar audit trail real.
+- novo step-up;
+- criar/alterar unidade ou membership/role;
+- provar sessão revogada;
+- provar autoridade após mudança;
+- provar cross-tenant/business-unit isolation;
+- registrar evidência.
 
-### DoD
-G2 pode virar DONE_VERIFIED somente com evidência E2E externa reproduzível.
+**Não reconstruir F2.**
 
 ---
 
-# FASE 5 — BILLING, PLANOS, TRIAL E OPERAÇÃO COMERCIAL
+## WP-R02 — Fechar F5/G5 comercial
+**Status:** PARTIAL / HUMAN_DECISION / EXTERNAL_CREDENTIAL
 
-## WP-F05-05 — Congelar política comercial real
+### O que já existe
+Motor de billing, Asaas adapter, webhook, settlement, entitlement e lifecycle comercial.
 
-**Status:** HUMAN_DECISION
+### Falta
+1. decisão real de planos/preços/trial/grace/dunning/refund;
+2. arquivo/catálogo comercial real;
+3. Billing Web:
+   - plano atual;
+   - uso;
+   - upgrade/downgrade;
+   - cancelamento/reativação;
+   - PAST_DUE/grace;
+   - histórico de cobranças;
+4. credenciais/conta Asaas produção quando apropriado;
+5. checkout/fluxo de pagamento real;
+6. E2E real:
+   trial/assinatura -> cobrança -> pagamento -> webhook -> entitlement.
 
-Decisões que precisam de aprovação explícita antes de serem tratadas como produto real:
-
-- nomes dos planos;
-- preços;
-- franquias;
-- excedentes/créditos;
-- limites de usuários;
-- limites de campanhas;
-- canais/recursos/IA por plano;
-- duração de trial;
-- regras comerciais de upgrade/downgrade;
-- grace period real;
-- cadência real de dunning;
-- métodos de pagamento de lançamento;
-- política de refund/estorno quando aplicável;
-- política fiscal/tributária junto a contador/jurídico.
-
-**Regra:** mecanismo já existe; não hardcodar números comerciais no código.
-
-## WP-F05-06 — Checkout/assinatura e Asaas real
-
-**Status:** EXTERNAL_CREDENTIAL / EXTERNAL_APPROVAL / TARGET
-
-- configurar conta/credenciais Asaas de produção quando juridicamente disponíveis;
-- manter credenciais de plataforma fora do repositório;
-- implementar checkout/assinatura real;
-- Pix/boleto/cartão conforme política aprovada;
-- validar webhook real em ambiente apropriado;
-- provar dedupe/replay;
-- testar pagamento duplicado, atrasado, recusado e cancelado;
-- garantir que evento financeiro é a autoridade do entitlement;
-- não liberar plano pago apenas por retorno do browser;
-- reconciliação polling/webhook quando necessária.
-
-## WP-F05-07 — Billing self-service Web
-
-**Status:** TARGET
-
-- tela de plano atual;
-- status da assinatura;
-- consumo/franquia/créditos;
-- upgrade/downgrade;
-- cancelamento/reativação;
-- PAST_DUE/grace/status de cobrança;
-- histórico de pagamentos/faturas;
-- estados loading/erro/retry;
-- RBAC Finance/Owner adequado;
-- step-up para mutações sensíveis;
-- responsive/a11y mínima sem antecipar F15.
-
-## WP-F05-08 — Refund/fiscal/handoff real
-
-**Status:** HUMAN_DECISION / EXTERNAL_APPROVAL
-
-- fechar política de estorno/reembolso se aplicável;
-- fechar responsabilidade por NF/tributação;
-- ligar fiscal handoff real somente quando juridicamente definido;
-- testar reversão/reconciliação;
-- jamais declarar emissão fiscal pronta sem homologação externa.
-
-## WP-F05-09 — Gate G5 real
-
-**Status:** PRODUCTION_GATE / EXTERNAL_CREDENTIAL
-
-E2E obrigatório:
-
-trial ou assinatura -> tenant -> cobrança real -> pagamento -> webhook/reconciliação -> entitlement server-authoritative.
-
-Cobrir também:
-
-- trial expirado;
-- conversão;
-- upgrade;
-- downgrade;
-- PAST_DUE;
-- recovery;
-- cancelamento;
-- reativação;
-- replay;
-- cross-tenant.
-
-**Gate G5:** usuário consegue iniciar trial/assinar, pagar e ter entitlement ativado por evento real de pagamento.
-
-**Efeito adicional:** após G5, reconciliar F1 para remover a dependência comercial residual.
+**Gate G5:** pagamento real ativa entitlement sem intervenção de desenvolvedor.
 
 ---
 
-# FASE 6 — BRAND KIT E ASSETS REAIS
-
-## WP-F06-01 — Brand Kit CRUD completo
-
+## WP-R03 — Completar F6 Brand Kit/assets
 **Status:** PARTIAL
 
-Preservar BrandProfile existente e completar:
+### Já existe
+Brand Profile textual, persistência, Web, Cloud Storage na infraestrutura.
 
-- editar Brand Kit;
-- produtos/ofertas;
-- diferenciais;
-- tom de voz;
-- paleta;
-- restrições;
-- lifecycle/versionamento quando necessário;
-- auditoria;
-- RBAC;
-- idempotência;
-- cross-tenant.
+### Falta
+- edit/update do Brand Kit;
+- upload real de logo/assets;
+- metadata e private/signed access;
+- isolamento cross-tenant dos objetos;
+- lifecycle/delete/retenção;
+- aplicar Brand Kit selecionado ao pipeline de campanha/IA.
 
-## WP-F06-02 — Asset Storage multi-tenant
-
-**Status:** TARGET
-
-- upload real em Cloud Storage;
-- MIME/tamanho/dimensão;
-- imagem/vídeo conforme escopo;
-- segurança/antimalware conforme risco;
-- signed/private URLs;
-- delete/retenção;
-- metadata;
-- isolamento por tenant;
-- testes de URL/objeto cross-tenant;
-- sem bucket path confiado do browser.
-
-## WP-F06-03 — Integrar Brand Kit ao briefing/IA
-
-**Status:** TARGET
-
-- Brand Kit selecionável em campanha;
-- assets e restrições entram no Context Pack da IA;
-- reutilização de materiais por campanha;
-- proveniência;
-- nenhuma informação de outro tenant em prompt.
-
-## WP-F06-04 — Gate G6
-
-**Gate:** tenant novo cadastra sua marca e usa assets reais sem suporte técnico.
+**Não reprovisionar Cloud Storage sem drift comprovado.**
 
 ---
 
-# FASE 7 — IA, CRIATIVOS, POLICY E PREVIEWS
+## WP-R04 — Completar F7 IA/criativos/preview
+**Status:** PARTIAL avançado
 
-## WP-F07-01 — AI Gateway comercial governado
+### Já existe
+AIGateway, Gemini real, agentes copy/audience/policy/performance/strategist, Policy Engine e approvals.
 
-**Status:** PARTIAL
+### Falta
+- ligar copy/audience/policy/performance ao fluxo API/Web;
+- completar creative asset model;
+- geração de imagem real;
+- armazenar criativos no storage do tenant;
+- edição/regeneração seletiva;
+- preview Google/Meta/WhatsApp;
+- solicitar ajustes/rejeição quando aplicável;
+- evals/critério de qualidade quando o Diretor definir.
 
-Preservar AIGateway/Gemini existentes e completar:
-
-- provider/model routing permitido;
-- fallback governado;
-- timeout/retry/backoff;
-- circuit breaker real;
-- custo por tenant no ledger;
-- budget de IA;
-- proveniência completa;
-- sanitização/minimização de dados;
-- observabilidade de provider;
-- fail-closed para schema inválido.
-
-## WP-F07-02 — Copy generation completa
-
-**Status:** TARGET/PARTIAL
-
-- títulos;
-- descrições;
-- CTAs;
-- variações;
-- formatos por canal;
-- regeneração seletiva;
-- versionamento;
-- edição humana;
-- trilha de prompt/modelo/output sem segredo.
-
-## WP-F07-03 — Image/creative generation
-
-**Status:** TARGET
-
-- escolher provider real;
-- quadrado;
-- vertical;
-- story/banner quando aplicável;
-- regerar por formato;
-- upload manual alternativo;
-- provenance asset/model/prompt;
-- armazenar outputs no storage do tenant;
-- custo no ledger;
-- moderation/safety apropriada.
-
-## WP-F07-04 — Policy final
-
-**Status:** PARTIAL
-
-- validação determinística;
-- validação assistida quando necessário;
-- alegações;
-- categorias sensíveis;
-- regras por canal;
-- políticas versionadas;
-- bloqueio/alerta com motivo;
-- audit trail;
-- negative tests.
-
-## WP-F07-05 — Preview e edição
-
-**Status:** TARGET
-
-- Preview Google;
-- Preview Facebook;
-- Preview Instagram;
-- Preview WhatsApp/click-to-WhatsApp quando aplicável;
-- edição antes da aprovação;
-- responsive;
-- não publicar nada nesta etapa.
-
-## WP-F07-06 — Gate G7
-
-Campanha deve chegar a aprovação com estratégia, copy, assets, policy e previews reais.
+**Gate G7:** briefing -> estratégia -> copy/assets -> policy -> preview -> approval funcionando de ponta a ponta.
 
 ---
 
-# FASE 8 — GOOGLE ADS REAL, MULTI-TENANT E CONFIGURÁVEL
+## WP-R05 — Google Ads real F8/F9
+**Status:** PARTIAL / EXTERNAL_APPROVAL
 
-## WP-F08-01 — Platform Google Ads
+### Reutilizar
+- MCC existente;
+- developer token existente;
+- conta de teste;
+- projeto/ativos Google já registrados;
+- Vault;
+- OAuth-state security;
+- Connection model;
+- Connector contract;
+- Saga/Reconciler.
 
-**Status:** EXTERNAL_INFRASTRUCTURE / EXTERNAL_APPROVAL
+### Confirmar antes de criar
+- qual MCC está vigente;
+- nível atual do developer token;
+- OAuth Web Client para Google Ads;
+- redirect URI;
+- conta de teste vigente.
 
-Reconfirmar documentação oficial atual antes de codificar detalhes finais.
-
-- Google Cloud Project por ambiente;
-- billing válido;
-- Google Ads API habilitada;
-- API access level confirmado;
-- OAuth Client Web;
-- Client Secret em Secret Manager;
-- redirect URI oficial;
-- escopo adwords;
-- requisitos atuais de Developer Token/API access;
-- nenhum ID de conta FM no código.
-
-## WP-F08-02 — OAuth Google Ads por tenant
-
-**Status:** TARGET
-
-Substituir somente o fluxo simulado:
-
-- OAuth Start real;
-- state opaco/single-use;
-- callback server-side;
-- binding de sessão/identidade do Start;
-- token exchange server-side;
-- refresh token no Vault do tenant;
-- access token runtime;
-- revocation/invalid_grant;
-- reauth;
-- audit seguro.
-
-## WP-F08-03 — Discovery e seleção de conta
-
-**Status:** TARGET
-
-- ListAccessibleCustomers ou mecanismo oficial atual;
-- usuário escolhe conta explicitamente;
-- customer ID e manager/login customer ID como metadata da Connection;
-- nunca selecionar primeira conta silenciosamente;
-- test account/read-only primeiro;
-- cross-tenant.
-
-## WP-F08-04 — Gate G8
-
-Tenant arbitrário conecta a própria conta Google Ads pelo mesmo fluxo usado pelos tenants de homologação.
-
----
-
-# FASE 9 — GOOGLE ADS PUBLICAÇÃO, RECONCILIAÇÃO E MÉTRICAS
-
-## WP-F09-01 — Adapter Google Ads real
-
-**Status:** TARGET
-
-- Campaign;
-- Budget;
-- AdGroup;
-- Ads;
-- assets;
-- mapping IDs internos/externos;
-- API version centralizada;
-- error taxonomy;
-- quota/rate-limit.
-
-## WP-F09-02 — Mutations seguras
-
+### Implementar somente o delta
+- OAuth authorization_code server-side por tenant;
+- refresh token no Vault;
+- discovery de Customer IDs;
+- escolha explícita de conta;
+- adapter Google Ads real;
+- validate/publish/pause/resume;
+- budget changes;
 - idempotência externa;
-- provider-side reconciliation;
-- Saga/compensação;
-- partial failure;
-- retries governados;
-- não duplicar gasto.
-
-## WP-F09-03 — Operação Google real
-
-- pause;
-- resume;
-- budget change com approval;
-- kill switch;
-- drift detection;
-- reconciliation jobs.
-
-## WP-F09-04 — Métricas Google
-
-- fetch real;
-- last_synced;
-- mapping para modelo interno;
-- zero métricas fabricadas.
-
-## WP-F09-05 — Gate G9
-
-Campanha Google real criada, reconciliada, pausada, retomada e medida sem duplicação.
-
----
-
-# FASE 10 — META ADS / FACEBOOK / INSTAGRAM
-
-## WP-F10-01 — Platform Meta
-**Status:** EXTERNAL_APPROVAL
-
-- Meta App por ambiente;
-- Business Verification;
-- App Review/permissões;
-- secrets de plataforma no Secret Manager.
-
-## WP-F10-02 — OAuth/Accounts tenant
-- OAuth tenant-scoped;
-- Ad Accounts discovery;
-- seleção explícita;
-- Pages/Instagram linkage;
-- tokens no Vault;
-- expiry/reauth.
-
-## WP-F10-03 — Publish/operate
-- Campaign/Ad Set/Ads/assets;
-- pause/resume;
-- budget;
 - reconciliation;
-- insights;
-- rate limit/error mapping;
-- cross-tenant.
+- insights.
 
-## WP-F10-04 — Gate G10
-Tenant arbitrário conecta Meta e publica/mede campanha homologada.
+**Gate G8:** tenant arbitrário conecta a própria conta.  
+**Gate G9:** publica/opera/reconcilia/m mede uma campanha real de teste sem duplicação.
 
 ---
 
-# FASE 11 — WHATSAPP BUSINESS / CLICK-TO-WHATSAPP
-
-## WP-F11-01 — Onboarding e identidade
-**Status:** EXTERNAL_APPROVAL
-
-- WABA/account onboarding;
-- número comercial;
-- permissions;
-- tokens no Vault por tenant.
-
-## WP-F11-02 — Webhook e delivery
-- assinatura/verificação;
-- entrega/erro;
-- retry/idempotência;
-- consentimento/opt-out;
-- audit sem conteúdo sensível desnecessário.
-
-## WP-F11-03 — Click-to-WhatsApp
-- integração com Meta quando aplicável;
-- templates somente onde produto realmente precisa.
-
-## WP-F11-04 — Gate G11
-Tenant real conecta WhatsApp e usa o fluxo suportado sem configuração manual de desenvolvedor.
-
----
-
-# FASE 12 — ORQUESTRAÇÃO MULTICANAL
-
-## WP-F12-01 — Connector Fabric real na Saga
-
-**Status:** PARTIAL
-
-Preservar PublicationSaga existente e trocar simuladores por adapters reais através de contrato comum.
-
-## WP-F12-02 — Saga multi-provider
-- publication partial failure;
-- compensation segura;
-- retry;
-- replay;
-- restart;
-- reconciliation;
-- provenance por provider/recurso.
-
-## WP-F12-03 — Estado real
-- PUBLISHING somente com operação real aberta;
-- ACTIVE somente após reconciliação válida;
-- divergência visível;
-- histórico de versões/diffs.
-
-## WP-F12-04 — Budget/kill switch multicanal
-- orçamento consolidado versus canal;
-- kill switch campaign/tenant/account;
-- aplicação real nos providers;
-- audit.
-
-## WP-F12-05 — Gate G12
-Falha parcial não corrompe estado interno nem duplica gasto.
-
----
-
-# FASE 13 — MÉTRICAS, INSIGHTS, ALERTAS E OTIMIZAÇÃO
-
-## WP-F13-01 — Analytics ingestion
-**Status:** PARTIAL
-
-Substituir placeholder vazio somente por dados reais:
-
-- ingestão agendada;
-- CTR;
-- CPC;
-- CPA;
-- ROAS;
-- gasto;
-- breakdown por canal/criativo;
-- snapshots históricos;
-- freshness/last_synced.
-
-## WP-F13-02 — Alertas
-- 80%/100% budget;
-- auth/reconnect;
-- provider error;
-- e-mail;
-- in-app;
-- dedupe/cooldown.
-
-## WP-F13-03 — Performance Agent
-- sugestões explicáveis;
-- dados de origem;
-- confidence/limitações;
-- nenhuma ação direta fora da policy.
-
-## WP-F13-04 — Autonomia governada
-- Manual;
-- Automático somente em campanhas já aprovadas;
-- limites;
-- step-up na ativação;
-- audit;
-- reversibilidade quando aplicável.
-
-## WP-F13-05 — Gate G13
-Dashboard mostra dados reais e automação respeita autonomia/limites/trilha.
-
----
-
-# FASE 14 — ADMINISTRAÇÃO E SUPORTE SELF-SERVICE
-
-## WP-F14-01 — Consolidar superfícies existentes
-**Status:** PARTIAL
-
-Reauditar antes de alterar:
-
-- perfil/empresa;
-- usuários/permissões;
-- unidades;
-- connections;
-- billing;
-- audit;
-- approvals;
-- autonomy.
-
-Não reimplementar o que já existe.
-
-## WP-F14-02 — Histórico/export
-- audit filtros;
-- CSV/PDF quando aplicável;
-- approvals history;
-- versions history;
-- data export do tenant.
-
-## WP-F14-03 — Notification Center
-- central in-app;
-- preferências;
-- provider/billing/security notifications;
-- lidas/não lidas;
-- sem vazamento cross-tenant.
-
-## WP-F14-04 — Connection lifecycle self-service
-- reconnect;
-- revoke;
-- delete/desconectar;
-- revogar segredo;
-- diagnósticos seguros.
-
-## WP-F14-05 — Account lifecycle/LGPD hooks
-- export;
-- solicitação de exclusão;
-- encerramento;
-- retention state;
-- sem hard delete que destrua audit obrigatório antes da política legal.
-
-## WP-F14-06 — Support
-- help/contact;
-- diagnostics seguros;
-- correlation IDs;
-- sem segredo/PII desnecessária.
-
-## WP-F14-07 — Gate G14
-Cliente administra a própria conta sem suporte de engenharia.
-
----
-
-# FASE 15 — VISUAL PREMIUM COMPLETO
-
-**Status:** TARGET  
-**Pré-condição:** freeze funcional de F5-F14.
-
-## WP-F15-01 — Design System Premium
-- identidade oficial;
-- tokens;
-- tipografia;
-- spacing;
-- radius;
-- shadows/elevation;
-- motion;
-- component library;
-- estados loading/error/success/disabled;
-- skeleton/empty;
-- iconografia;
-- charts;
-- forms;
-- tables;
-- modal/drawer/confirm.
-
-## WP-F15-02 — Revisão tela a tela
-Cobrir:
-
-- login;
-- trial/onboarding;
-- empresa;
-- unidade;
-- dashboard;
-- conexões;
-- Brand Kit;
-- briefing;
-- estratégia;
-- criativos;
-- preview;
-- aprovação;
-- métricas;
-- histórico;
-- otimizações;
-- autonomia;
-- IA/modelos;
-- usuários/permissões;
-- billing;
-- auditoria;
-- notificações;
-- erros 401/403/404/429/500;
-- provider unavailable.
-
-## WP-F15-03 — Responsive e acessibilidade visual
-- desktop;
-- tablet;
-- mobile Web;
-- WCAG 2.2 AA;
-- keyboard;
-- focus visible;
-- contrast;
-- reduced motion;
-- visual regression;
-- Lighthouse/performance budget.
-
-**Gate G15:** Diretor aprova visualmente todos os fluxos sem regressão funcional.
-
----
-
-# FASE 16 — SECURITY, PRIVACY, LGPD E COMPLIANCE
-
-## WP-F16-01 — Threat model final
-**Status:** PARTIAL
-
-- arquitetura final;
-- trust boundaries;
-- OAuth;
-- uploads;
-- billing;
-- IA;
-- providers;
-- multi-tenant.
-
-## WP-F16-02 — AppSec final
-- SAST;
-- dependency audit;
-- secret scan;
-- DAST;
-- pentest/manual review;
-- CSRF;
-- XSS;
-- SSRF;
-- injection;
-- open redirect;
-- upload security;
-- OAuth review;
-- tenant isolation negative suite;
-- authorization matrix;
-- rate limit;
-- abuse protection.
-
-## WP-F16-03 — LGPD
-**Status:** HUMAN_DECISION / EXTERNAL_APPROVAL
-
-- mapa de dados pessoais;
-- bases legais;
-- privacy policy;
-- termos;
-- cookies quando aplicável;
-- DPA;
-- encarregado/processadores quando aplicável;
-- retenção;
-- exclusão;
-- exportação;
-- suboperadores;
-- residência de dados;
-- contratos cloud.
-
-**Gate G16:** zero P0/P1; termos/LGPD prontos; riscos residuais aceitos formalmente.
-
----
-
-# FASE 17 — PERFORMANCE, RESILIÊNCIA, OBSERVABILIDADE E DR
-
-## WP-F17-01 — SLO/observabilidade
-**Status:** TARGET
-
-- SLOs;
-- métricas;
-- traces;
-- logs estruturados sem segredo;
-- dashboards;
-- error tracking;
-- alertas.
-
-## WP-F17-02 — Load/concorrência
-- fluxos críticos;
-- 100 campanhas simultâneas ou critério revisado;
-- multi-worker;
-- queue backlog/backpressure;
-- quota exhaustion.
-
-## WP-F17-03 — Resiliência
-- timeout;
-- retry/backoff;
-- circuit breakers;
-- DB reconnect/failover;
-- provider outage;
-- dead-letter/reconciliation quando aplicável.
-
-## WP-F17-04 — Backup/restore/DR
-- backup real;
-- restore real;
-- RPO/RTO definidos;
-- DR drill;
-- runbooks de incidente.
-
-**Gate G17:** incidentes críticos simulados possuem detecção, resposta e recuperação demonstradas.
-
----
-
-# FASE 18 — STAGING FINAL E HOMOLOGAÇÃO PONTA A PONTA
-
-## WP-F18-01 — UAT jornada comercial integral
-
-Executar como empresa nova:
-
-- novo trial;
-- tenant;
-- Owner;
-- unidade;
-- segundo usuário/aprovador;
-- Brand Kit + upload;
-- Google;
-- Meta;
-- WhatsApp;
-- briefing;
-- estratégia;
-- criativos;
-- policy;
-- preview;
-- aprovação por outro usuário;
-- publish Google;
-- publish Meta;
-- fluxo WhatsApp suportado;
-- reconciliação;
-- insights;
-- budget alert;
-- pause/resume;
-- kill switch;
-- autonomia;
-- billing/trial/upgrade/inadimplência/cancelamento;
-- provider revoke/reconnect;
-- audit/export;
-- logout/relogin/switch multi-tenant;
-- provider errors/recovery;
-- premium/responsive/a11y.
-
-## WP-F18-02 — Isolation UAT
-- Tenant A nunca lê B;
-- nunca resolve segredo B;
-- nunca usa Connection B;
-- nunca muda budget/campaign B;
-- admin tenant nunca vira plataforma.
-
-**Gate G18:** UAT assinada pelo Diretor, evidências anexadas, zero blocker conhecido.
-
----
-
-# FASE 19 — PRE-PRODUCTION E GO/NO-GO
-
-## WP-F19-01 — Release Candidate
-**Status:** PRODUCTION_GATE
-
-- main limpa;
-- tag/RC imutável;
-- CI completo;
-- staging arquiteturalmente equivalente;
-- migrations ensaiadas;
-- backup pré-deploy;
-- rollback testado.
-
-## WP-F19-02 — Production configuration
-- segredos;
-- domínio/TLS/DNS;
-- OAuth redirect URIs;
-- Google/Meta/WhatsApp approvals;
-- Asaas produção;
-- planos/trial;
-- e-mail transacional;
-- monitoring/on-call;
-- suporte;
-- runbooks;
-- zero fixture/test mode;
-- zero segredo de teste;
-- zero privilégio FM.
-
-## WP-F19-03 — GO/NO-GO
-Gerar relatório factual com:
-
-- critérios;
-- evidências;
-- blockers;
-- riscos residuais;
-- custo;
-- rollback;
-- NO-GO automático se critério crítico estiver aberto.
-
-**Gate G19:** decisão explícita do Diretor. Não executar deploy por silêncio.
-
----
-
-# FASE 20 — PRODUÇÃO E DISPONIBILIDADE COMERCIAL
-
-## WP-F20-01 — Deploy controlado
-**Status:** PRODUCTION_GATE
-
-Somente após autorização explícita.
-
-- deploy;
-- migration;
-- smoke;
-- health;
-- rollback ready.
-
-## WP-F20-02 — First-live proofs
-- primeiro tenant interno/homologação;
-- primeiro trial externo controlado;
-- primeiro pagamento real;
-- primeira conexão externa por tenant;
-- primeira campanha real aprovada;
-- primeira reconciliação/métricas;
-- cancelamento/reativação quando seguro.
-
-## WP-F20-03 — Hypercare
-- 24–72h monitoring intensivo;
-- P0/P1 zero antes de ampliar aquisição;
-- incident response;
-- métricas comerciais/técnicas;
-- liberação gradual.
-
-**Gate G20:** somente após estas evidências o CampaIA pode receber status COMERCIALMENTE DISPONIVEL.
-
----
-
-## 7. TRACK PARALELO EXTERNO — NÃO ESQUECER
-
-Este track pode avançar em paralelo sem furar o caminho crítico.
-
-### Google
-- confirmar Google Ads API access level atual;
-- OAuth Web Client/redirects de ambientes;
-- aprovação/requisitos atuais para produção.
-
-### Meta
+## WP-R06 — Meta real F10
+**Status:** PARTIAL / EXTERNAL_APPROVAL
+
+### Reutilizar
+- Business Manager;
+- Página;
+- App CampaIA;
+- Marketing API use case;
+- Vault/Connections/Saga/Reconciler.
+
+### Confirmar
 - Business Verification;
 - App Review;
-- permissions de Ads;
-- permissions WhatsApp/WABA.
+- permissions aprovadas;
+- mode Development/Live;
+- Page/Instagram/Ad Account disponíveis para homologação.
 
-### WhatsApp
-- WABA;
-- número;
-- verificação/configuração oficial;
-- webhook/permissions.
+### Implementar delta
+- OAuth/token lifecycle por tenant;
+- discovery e seleção explícita de Ad Account/Page/Instagram;
+- adapter Marketing API;
+- publish/pause/resume;
+- reconciliation;
+- insights;
+- error/rate-limit mapping.
 
-### Billing/jurídico
-- estrutura jurídica/CNPJ quando exigido;
-- Asaas produção;
-- política fiscal;
-- contador;
-- refund/estorno.
-
-### LGPD/legal
-- Termos;
-- Privacy Policy;
-- DPA/suboperadores;
-- retenção/exclusão;
-- revisão jurídica antes de G19.
-
-### Operação
-- e-mail transacional;
-- suporte;
-- monitoring/on-call;
-- domínio/DNS/TLS de produção.
-
-Nenhum blocker externo deve ser falsamente promovido para DONE_VERIFIED.
+**Não recriar Business Manager/App como rotina.**
 
 ---
 
-## 8. DEFINITION OF DONE DE TODO WORK PACKAGE
+## WP-R07 — WhatsApp real F11
+**Status:** PARTIAL / EXTERNAL_APPROVAL
 
-Antes de marcar DONE_VERIFIED, validar todos os pontos aplicáveis:
+### Reutilizar
+- App CampaIA;
+- WhatsApp product;
+- WABA/test account;
+- número de teste;
+- teste real de template já concluído.
 
-- implementação no CURRENT correto;
-- sem segredo real no repositório;
-- sem hardcode por cliente;
-- tenant isolation;
+### Retomar do ponto correto
+- configurar webhook agora que staging público existe;
+- receiver de eventos/status;
+- verificação/autenticação;
+- dedupe/replay;
+- Connection/Vault;
+- consentimento/opt-out;
+- número/WABA de produção quando apropriado;
+- integração click-to-WhatsApp se permanecer no escopo.
+
+**Não repetir o teste básico já certificado.**
+
+---
+
+## WP-R08 — Fechar F12 orquestração real
+**Status:** PARTIAL avançado
+
+### Já existe
+PublicationSaga, Connector contract, Reconciler, Outbox/Webhook primitives.
+
+### Falta
+- trocar ProviderSimulator pelos adapters reais;
+- persistir/recuperar Saga aberta quando necessário;
+- partial failure;
+- retry/backoff;
+- compensation;
+- reconciliation jobs;
+- pause/resume/kill-switch efetivos nos providers;
+- concorrência/restart/multi-worker.
+
+**Gate G12:** falha parcial não duplica recurso nem gasto e converge para estado reconciliado.
+
+---
+
+## WP-R09 — Fechar F13 métricas/otimização
+**Status:** PARTIAL avançado
+
+### Já existe
+Optimizer, PacingEngine, BudgetEngine, Autonomy, Performance Agent, InsightsPanel e kill switch.
+
+### Falta
+- ingestão real de métricas Google/Meta;
+- modelo interno normalizado;
+- histórico/freshness;
+- substituir placeholder de Insights;
+- ligar snapshots reais ao optimizer/pacing;
+- alertas budget/auth/provider/performance;
+- aplicar ações automáticas somente dentro da autonomia aprovada.
+
+**Não reescrever optimizer/pacing.**
+
+---
+
+## WP-R10 — Fechar F14 self-service/admin
+**Status:** PARTIAL
+
+### Já existe
+- Organização;
+- Usuários;
+- Permissions;
+- Connections;
+- Brand Kit;
+- Campaigns;
+- Approvals;
+- Audit;
+- Autonomy;
+- Settings.
+
+### Falta principal
+- Billing Web final;
+- export de auditoria/dados quando exigido;
+- histórico de versões;
+- Notification Center;
+- reconnect/revoke lifecycle completo;
+- account export/delete/retention hooks;
+- support/diagnostics seguros;
+- fechar superfícies sem intervenção de desenvolvedor.
+
+---
+
+## WP-R11 — F15 Visual Premium
+**Status:** TARGET
+
+Somente depois de F5–F14 funcionalmente congelados:
+
+- revisão tela a tela;
+- design system final;
+- responsive;
+- estados vazios/erro/loading;
+- charts/tables;
+- consistência visual;
+- WCAG 2.2 AA;
+- visual regression;
+- performance Web.
+
+Preservar integralmente as regras de negócio.
+
+---
+
+## WP-R12 — F16 Security/LGPD final
+**Status:** PARTIAL / HUMAN_DECISION
+
+Já existem diversos controles de auth, tenancy, secret scan, dependency audit, KMS/Vault e threat model.
+
+Fechar:
+
+- pentest/manual review final;
+- DAST;
+- SSRF/XSS/injection/upload/OAuth final;
+- authorization matrix;
+- privacy policy;
+- termos;
+- retenção;
+- portabilidade;
+- exclusão;
+- DPA/suboperadores;
+- aceite jurídico.
+
+**Gate G16:** zero P0/P1 e riscos residuais formalmente aceitos.
+
+---
+
+## WP-R13 — F17 NFR/DR final
+**Status:** PARTIAL
+
+Já existem health, Cloud SQL backup/PITR, rollback e base de observabilidade.
+
+Falta:
+
+- load test;
+- concorrência dos fluxos críticos;
+- tracing/error tracking final;
+- alertas operacionais;
+- provider outage drills;
+- restore real;
+- RPO/RTO medidos;
+- runbooks de incidente.
+
+---
+
+## WP-R14 — F18 UAT completo
+**Status:** TARGET
+
+Executar empresa nova, sem intervenção de desenvolvedor:
+
+trial/compra -> tenant -> usuários/unidades -> Google/Meta/WhatsApp -> Brand Kit -> briefing -> estratégia/criativos -> policy/preview -> aprovação -> publicação -> métricas -> otimização -> billing/admin.
+
+Também provar isolamento Tenant A/B.
+
+**Gate G18:** jornada completa assinada, zero blocker.
+
+---
+
+## WP-R15 — F19 Release Candidate / GO-NO-GO
+**Status:** PRODUCTION_GATE
+
+- RC imutável;
+- CI completa;
+- migrations;
+- staging equivalente;
+- backup;
+- rollback;
+- secrets/config production;
+- domains/TLS;
+- approvals externos;
+- monitoring/support;
+- relatório de riscos.
+
+**Gate G19:** decisão explícita do Diretor.
+
+---
+
+## WP-R16 — F20 Produção/comercial
+**Status:** PRODUCTION_GATE
+
+Somente após autorização:
+
+- deploy controlado;
+- migration;
+- smoke;
+- primeiro tenant externo controlado;
+- primeiro pagamento real;
+- primeira conexão real;
+- primeira publicação real;
+- métricas/reconciliation;
+- 24–72h hypercare;
+- P0/P1 zero antes de ampliar.
+
+Somente após G20 o CampaIA pode ser classificado como `COMERCIALMENTE DISPONIVEL`.
+
+---
+
+# 9. TRACK EXTERNO EM PARALELO
+
+Não reconstruir ativos. Verificar estado atual e avançar somente no que falta.
+
+## Google Ads
+- confirmar MCC vigente;
+- confirmar nível vigente do developer token;
+- solicitar nível que permita contas reais quando necessário;
+- confirmar/criar OAuth Web Client Ads somente se ausente;
+- redirect URI.
+
+## Meta
+- Business Verification;
+- App Review;
+- permissions;
+- acesso a contas de terceiros;
+- modo Live quando permitido.
+
+## WhatsApp
+- webhook;
+- número/WABA de produção;
+- aprovações/configuração final.
+
+## Asaas/jurídico
+- política comercial;
+- estrutura jurídica/CNPJ quando exigido;
+- conta produção;
+- refund/fiscal.
+
+## LGPD
+- termos;
+- privacidade;
+- DPA;
+- retenção/exclusão.
+
+---
+
+# 10. DEFINITION OF DONE
+
+Todo WP aplicável precisa:
+
+- CURRENT correto;
+- nenhum segredo no repo;
+- nenhum hardcode de tenant;
+- isolamento;
 - RBAC/step-up;
 - happy path;
 - negative path;
 - cross-tenant;
-- idempotência/replay;
-- restart/persistência quando durável;
-- concorrência/multi-worker quando crítico;
-- atomicidade quando houver mutação composta;
-- contrato/API sincronizado;
-- frontend atualizado;
-- acessibilidade mínima preservada;
+- replay/idempotência;
+- persistência/restart quando aplicável;
+- concorrência/multi-worker quando aplicável;
+- contrato sincronizado;
+- Web quando aplicável;
 - audit/observabilidade;
-- docs/evidência;
-- suite completa verde;
-- PR CI verde;
-- pós-merge CI verde;
-- blocker externo honestamente classificado;
-- produção não inferida de staging.
+- evidência;
+- CI da PR;
+- pós-merge CI;
+- blocker externo corretamente classificado.
 
 ---
 
-## 9. REGRA DE TESTES PARA MUTAÇÕES CRÍTICAS
+# 11. STOP CONDITIONS
 
-Toda mutação de alto impacto deve cobrir, no mínimo:
-
-1. happy path;
-2. autorização negada;
-3. input inválido;
-4. cross-tenant;
-5. replay com a mesma idempotency key;
-6. chave nova após efeito anterior;
-7. concorrência se possível;
-8. crash/restart se houver estado durável;
-9. audit event correto;
-10. rollback/compensação se tocar provider externo.
-
-Para dinheiro, campanhas, budget, permissions, OAuth e segredos, não aceitar cobertura inferior sem justificativa formal.
-
----
-
-## 10. STOP CONDITIONS
-
-Parar e solicitar autorização/decisão quando houver:
+Solicitar autorização antes de:
 
 - merge;
 - deploy;
 - produção;
 - migration real;
-- credencial real nova;
-- alteração de billing/spending;
-- custo cloud relevante;
-- criação/rotação de segredo real;
+- credencial/segredo real;
+- rotação de segredo;
+- gasto/custo relevante;
+- decisão comercial;
+- decisão jurídica;
 - mudança irreversível;
 - GO/NO-GO;
-- decisão comercial de preço/trial/refund;
-- decisão jurídica/LGPD;
-- alteração de arquitetura irreversível;
-- promoção de permission scope externo;
 - qualquer HUMAN_DECISION.
 
-Não interpretar silêncio como autorização.
-
 ---
 
-## 11. FORMATO OBRIGATÓRIO DE RETOMADA
+# 12. FORMATO DE RETOMADA
 
-Em cada nova sessão relevante, informar objetivamente:
+Toda retomada informa:
 
-- CURRENT confirmado: repo / branch / HEAD;
-- fase/gate atual;
+- repo/branch/HEAD;
+- fase/gate;
 - DONE_VERIFIED preservado;
-- blockers reais;
-- Work Package exato em execução;
+- blocker real;
+- WP exato;
+- CURRENT;
 - TARGET;
 - fora de escopo;
-- riscos;
-- testes planejados;
-- evidências ao terminar.
-
-Ao terminar:
-
-- HEAD da branch;
-- arquivos alterados;
 - testes;
-- CI;
-- evidência;
-- status oficial;
-- pendências;
-- autorização necessária para o próximo gate.
+- evidências.
 
 ---
 
-## 12. CHECKLIST FINAL DE “NÃO ESQUECER”
+# 13. CHECKLIST FINAL
 
-Antes de qualquer declaração de pronto comercial, todas precisam ser SIM:
+Antes de declarar comercial:
 
 - cliente novo entra sem desenvolvedor;
-- cliente cria tenant/empresa;
-- cliente gerencia usuários/unidades;
-- cliente assina/paga/atualiza plano;
-- cliente conecta Google;
-- cliente conecta Meta;
-- cliente conecta WhatsApp;
-- nenhuma conta FM hardcoded;
-- nenhum segredo tenant fora do Vault;
-- Brand Kit aceita assets reais;
-- IA gera estratégia/copy/assets reais;
-- Policy valida;
-- Preview funciona;
-- Approval segregado funciona;
-- publicação real é idempotente;
-- partial failure é reconciliado;
-- métricas são reais;
-- budget/kill switch funcionam nos providers reais;
-- autonomia respeita limites;
-- audit/export estão completos;
-- billing/fiscal estão honestamente classificados;
-- banco/sessões suportam multi-instância;
-- segredos usam Secret Manager/KMS em produção;
-- backup/restore foram testados;
-- load test passou;
-- pentest/security gate passou;
-- LGPD/termos estão publicados;
-- Visual Premium foi aprovado tela a tela;
-- acessibilidade passou;
-- staging homologou jornada completa;
-- CI do release candidate está verde;
-- rollback foi ensaiado;
-- monitoring/suporte/runbooks estão ativos;
-- Diretor aprovou produção explicitamente;
-- primeiro tenant externo controlado funcionou.
+- tenant é criado;
+- usuários/unidades funcionam;
+- plano/trial/pagamento funcionam;
+- Google real conecta/publica/m mede;
+- Meta real conecta/publica/m mede;
+- WhatsApp real conecta/usa fluxo suportado;
+- nenhum tenant FM privilegiado;
+- Brand Kit e assets reais;
+- IA gera estratégia/copy/assets;
+- policy/preview/approval;
+- publicação real idempotente;
+- partial failure reconciliado;
+- métricas reais;
+- optimizer/pacing ligados a dados reais;
+- budget/kill switch reais;
+- audit/export;
+- billing/fiscal honestos;
+- multi-instância;
+- KMS/Secret Manager;
+- restore/load/pentest;
+- LGPD/termos;
+- Premium aprovado;
+- a11y;
+- UAT staging;
+- RC verde;
+- rollback;
+- monitoring/support;
+- aprovação explícita do Diretor;
+- primeiro tenant externo controlado.
 
-Se qualquer resposta crítica for NÃO, CampaIA não é COMERCIALMENTE DISPONIVEL.
-
----
-
-## 13. RESULTADO FINAL OBRIGATÓRIO
-
-Ao concluir G20, uma empresa desconhecida do time de engenharia deve conseguir, sem intervenção de desenvolvedor:
-
-1. entrar em trial ou contratar;
-2. criar empresa/tenant;
-3. cadastrar usuários/unidades;
-4. conectar Google/Meta/WhatsApp próprios;
-5. cadastrar Brand Kit e assets;
-6. criar briefing;
-7. receber estratégia e criativos de IA;
-8. revisar policy/preview;
-9. aprovar com segregação de função;
-10. publicar de forma idempotente;
-11. acompanhar métricas reais;
-12. receber alertas e sugestões;
-13. usar autonomia dentro dos limites autorizados;
-14. pagar e gerenciar plano;
-15. administrar conta;
-16. operar em interface premium, responsiva e acessível;
-17. contar com segurança, privacidade, auditabilidade, resiliência, suporte e recuperação adequados a um SaaS comercial.
-
-Somente esse estado encerra o Cronograma Mestre.
+Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMERCIALMENTE DISPONIVEL`.
