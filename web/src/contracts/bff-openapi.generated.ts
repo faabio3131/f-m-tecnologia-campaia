@@ -888,6 +888,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/billing/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Revisa a obrigação comercial autoritativa sem emitir cobrança
+         * @description Sem consulta ao gateway nem freeze financeiro; titular minimizado e ambiente explícito.
+         */
+        get: operations["getBillingCheckout"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/billing/charges": {
         parameters: {
             query?: never;
@@ -1158,8 +1178,54 @@ export interface components {
         };
         BillingChargeCreate: {
             competence: string;
+            /** @default false */
+            accept_quote: boolean;
+            expected_quote_fingerprint?: string | null;
             /** @default 0 */
             extra_credits_used: number | string;
+        };
+        BillingCheckout: {
+            /** @enum {string} */
+            state: "READY" | "PENDING" | "REGISTERED" | "NOT_DUE" | "CLOSED" | "UNAVAILABLE";
+            quote: components["schemas"]["BillingCheckoutQuote"] | null;
+            /** Format: date-time */
+            available_at: string | null;
+            invoice_url: string | null;
+        };
+        BillingCheckoutQuote: {
+            organization_name: string | null;
+            holder_document_masked: string;
+            fingerprint: string;
+            billing_id: string;
+            competence: string;
+            amount: string;
+            /** @enum {string} */
+            currency: "BRL";
+            plan_id: string;
+            plan_name: string;
+            included_credits: number;
+            extra_credit_price: string;
+            action_weights: {
+                action: string;
+                credits: number;
+            }[];
+            policy_version: string;
+            /** @enum {string} */
+            purpose: "REGULAR" | "PLAN_CHANGE" | "REACTIVATION";
+            cycle_index: number;
+            /** Format: date-time */
+            due_at: string | null;
+            /** Format: date-time */
+            period_starts_at: string | null;
+            /** Format: date-time */
+            period_ends_at: string | null;
+            lines: {
+                description: string;
+                amount: string;
+            }[];
+            provider: string;
+            /** @enum {string} */
+            mode: "SIMULATOR" | "SANDBOX" | "PRODUCTION";
         };
         BillingCharge: {
             billing_id: string;
@@ -3363,6 +3429,38 @@ export interface operations {
             };
         };
     };
+    getBillingCheckout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cotação, cobrança já registrada ou indisponibilidade explícita */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingCheckout"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Sem BILLING_VIEW */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
     listBillingCharges: {
         parameters: {
             query?: {
@@ -3432,7 +3530,25 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["StepUpRequired"];
             404: components["responses"]["NotFound"];
+            /** @description Cotação alterada ou contexto de conciliação divergente */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             422: components["responses"]["ValidationError"];
+            /** @description Emissão incerta ou divergente, sem redispatch automático */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     receiveAsaasWebhook: {

@@ -145,11 +145,12 @@ _BILLING_OBSERVATION_FIELDS = {
 # Old binaries can decode the envelope but MUST NOT write V1 contracts on rollback.
 # Disable billing/AI mutation and drain workers before any old-code rollback.
 _COMMERCIAL_FIELDS = {
-    ("campaia_core.payment_gateway", "ChargeResult"): frozenset({"observed_amount"}),
+    ("campaia_core.payment_gateway", "ChargeCommand"): frozenset({"due_at"}),
+    ("campaia_core.payment_gateway", "ChargeResult"): frozenset({"observed_amount", "observed_due_date"}),
     ("campaia_core.subscription", "PlanDefinition"): frozenset({"credit_policy"}),
     ("campaia_core.subscription", "Subscription"): frozenset({"paid_cycle_schedule", "extra_credit_consent", "cancel_at_period_end", "pending_plan_effective_at"}),
     ("campaia_core.subscription", "SubscriptionCharge"): frozenset({
-        "commercial_cycle_index", "commercial_lifecycle_id", "commercial_plan",
+        "commercial_cycle_index", "commercial_lifecycle_id", "commercial_plan", "commercial_due_at", "commercial_gateway_provider", "commercial_gateway_mode",
     }),
 }
 

@@ -166,7 +166,7 @@ class BillingDispatchTests(BillingCreditHarness, unittest.TestCase):
                 self.assertIsNotNone(other.app.state.campaia.idempotency.get('demo-tenant', obligation_key(identity)))
                 posts.append(body)
                 payment.update(id='fixture-external-payment', status='PENDING', value='12.50',
-                               externalReference=body['externalReference'])
+                               externalReference=body['externalReference'], dueDate=body['dueDate'])
                 raise httpx.ReadTimeout('simulated lost response', request=request)
             raise AssertionError('Unexpected transport request')
         class NoLocalTransaction:

@@ -182,6 +182,11 @@ class PlanDefinition:
     credit_policy: CreditPolicy | None = None
 
     def __post_init__(self) -> None:
+        if self.credit_policy is not None:
+            for value in (self.monthly_price, self.extra_credit_unit_price):
+                if (not value.is_finite() or value < 0 or value > Decimal('1000000000000')
+                        or value != value.quantize(Decimal('0.01'))):
+                    raise ValueError("Preço V1 exige valor finito em centavos, dentro dos limites do ledger.")
         if not self.plan_id.strip():
             raise ValueError("plan_id e obrigatorio.")
         if not self.name.strip():
@@ -310,6 +315,9 @@ class SubscriptionCharge:
     commercial_cycle_index: int | None = None
     commercial_lifecycle_id: str | None = None
     commercial_plan: PlanDefinition | None = None
+    commercial_due_at: datetime | None = None
+    commercial_gateway_provider: str | None = None
+    commercial_gateway_mode: str | None = None
 
     @property
     def amount(self) -> Decimal:

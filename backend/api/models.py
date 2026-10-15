@@ -591,7 +591,40 @@ class BillingCreditConsentRequest(ApiModel):
 
 class BillingChargeCreate(ApiModel):
     competence: str
+    accept_quote: bool = Field(default=False, strict=True)
+    expected_quote_fingerprint: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     extra_credits_used: Decimal = Decimal("0")
+
+
+class BillingCheckoutQuoteResponse(BaseModel):
+    organization_name: str | None
+    holder_document_masked: str
+    fingerprint: str
+    billing_id: str
+    competence: str
+    amount: str
+    currency: Literal['BRL']
+    plan_id: str
+    plan_name: str
+    included_credits: int
+    extra_credit_price: str
+    action_weights: list[dict[str, Any]]
+    policy_version: str
+    purpose: str
+    cycle_index: int
+    due_at: datetime | None
+    period_starts_at: datetime | None
+    period_ends_at: datetime | None
+    lines: list[dict[str, str]]
+    provider: str
+    mode: Literal['SIMULATOR', 'SANDBOX', 'PRODUCTION']
+
+
+class BillingCheckoutResponse(BaseModel):
+    state: Literal['READY', 'PENDING', 'REGISTERED', 'NOT_DUE', 'CLOSED', 'UNAVAILABLE']
+    quote: BillingCheckoutQuoteResponse | None = None
+    available_at: datetime | None = None
+    invoice_url: str | None = None
 
 
 class BillingChargeResponse(BaseModel):

@@ -49,6 +49,7 @@ def charge_command(charge: SubscriptionCharge) -> ChargeCommand:
         currency=charge.currency,
         competence=charge.competence,
         idempotency_key=f"campaia:subscription:{charge.billing_id}",
+        due_at=charge.commercial_due_at,
     )
 
 

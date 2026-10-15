@@ -27,6 +27,7 @@ from decimal import Decimal, InvalidOperation
 
 import httpx
 
+from .billing_cycles import COMMERCIAL_TIMEZONE
 from .connectors import SecretRef
 from .payment_urls import safe_asaas_invoice_url
 from .infra import IdempotencyStore
@@ -257,7 +258,8 @@ class AsaasGateway:
             return existing
 
         customer_id = self._ensure_customer(command.customer_ref, command.customer_document)
-        due_date = date.today() + timedelta(days=self.config.due_in_days)
+        due_date = (command.due_at.astimezone(COMMERCIAL_TIMEZONE).date() if command.due_at is not None
+                    else date.today() + timedelta(days=self.config.due_in_days))
         response = self._client.post(
             "/payments",
             json={
@@ -267,6 +269,7 @@ class AsaasGateway:
                 "dueDate": due_date.isoformat(),
                 "description": f"CampaIA — competencia {command.competence}",
                 "externalReference": command.idempotency_key,
+                **({"interest": {"value": 0}, "fine": {"value": 0}} if strict else {}),
             },
         )
         _raise_for_response(response)
@@ -278,6 +281,7 @@ class AsaasGateway:
             mode=self.mode,
             invoice_url=safe_asaas_invoice_url(body.get("invoiceUrl"), self.mode),
             observed_amount=_observed_payment_amount(body.get("value")),
+            observed_due_date=body.get("dueDate"),
         )
 
     def recover_charge(self, command: ChargeCommand) -> ChargeResult | None:
@@ -331,6 +335,7 @@ class AsaasGateway:
             mode=self.mode,
             invoice_url=safe_asaas_invoice_url(payment.get("invoiceUrl"), self.mode),
             observed_amount=_observed_payment_amount(payment.get("value")),
+            observed_due_date=payment.get("dueDate"),
         )
 
     def _ensure_customer(self, customer_ref: str, customer_document: str) -> str:

@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 import json
 
+from campaia_core.billing_cycles import COMMERCIAL_TIMEZONE
 from campaia_core.billing_settlement import charge_command
 from campaia_core.subscription import SubscriptionStatus, refresh_trial_status
 from .errors import ApiError
@@ -35,6 +36,11 @@ def execute_invoice(state, fixture, http_key, body, prepare, dispatch, persist):
         if not replayed:
             state.audit.append(tenant_id=tenant, actor=fixture.user_id,
                                action='BILLING_OBLIGATION_FROZEN', target=frozen.billing_id)
+        if body.get('expected_quote_fingerprint') is not None:
+            state.audit.append(tenant_id=tenant, actor=fixture.user_id,
+                               action='BILLING_CHECKOUT_ACCEPTED', target=frozen.billing_id,
+                               details={'fingerprint': body['expected_quote_fingerprint'],
+                                        'accepted': body.get('accept_quote') is True})
         return {'context': context, 'charge': frozen}
 
     request, _ = state.idempotency.execute(tenant, 'billing-request:' + http_key, freeze)
@@ -45,7 +51,15 @@ def execute_invoice(state, fixture, http_key, body, prepare, dispatch, persist):
         return previous.result
     charge = request['charge']
 
+    def require_gateway_context():
+        if ((charge.commercial_gateway_provider is not None
+                and charge.commercial_gateway_provider != state.billing_gateway.provider)
+                or (charge.commercial_gateway_mode is not None
+                    and charge.commercial_gateway_mode != state.billing_gateway.mode.value)):
+            raise ApiError('BILLING_RECONCILIATION_REQUIRED', 'Ambiente do gateway mudou após o fechamento; concilie no ambiente original.', status_code=409)
+
     def claim():
+        require_gateway_context()
         current = refresh_trial_status(state.subscriptions[tenant])
         if (current.paid_cycle_schedule is None
                 or current.paid_cycle_schedule.lifecycle_id != charge.commercial_lifecycle_id
@@ -62,6 +76,7 @@ def execute_invoice(state, fixture, http_key, body, prepare, dispatch, persist):
     if observed is not None:
         result = observed.result
     else:
+        require_gateway_context()
         try:
             if replayed:
                 lookup = getattr(state.billing_gateway, 'recover_charge', None)
@@ -79,7 +94,13 @@ def execute_invoice(state, fixture, http_key, body, prepare, dispatch, persist):
             raise ApiError('BILLING_DISPATCH_PENDING', 'Resultado de emissão não confirmado; consulte a mesma solicitação para conciliar.', status_code=503) from exc
         result, _ = state.idempotency.execute(tenant, provider_key, lambda: result)
 
+    if ((charge.commercial_gateway_provider is not None and result.provider != charge.commercial_gateway_provider)
+            or (charge.commercial_gateway_mode is not None and result.mode.value != charge.commercial_gateway_mode)):
+        raise ApiError('BILLING_RECONCILIATION_REQUIRED', 'Ambiente externo diverge da obrigação.', status_code=503)
     if result.observed_amount != charge.amount:
         raise ApiError('BILLING_RECONCILIATION_REQUIRED', 'Valor externo diverge da obrigação; concilie antes de ativar.', status_code=503)
+    if (charge.commercial_due_at is not None and result.observed_due_date !=
+            charge.commercial_due_at.astimezone(COMMERCIAL_TIMEZONE).date().isoformat()):
+        raise ApiError('BILLING_RECONCILIATION_REQUIRED', 'Vencimento externo diverge da obrigação; concilie antes de ativar.', status_code=503)
     response, _ = state.idempotency.execute(tenant, result_key, lambda: persist(charge, result))
     return response

@@ -126,6 +126,18 @@ jobs:
         working-directory: web
         run: npm run test:e2e:session
 
+      - name: Reviewed checkout E2E (real API + SQLite, two tabs, payment simulator)
+        working-directory: web
+        run: npm run test:e2e:checkout
+
+      - name: Upload checkout E2E evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkout-e2e-evidence
+          path: web/test-results/
+          retention-days: 7
+
       - name: Upload Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v4

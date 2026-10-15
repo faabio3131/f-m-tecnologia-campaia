@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { BillingChargeHistory, BillingChargeHistoryItem } from "@/contracts/types";
+import { safeBillingInvoiceUrl } from "@/lib/billing";
 import { api } from "@/lib/api/client";
 import { Button } from "./Button";
 import { Card } from "./Card";
@@ -20,16 +21,6 @@ const MODES: Record<string, string> = {
 const PURPOSES: Record<string, string> = {
   REGULAR: "Assinatura", PLAN_CHANGE: "Troca de plano", REACTIVATION: "Reativação",
 };
-
-// Defense in depth: navigation must remain a provider URL in the matching environment.
-// The backend validates the same boundary before exposing persisted data.
-function invoiceUrl(item: BillingChargeHistoryItem): string | null {
-  if (!item.invoice_url || /\s/.test(item.invoice_url) || item.gateway_provider !== "ASAAS") return null;
-  const host = item.gateway_mode === "SANDBOX" ? "sandbox.asaas.com"
-    : item.gateway_mode === "PRODUCTION" ? "www.asaas.com" : null;
-  return host && new RegExp(`^https://${host.replaceAll(".", "\\.")}/i/[A-Za-z0-9_-]+$`).test(item.invoice_url)
-    ? item.invoice_url : null;
-}
 
 export function BillingChargeHistoryPanel() {
   const [items, setItems] = useState<BillingChargeHistoryItem[]>([]);
@@ -74,7 +65,7 @@ export function BillingChargeHistoryPanel() {
     <p className={styles.description}>Situação da última resposta ou notificação registrada, com seu ambiente e horário de recebimento.</p>
     <div className={styles.list}>
       {items.map((item) => {
-        const url = invoiceUrl(item);
+        const url = safeBillingInvoiceUrl(item.invoice_url, item.gateway_provider, item.gateway_mode);
         return <article key={item.gateway_charge_id} className={styles.item} aria-label={`Cobrança ${item.billing_id}`}>
           <StatusPanel title={`Competência ${item.competence} · ${item.gateway_charge_id}`} items={[
             { label: "Identificador", value: item.billing_id },
