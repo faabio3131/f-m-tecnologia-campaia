@@ -24,6 +24,7 @@ path.write_text(json.dumps([commercial]))
 os.environ['CAMPAIA_PLAN_CATALOG_PATH'] = str(path)
 os.environ['GEMINI_API_KEY'] = ''
 os.environ['ASAAS_API_KEY'] = ''
+os.environ['ASAAS_WEBHOOK_TOKEN'] = 'fixture-checkout-webhook'
 app = create_app(env='test', db_path=str(Path(runtime.name) / 'runtime.db'))
 app.state.campaia.id_token_verifier = DeterministicTestIdTokenVerifier()
 app.state.campaia.allowed_origins = frozenset({origin})

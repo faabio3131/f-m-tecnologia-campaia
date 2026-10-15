@@ -293,6 +293,39 @@ class PostgresRuntimeTests(unittest.TestCase):
                 self.assertEqual(kept.status_code, 200, kept.text)
                 self.assertIsNone(kept.json()["cancel_at_period_end"])
                 self.assertEqual(len(clients[1].app.state.campaia.charges.items_for_tenant("demo-tenant")), 1)
+                usage = clients[0].get("/billing/usage", headers=OWNER).json()
+                consent = clients[0].post("/billing/usage/consent",
+                    headers={**with_step_up(OWNER), **unique_idem()}, json={"cap": "5.00",
+                        "cycle_id": usage["cycle"]["id"], "policy_version": usage["cycle"]["policy_version"],
+                        "extra_credit_price": usage["balance"]["extra_credit_price"]})
+                self.assertEqual(consent.status_code, 200, consent.text)
+                for _ in range(2):
+                    quote = clients[0].get(f"/campaigns/{campaign_id}/plan/quote", headers=OWNER).json()
+                    generated = clients[0].post(endpoint, headers={**OWNER, **unique_idem()},
+                        json={"credit_confirmation": {key: quote[key] for key in
+                            ("cycle_id", "policy_version", "credits", "extra_amount")}})
+                    self.assertEqual(generated.status_code, 202, generated.text)
+                closed = clients[0].post("/billing/subscription/cancel",
+                    headers={**with_step_up(OWNER), **unique_idem()}, json={"immediate": True})
+                self.assertEqual(closed.status_code, 200, closed.text)
+                final_quote = clients[1].get("/billing/closure", headers=OWNER).json()
+                self.assertEqual(final_quote["amount"], "5.00")
+                def close_final(client):
+                    return client.post("/billing/closure", headers={**with_step_up(OWNER), **unique_idem()},
+                        json={"fingerprint": final_quote["fingerprint"], "accept": True})
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    statements = list(pool.map(close_final, clients))
+                self.assertTrue(all(response.status_code == 200 for response in statements), [r.text for r in statements])
+                self.assertEqual(len(clients[0].app.state.campaia.charges.items_for_tenant("demo-tenant")), 2)
+                final_id = next(key for key, invoice in clients[0].app.state.campaia.charges.items_for_tenant("demo-tenant")
+                                if invoice.purpose.value == "FINAL_USAGE")
+                final_paid = clients[0].post("/webhooks/asaas", headers={"asaas-access-token": "pg-webhook-proof"},
+                    json={"id": "pg-final-paid", "event": "PAYMENT_RECEIVED", "payment": {"id": final_id, "status": "RECEIVED"}})
+                self.assertEqual(final_paid.status_code, 200, final_paid.text)
+                self.assertEqual(clients[1].get("/billing/subscription", headers=OWNER).json()["status"], "CANCELED")
+                self.assertEqual(clients[1].get("/billing/closure", headers=OWNER).json()["state"], "SETTLED")
+                self.assertEqual(sum(entry.kind == "OPEN" for entry in
+                    clients[1].app.state.campaia.credit_ledger.entries("demo-tenant")), 2)
 
     def test_credit_journal_workers_replay_caps_and_immutable_history(self) -> None:
         from api.credit_store import PersistentCreditLedger

@@ -589,6 +589,11 @@ class BillingCreditConsentRequest(ApiModel):
     cap: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
 
 
+class BillingClosureRequest(ApiModel):
+    fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
+    accept: bool = Field(strict=True)
+
+
 class BillingChargeCreate(ApiModel):
     competence: str
     accept_quote: bool = Field(default=False, strict=True)

@@ -1,14 +1,15 @@
 import { test, expect } from "@playwright/test";
 
-test("duas abas revisam a mesma obrigação e emitem uma cobrança simulada sem liberar acesso pago", async ({ page, context }) => {
+test("duas abas emitem uma fatura; pagamento simulado, uso e fechamento final preservam cada ciclo", async ({ page, context }) => {
   await page.goto("/login");
   const onboard = await page.evaluate(async () => {
     const response = await fetch("/api/campaia/onboarding/tenant", { method: "POST", credentials: "include",
       headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
       body: JSON.stringify({ id_token: "e2e-test-id-token-billing-owner", company_name: "Checkout E2E", segment: "testes" }) });
-    return response.status;
+    const body = await response.json();
+    return { status: response.status, csrf: body.session.csrf_token as string };
   });
-  expect(onboard).toBe(201);
+  expect(onboard.status).toBe(201);
   await page.goto("/billing");
   await page.getByLabel("Plano", { exact: true }).selectOption("e2e-commercial");
   await page.getByLabel("CPF ou CNPJ do titular").fill("11144477735");
@@ -43,4 +44,61 @@ test("duas abas revisam a mesma obrigação e emitem uma cobrança simulada sem 
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: "test-results/checkout-mobile.png", fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  // Authenticated callbacks for the payment SIMULATOR, not external banking evidence.
+  const consumed = await page.evaluate(async ({ csrf, paymentId }) => {
+    const headers = { "content-type": "application/json", "x-csrf-token": csrf,
+      "x-step-up-token": "test-step-up", "Idempotency-Key": crypto.randomUUID() };
+    const post = async (path: string, body: unknown) => {
+      const response = await fetch(`/api/campaia${path}`, { method: "POST", credentials: "include",
+        headers: { ...headers, "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(body) });
+      if (!response.ok) throw new Error(`${path}: ${response.status}`);
+      return response.json();
+    };
+    const paid = await fetch("/api/campaia/webhooks/asaas", { method: "POST",
+      headers: { "content-type": "application/json", "asaas-access-token": "fixture-checkout-webhook" },
+      body: JSON.stringify({ id: "e2e-first-paid", event: "PAYMENT_RECEIVED", payment: { id: paymentId, status: "RECEIVED" } }) });
+    if (!paid.ok) throw new Error(`payment: ${paid.status}`);
+    const usage = await (await fetch("/api/campaia/billing/usage")).json();
+    await post("/billing/usage/consent", { cap: "5.00", cycle_id: usage.cycle.id,
+      policy_version: usage.cycle.policy_version, extra_credit_price: usage.balance.extra_credit_price });
+    const campaign = await post("/briefs", { objective: "Sell shoes", product: "Shoes", audience: "Runners",
+      region: "BR", currency: "BRL", total_budget: "5000", daily_cap: "500", channels: ["GOOGLE_ADS"] });
+    for (let index = 0; index < 3; index++) {
+      const quote = await (await fetch(`/api/campaia/campaigns/${campaign.id}/plan/quote`)).json();
+      await post(`/campaigns/${campaign.id}/plan/regenerate`, { credit_confirmation: {
+        cycle_id: quote.cycle_id, policy_version: quote.policy_version, credits: quote.credits, extra_amount: quote.extra_amount } });
+    }
+    return (await fetch("/api/campaia/billing/usage")).json();
+  }, { csrf: onboard.csrf, paymentId: after.items[0].gateway_charge_id });
+  expect(consumed.balance.consumed_credits).toBe(15);
+  expect(Number(consumed.balance.extra_consumed_amount)).toBe(5);
+  await page.reload();
+  await page.getByRole("button", { name: "Encerrar imediatamente", exact: true }).click();
+  await page.getByRole("button", { name: "Confirmar solicitação", exact: true }).click();
+  await expect(page.getByText("Cancelada", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Revisar fechamento final" }).click();
+  await page.getByRole("checkbox", { name: /Conferi o consumo final/ }).check();
+  await page.getByRole("button", { name: "Confirmar fechamento final", exact: true }).click();
+  await expect(page.getByText(/Fatura final registrada no histórico/)).toBeVisible();
+  const finalHistory = await page.evaluate(async () => (await fetch("/api/campaia/billing/charges")).json());
+  expect(finalHistory.items).toHaveLength(2);
+  const finalInvoice = finalHistory.items.find((item: { purpose: string }) => item.purpose === "FINAL_USAGE");
+  expect(Number(finalInvoice.amount)).toBe(5);
+  const settled = await page.evaluate(async (paymentId: string) => (await fetch("/api/campaia/webhooks/asaas", {
+    method: "POST", headers: { "content-type": "application/json", "asaas-access-token": "fixture-checkout-webhook" },
+    body: JSON.stringify({ id: "e2e-final-paid", event: "PAYMENT_RECEIVED", payment: { id: paymentId, status: "RECEIVED" } }),
+  })).status, finalInvoice.gateway_charge_id);
+  expect(settled).toBe(200);
+  await page.getByRole("button", { name: "Atualizar fechamento", exact: true }).click();
+  await expect(page.getByText(/Excedente final quitado/)).toBeVisible();
+  await expect(page.getByText("Cancelada", { exact: true })).toBeVisible();
+  await expect(page.getByText("Bloqueado", { exact: true })).toBeVisible();
+  const finalUsage = await page.evaluate(async () => (await fetch("/api/campaia/billing/usage")).json());
+  expect(finalUsage.cycle.id).toBe(consumed.cycle.id);
+  expect(finalUsage.balance.consumed_credits).toBe(15);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: "test-results/final-usage-mobile.png", fullPage: true });
+
 });

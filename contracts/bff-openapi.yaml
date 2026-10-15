@@ -1359,6 +1359,59 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /billing/closure:
+    get:
+      tags: [Billing]
+      summary: Consulta o excedente final do lifecycle encerrado
+      operationId: getBillingClosure
+      security: [cookieAuth: []]
+      responses:
+        '200':
+          description: Consumo entregue, mínimo validado e situação financeira, sem nova mensalidade
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingClosure' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Billing]
+      summary: Confirma fechamento final sem conceder outro ciclo
+      operationId: closeBillingUsage
+      security: [cookieAuth: []]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [fingerprint, accept]
+              properties:
+                fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+                accept: { type: boolean }
+      responses:
+        '200':
+          description: Fechamento sem cobrança, residual absorvido ou invoice final registrado; não confirma pagamento
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingClosure' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '409':
+          description: Revisão ou conciliação pendente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Emissão incerta, sem segundo POST automático
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /billing/checkout:
     get:
       tags: [Billing]
@@ -1746,7 +1799,7 @@ components:
         currency: { type: string }
         amount: { type: string }
         plan_id: { type: [string, 'null'] }
-        purpose: { type: string, enum: [REGULAR, PLAN_CHANGE, REACTIVATION] }
+        purpose: { type: string, enum: [REGULAR, PLAN_CHANGE, REACTIVATION, FINAL_USAGE] }
         created_at: { type: [string, 'null'], format: date-time }
         gateway_status: { type: [string, 'null'] }
         gateway_provider: { type: [string, 'null'] }
@@ -1876,6 +1929,20 @@ components:
             - { type: string }
           default: '0'
 
+    BillingClosure:
+      type: object
+      required: [state, fingerprint, amount, minimum, lifecycle_id, cycle_id, invoice, provider, mode]
+      properties:
+        state: { type: string, enum: [UNAVAILABLE, PENDING_USAGE, NO_CHARGE, MINIMUM_UNAVAILABLE, ABSORBABLE, ABSORBED, INVOICE_REQUIRED, INVOICED, SETTLED, RECONCILIATION_REQUIRED] }
+        fingerprint: { type: [string, 'null'] }
+        amount: { type: [string, 'null'] }
+        minimum: { type: [string, 'null'] }
+        lifecycle_id: { type: [string, 'null'] }
+        cycle_id: { type: [string, 'null'] }
+        invoice: { type: [string, 'null'] }
+        provider: { type: [string, 'null'] }
+        mode: { type: [string, 'null'], enum: [SIMULATOR, SANDBOX, PRODUCTION, null] }
+
     BillingCheckout:
       type: object
       required: [state, quote, available_at, invoice_url]
@@ -1912,7 +1979,7 @@ components:
               action: { type: string }
               credits: { type: integer }
         policy_version: { type: string }
-        purpose: { type: string, enum: [REGULAR, PLAN_CHANGE, REACTIVATION] }
+        purpose: { type: string, enum: [REGULAR, PLAN_CHANGE, REACTIVATION, FINAL_USAGE] }
         cycle_index: { type: integer }
         due_at: { type: [string, 'null'], format: date-time }
         period_starts_at: { type: [string, 'null'], format: date-time }

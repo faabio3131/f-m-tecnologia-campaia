@@ -13,6 +13,24 @@ from tests_api.test_helpers import OWNER, OTHER_OWNER, with_step_up, unique_idem
 
 
 class MeteredStrategyTests(BillingCreditHarness, unittest.TestCase):
+    def test_subscription_closed_during_generation_discards_delivery_and_releases_credit(self):
+        original = self.state.agent_runner.run
+        def closed_before_delivery(*args, **kwargs):
+            result = original(*args, **kwargs)
+            canceled = self.client.post('/billing/subscription/cancel',
+                headers={**with_step_up(OWNER), **unique_idem()}, json={'immediate': True})
+            self.assertEqual(canceled.status_code, 200, canceled.text)
+            return result
+        initial = self.state.campaigns.get('demo-tenant', self.campaign).plan_version
+        with patch.object(self.state.agent_runner, 'run', side_effect=closed_before_delivery):
+            response = self.request()
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()['code'], 'AI_SUBSCRIPTION_CHANGED')
+        self.assertEqual(self.state.campaigns.get('demo-tenant', self.campaign).plan_version, initial)
+        entries = self.state.credit_ledger.entries('demo-tenant')
+        self.assertEqual(sum(entry.kind == 'SETTLE' for entry in entries), 0)
+        self.assertEqual(sum(entry.kind == 'RELEASE' for entry in entries), 1)
+
     def setUp(self):
         super().setUp()
         self.setup_subscription(trial=True)
