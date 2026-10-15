@@ -5,18 +5,27 @@ import { test, expect } from "@playwright/test";
 test.describe("WP-R02 billing lifecycle", () => {
   test.describe.configure({ retries: 0 });
   test("trial -> cancelar -> solicitar reativacao pendente; outro tenant isolado", async ({ page, browser }) => {
-    const origin = "http://127.0.0.1:4174";
-    const onboarding = await page.request.post("/api/campaia/onboarding/tenant", {
-      headers: { origin, "Idempotency-Key": crypto.randomUUID() },
-      data: { id_token: "e2e-test-id-token-billing-owner", company_name: "Billing E2E isolado", segment: "testes" },
+    await page.goto("/login");
+    // Browser fetch uses the actual HttpOnly/Secure cookie protocol, as product UI does.
+    // APIRequestContext on HTTP loopback does not send this Secure session cookie.
+    const onboarding = await page.evaluate(async () => {
+      const response = await fetch("/api/campaia/onboarding/tenant", {
+        method: "POST", credentials: "include",
+        headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({ id_token: "e2e-test-id-token-billing-owner", company_name: "Billing E2E isolado", segment: "testes" }),
+      });
+      return { status: response.status, body: await response.json() };
     });
-    expect(onboarding.status()).toBe(201);
-    const { session } = await onboarding.json();
-    const created = await page.request.put("/api/campaia/billing/subscription", {
-      headers: { origin, "x-csrf-token": session.csrf_token, "x-step-up-token": "test-step-up", "Idempotency-Key": crypto.randomUUID() },
-      data: { plan_id: "exemplo-essencial", customer_document: "11144477735", start_trial: true },
-    });
-    expect(created.status()).toBe(200);
+    expect(onboarding.status).toBe(201);
+    const created = await page.evaluate(async (csrf: string) => {
+      const response = await fetch("/api/campaia/billing/subscription", {
+        method: "PUT", credentials: "include",
+        headers: { "content-type": "application/json", "x-csrf-token": csrf, "x-step-up-token": "test-step-up", "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({ plan_id: "exemplo-essencial", customer_document: "11144477735", start_trial: true }),
+      });
+      return response.status;
+    }, onboarding.body.session.csrf_token);
+    expect(created).toBe(200);
     await page.goto("/billing");
     await expect(page.getByText("Período de teste", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Liberado", { exact: true })).toBeVisible();
@@ -43,7 +52,7 @@ test.describe("WP-R02 billing lifecycle", () => {
     await expect(otherPage).toHaveURL(/\/dashboard/);
     await otherPage.goto("/billing");
     await expect(otherPage.getByText("Nenhuma assinatura configurada", { exact: true })).toBeVisible();
-    expect((await otherPage.request.get("/api/campaia/billing/subscription")).status()).toBe(404);
+    expect(await otherPage.evaluate(async () => (await fetch("/api/campaia/billing/subscription", { credentials: "include" })).status)).toBe(404);
     await other.close();
   });
 });

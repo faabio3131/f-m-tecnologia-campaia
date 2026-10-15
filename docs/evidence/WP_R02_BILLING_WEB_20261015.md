@@ -57,3 +57,12 @@ não simula consumo e não trata seleção de plano como pagamento.
 Nenhum merge, deploy, migration real, pagamento, anúncio ou gasto de provedor executado.
 Cloud SQL não foi ligado; última prova externa segue STOPPED / NEVER (WP-R01).
 Não classificar G5 nem disponibilidade comercial como DONE_VERIFIED.
+
+## Primeira CI e ajuste do harness
+
+HEAD inicial 23978e9: Backend #242 e F4 #76 success; checks gerais Web/smoke success.
+Suíte de sessão executou 28 cenários: 27 passaram; novo billing falhou na preparação
+PUT (401), antes da UI. O APIRequestContext em HTTP loopback não envia o cookie Secure
+emitido no onboarding. Preparação ajustada para fetch do navegador com credentials include,
+seguindo o protocolo real da Web; nenhuma regra de cookie/auth relaxada no produto.
+A negativa final também consulta pelo navegador autenticado. Nova CI necessária.
