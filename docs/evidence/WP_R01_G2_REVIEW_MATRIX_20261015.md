@@ -57,3 +57,19 @@ Após eventual merge autorizado, conferir CI pós-merge e promover status soment
 ## Infraestrutura
 
 Cloud SQL campaia-staging-pg confirmado STOPPED / NEVER no print image(20261015-160027).png, 15/10/2026 às 13:00. Revisão e CI independem de religar banco. Persistem possíveis custos residuais de storage/outros serviços, não medidos aqui.
+
+## Adendo de integração — 15/10/2026
+
+O estado de integração PARTIAL descrito acima é SUPERSEDED: PR #43 integrada em
+0ef88d6651e8f3e415d802883269963d269ec5a6 e PR #44 integrada em
+356f35448abf6b71b91c00a44a7ccc1db4e4906e, após autorização expressa do Diretor.
+Consulta GitHub Actions confirmou as três execuções push do HEAD final concluídas em success:
+
+- Backend #241: https://github.com/faabio3131/f-m-tecnologia-campaia/actions/runs/38767919126
+- Frontend #179: https://github.com/faabio3131/f-m-tecnologia-campaia/actions/runs/38767919073
+- F4 #75: https://github.com/faabio3131/f-m-tecnologia-campaia/actions/runs/38767919365
+
+F2/G2: DONE_VERIFIED no critério do gate documentado nesta matriz. As limitações das
+observações externas e os gates finais de segurança/UAT/produção continuam aplicáveis.
+WP-R02 pode avançar em engenharia; decisões comerciais reais permanecem HUMAN_DECISION.
+Nenhum novo teste de staging nem religamento do banco foi necessário para esta reconciliação.

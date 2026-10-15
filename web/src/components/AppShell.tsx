@@ -33,13 +33,16 @@ const NAV_ITEMS = [
 export function AppShell({ user, onLogout, children }: AppShellProps) {
   const pathname = usePathname();
   const canManageUsers = user.roles.some((role) => role === "OWNER" || role === "ADMIN");
-  const navItems = canManageUsers
+  const navItems: { href: string; label: string }[] = canManageUsers
     ? [
         ...NAV_ITEMS,
         { href: "/settings/organization", label: "Organização" } as const,
         { href: "/settings/users", label: "Usuários" } as const,
       ]
-    : NAV_ITEMS;
+    : [...NAV_ITEMS];
+  if (user.roles.some((role) => ["OWNER", "ADMIN", "FINANCE", "APPROVER"].includes(role))) {
+    navItems.push({ href: "/billing", label: "Plano e cobrança" });
+  }
 
   return (
     <div className={styles.shell}>

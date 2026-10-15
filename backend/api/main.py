@@ -30,6 +30,7 @@ from .routes_billing import (
     change_subscription_plan,
     create_charge,
     get_subscription,
+    list_billing_plans,
     put_subscription,
     reactivate_billing_subscription,
 )
@@ -177,6 +178,7 @@ routes = [
     Route("/audit-events", list_audit_events, methods=["GET"]),
 
     # Motor de cobranca propria do CampaIA (B11 / ADR-0020).
+    Route("/billing/plans", list_billing_plans, methods=["GET"]),
     Route("/billing/subscription", get_subscription, methods=["GET"]),
     Route("/billing/subscription", put_subscription, methods=["PUT"]),
     Route("/billing/subscription/change-plan", change_subscription_plan, methods=["POST"]),

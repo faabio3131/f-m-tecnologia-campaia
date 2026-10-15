@@ -2,9 +2,9 @@
 
 ## Cronograma Mestre Operacional — DELTA REAL RESTANTE
 
-**Data de reconciliação:** 14/10/2026  
+**Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@4d17f41c35d95ff473ab420be5164407c9166bb5`  
+**CURRENT confirmado:** `main@356f35448abf6b71b91c00a44a7ccc1db4e4906e`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -94,7 +94,7 @@ Já existem:
 - isolamento cross-tenant/business unit;
 - Web de Organização e Usuários.
 
-Não reimplementar. Falta somente homologação externa específica de mutações sensíveis.
+Não reimplementar. O delta externo específico foi exercitado no WP-R01, integrado na PR #44 e verificado pela CI pós-merge; G2 DONE_VERIFIED no escopo do gate. Ver adendo de integração na matriz WP-R01.
 
 ## F3/G3
 Já existem e estão DONE_VERIFIED:
@@ -244,7 +244,7 @@ No CURRENT:
 - optimizer/pacing/reconciliation existem, mas não estão ligados a métricas externas reais;
 - Brand Kit ainda não possui upload/assets completos;
 - fluxo de criativos/imagem/preview ainda não está completo;
-- Billing Web comercial ainda não existe;
+- Billing Web em implementação na branch WP-R02; não considerar integrada antes de CI/revisão/merge;
 - Premium final ainda não foi executado;
 - G18/G19/G20 ainda não ocorreram.
 
@@ -258,7 +258,7 @@ Esses são os blocos prioritários restantes.
 |---|---|---|
 | F0 | DONE_VERIFIED | nenhum |
 | F1 | PARTIAL / G1 DONE_VERIFIED | reconciliar dependência comercial após G5 |
-| F2 | PARTIAL | E2E externo de administração sensível |
+| F2 | DONE_VERIFIED | gate G2 fechado; preservar evidências WP-R01 |
 | F3 | DONE_VERIFIED | nenhum core |
 | F4 | DONE_VERIFIED | nenhum core |
 | F5 | PARTIAL avançado | política comercial + Billing Web + produção Asaas + E2E real |
@@ -283,7 +283,9 @@ Esses são os blocos prioritários restantes.
 # 8. ORDEM MESTRA DAS TAREFAS RESTANTES
 
 ## WP-R01 — Fechar G2 externo
-**Status:** PARTIAL / EXTERNAL_INFRASTRUCTURE
+**Status:** DONE_VERIFIED
+
+PRs #43/#44 integradas com autorização; CI pós-merge de main@356f35448abf6b71b91c00a44a7ccc1db4e4906e verde. Cenários abaixo já exercitados; não repetir por ausência documental.
 
 No staging real:
 

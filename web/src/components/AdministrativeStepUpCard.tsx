@@ -6,6 +6,7 @@ import { isGoogleIdentityConfigured } from "../lib/auth/google-identity-client";
 import styles from "./AdministrativeStepUpCard.module.css";
 
 export interface AdministrativeStepUpCardProps {
+  description?: string;
   ready: boolean;
   testMode: boolean;
   message?: string | null;
@@ -14,6 +15,7 @@ export interface AdministrativeStepUpCardProps {
 }
 
 export function AdministrativeStepUpCard({
+  description = "Alterações de usuários, papéis e unidades exigem uma autenticação Google recente.",
   ready,
   testMode,
   message,
@@ -28,7 +30,7 @@ export function AdministrativeStepUpCard({
     <Card>
       <h2 className={styles.title}>Reautenticação administrativa</h2>
       <p className={styles.description}>
-        Alterações de usuários, papéis e unidades exigem uma autenticação Google recente.
+        {description}
         A elevação fica vinculada somente à sessão atual.
       </p>
       {configured ? (

@@ -805,3 +805,56 @@ class AsaasWebhookTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BillingWebReadTests(unittest.TestCase):
+    def test_catalog_requires_authentication_and_billing_permission(self):
+        client = make_client()
+        with _with_catalog():
+            assert client.get('/billing/plans').status_code == 401
+            assert client.get('/billing/plans', headers=MARKETER).status_code == 403
+            assert client.get('/billing/plans', headers=FINANCE).status_code == 200
+
+    def test_catalog_preserves_decimal_values_without_creating_subscription_or_charge(self):
+        client = make_client()
+        with _with_catalog():
+            response = client.get('/billing/plans', headers=OWNER)
+        assert response.status_code == 200, response.text
+        items = response.json()['items']
+        assert len(items) == 2
+        assert items[0]['monthly_price'] == '1.0'
+        assert items[0]['plan_changes'][0]['target_plan_id'] == 'exemplo-pro'
+        assert not client.app.state.campaia.subscriptions
+        assert not client.app.state.campaia.charges
+
+    def test_missing_and_invalid_catalog_fail_closed_without_exposing_path(self):
+        from unittest.mock import patch
+        from tempfile import TemporaryDirectory
+        client = make_client()
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / 'private-commercial.json'
+            for payload in (None, '{invalid-json', '[]'):
+                if payload is not None:
+                    path.write_text(payload)
+                with patch.dict(os.environ, {'CAMPAIA_PLAN_CATALOG_PATH': str(path)}):
+                    response = client.get('/billing/plans', headers=OWNER)
+                assert response.status_code == 503, response.text
+                assert directory not in response.text
+                assert response.json()['code'] == 'BILLING_CATALOG_UNAVAILABLE'
+
+    def test_subscription_terms_are_tenant_scoped_and_use_contracted_snapshot(self):
+        from unittest.mock import patch
+        from decimal import Decimal
+        client = make_client()
+        _put_subscription(client)
+        state = client.app.state.campaia
+        original = state.subscriptions['demo-tenant']
+        state.subscriptions['demo-tenant'] = replace(
+            original, plan=replace(original.plan, monthly_price=Decimal('19.1234')))
+        with patch.dict(os.environ, {'CAMPAIA_PLAN_CATALOG_PATH': '/missing/catalog.json'}):
+            response = client.get('/billing/subscription', headers=OWNER)
+            other = client.get('/billing/subscription', headers=OTHER_OWNER)
+        assert response.status_code == 200, response.text
+        assert response.json()['commercial_terms']['monthly_price'] == '19.1234'
+        assert other.status_code == 404, other.text
+        assert not state.charges

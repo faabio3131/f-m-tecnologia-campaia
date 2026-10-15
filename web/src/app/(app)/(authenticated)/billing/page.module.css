@@ -1,0 +1,14 @@
+.title {
+  margin: 0 0 var(--campaia-space-4);
+  font-size: var(--campaia-font-size-lg);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--campaia-space-3);
+}
+
+.actions button {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
