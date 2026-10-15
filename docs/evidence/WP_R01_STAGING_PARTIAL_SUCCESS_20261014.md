@@ -27,3 +27,19 @@ Testes encerrados após conferir auditoria. Solicitada imediatamente ao Diretor 
 ## Governança
 
 Nenhum deploy, merge, migration, alteração de papel, convite de terceiro, segredo ou configuração de produção. Alterações feitas somente pela UI normal de staging e somente na unidade explicitamente criada para homologação. O recurso de teste foi desativado, preservando histórico. PR #44 contém apenas documentação; CI da nova revisão ainda pendente.
+
+## Pausa solicitada pelo Diretor — 14/10/2026, 23:04 (São Paulo)
+
+Diretor encerrou a sessão e pretende retomar em 15/10/2026. Não é solicitação de automação nem autorização para religar infraestrutura durante a ausência.
+
+Ponto exato de retomada: WP-R01 / G2 PARTIAL. Preservar as provas reais de login, step-up e administração de unidade já obtidas. Cloud SQL foi confirmado STOPPED / NEVER antes da pausa. Não repetir essas provas como se fossem funcionalidades ausentes.
+
+Próxima sequência:
+1. Confirmar CURRENT, main/HEAD, PRs #43/#44 e CI; não presumir merge ou aprovação.
+2. Preparar com o Diretor contas Google válidas sob seu controle para os papéis de proprietário A, usuário A e proprietário B, podendo reutilizar atores existentes conforme CURRENT. Nomes de empresas podem ser fictícios; identidades não devem ser simuladas nesta homologação. Não coletar senhas/tokens no chat.
+3. Usar somente onboarding/convites normais do produto, sem seed ou inclusão manual no banco. Convites/envios e concessões sensíveis exigem alvo e autorização específicos; nenhum convite foi enviado nesta sessão.
+4. Preparar matriz de revogação por mudança de acesso, relogin/autoridade final, isolamento entre tenants e unidades e replay externo aplicável, com trilha de auditoria. Usar sessões separadas por identidade para provar que a sessão antiga foi invalidada.
+5. Antes de nova janela onerosa, confirmar autorização do Diretor para ligar staging exclusivamente durante os testes. O compromisso vigente é desligar imediatamente ao terminar ou encontrar bloqueio e comprovar STOPPED / NEVER.
+6. Executar o delta externo, registrar resultados reproduzíveis e manter G2 PARTIAL se qualquer prova obrigatória faltar. Não iniciar WP-R02 nem promover G2 prematuramente.
+
+Nenhum merge/deploy/migration ou produção autorizado por esta pausa.
