@@ -182,6 +182,57 @@ async def preview_generated_creative(request):
                         headers={"Cache-Control": "private, no-store"})
 
 
+async def visual_preview_generated_creative(request):
+    """Private HTML draft mockup, not a Google/Meta/WhatsApp platform preview."""
+    from uuid import UUID
+    from html import escape
+    from starlette.responses import HTMLResponse
+    fixture, state, campaign, repository = _scope(request, Permission.CAMPAIGN_VIEW)
+    try:
+        creative_id = str(UUID(request.path_params["creativeId"]))
+    except (ValueError, TypeError):
+        raise ApiError("NOT_FOUND", "Criativo indisponível.", status_code=404) from None
+    row = repository.table.get_for_tenant(creative_id, fixture.tenant_id)
+    if (row is None or row["identity"]["campaign_id"] != campaign.campaign_id
+            or row["identity"]["business_unit_id"] != campaign.business_unit_id
+            or row["state"] != "STORED"
+            or row["identity"]["campaign_version"] != campaign.plan_version):
+        raise ApiError("NOT_FOUND", "Criativo indisponível.", status_code=404)
+    from campaia_core.creative_assets import CreativeIdentity
+    from .creative_image_review import CreativeImageReviewStore
+    review = CreativeImageReviewStore(state).get(CreativeIdentity(**row["identity"]))
+    policy = _preview_policy(row, campaign, review)
+    channel = request.path_params["channel"].upper()
+    labels = {"google": "Google Ads", "meta": "Facebook / Instagram",
+              "whatsapp": "WhatsApp Business"}
+    if channel.lower() not in labels:
+        raise ApiError("NOT_FOUND", "Canal indisponível.", status_code=404)
+    name = escape(labels[channel.lower()])
+    path = ("/api/campaia/campaigns/" + escape(campaign.campaign_id, quote=True)
+            + "/images/" + creative_id + "/content")
+    page = (f'<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
+            f'<meta name="viewport" content="width=device-width, initial-scale=1">'
+            f'<title>Rascunho de mídia — {name}</title>'
+            '<style>body{font-family:system-ui,sans-serif;max-width:740px;margin:2rem auto;'
+            'padding:1rem;background:#f5f6f8;color:#18202b}.card{background:white;'
+            'border-radius:14px;padding:24px;box-shadow:0 4px 24px #0001}'
+            'img{max-width:100%;max-height:600px;object-fit:contain;border-radius:8px}'
+            '.notice{background:#fff3d1;padding:12px;border-radius:8px}</style></head><body>'
+            f'<main class="card"><h1>Rascunho — {name}</h1>'
+            '<p class="notice">Simulação visual interna. Não representa preview oficial, '
+            'aceitação de política ou publicação no canal.</p>'
+            f'<img src="{path}" alt="Imagem criativa privada da campanha">'
+            f'<p>Revisão humana: {escape(policy["human_review"])}</p>'
+            '<p>Publicação externa: não homologada</p></main></body></html>')
+    return HTMLResponse(page, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; "
+                                   "base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+        "Referrer-Policy": "no-referrer",
+    })
+
+
 async def quote_generated_creative(request):
     fixture, state, _campaign, _repository = _scope(request, Permission.CAMPAIGN_EDIT)
     # This is a preview of the existing F5 commercial ledger policy. No charge or
