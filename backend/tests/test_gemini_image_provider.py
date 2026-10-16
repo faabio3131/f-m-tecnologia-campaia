@@ -21,7 +21,7 @@ from tests.test_asset_images import encoded
 
 
 def config(**changes):
-    return GeminiImageConfig(**{**dict(enabled=True, api_key="synthetic-image-key", model="gemini-image-fixture",
+    return GeminiImageConfig(**{**dict(enabled=True, api_key="synthetic-image-key", model="gemini-nano-banana-2.1",
         input_usd_per_million=Decimal("1.50"), output_usd_per_million=Decimal("30"),
         pricing_reference="image-test-upper-bound-v1"), **changes})
 
@@ -33,7 +33,7 @@ def request(**changes):
 
 
 def interaction(data=None, **changes):
-    return {**dict(status="completed", model="gemini-image-fixture",
+    return {**dict(status="completed", model="gemini-nano-banana-2.1",
         usage={"total_input_tokens": 3, "total_output_tokens": 1120},
         steps=[{"type": "model_output", "content": [
             {"type": "image", "mime_type": "image/png",
@@ -75,7 +75,7 @@ class GeminiImageTests(unittest.TestCase):
         for value in (Decimal("0"), Decimal("-1"), Decimal("NaN"), Decimal("Infinity"), 1, True):
             with self.subTest(value=str(value)), self.assertRaises(GeminiImageConfigError):
                 config(output_usd_per_million=value)
-        for model in ("https://internal.invalid/model", "model/path", "bad\nmodel", "sk-" + "x" * 32):
+        for model in ("gemini-3.8-flash", "undocumented-image-model", "https://internal.invalid/model", "model/path", "bad\nmodel", "sk-" + "x" * 32):
             with self.subTest(model_type="invalid"), self.assertRaises(GeminiImageConfigError):
                 config(model=model)
         with self.assertRaises(GeminiImageConfigError):
@@ -88,12 +88,12 @@ class GeminiImageTests(unittest.TestCase):
             with self.assertRaises(GeminiImageConfigError):
                 GeminiImageConfig.from_env()
         values = {"GEMINI_IMAGE_ENABLED": "true", "GEMINI_IMAGE_API_KEY": "synthetic-image-key",
-                  "GEMINI_IMAGE_MODEL": "gemini-image-fixture", "GEMINI_IMAGE_INPUT_USD_PER_MILLION": "1.5",
+                  "GEMINI_IMAGE_MODEL": "gemini-nano-banana-2.1", "GEMINI_IMAGE_INPUT_USD_PER_MILLION": "1.5",
                   "GEMINI_IMAGE_OUTPUT_USD_PER_MILLION": "30", "GEMINI_IMAGE_PRICING_REFERENCE": "image-test-v1"}
         with patch.dict(os.environ, values, clear=True):
             loaded = GeminiImageConfig.from_env()
             self.assertEqual(loaded.output_usd_per_million, Decimal("30"))
-            self.assertEqual(loaded.model, "gemini-image-fixture")
+            self.assertEqual(loaded.model, "gemini-nano-banana-2.1")
         with patch.dict(os.environ, {"GEMINI_IMAGE_ENABLED": "yes"}, clear=True):
             with self.assertRaises(GeminiImageConfigError):
                 GeminiImageConfig.from_env()
@@ -119,7 +119,7 @@ class GeminiImageTests(unittest.TestCase):
             body = json.loads(req.content)
             self.assertEqual(set(body), {"model", "input", "store", "response_format"})
             self.assertFalse(body["store"])
-            self.assertEqual(body["model"], "gemini-image-fixture")
+            self.assertEqual(body["model"], "gemini-nano-banana-2.1")
             self.assertEqual(body["response_format"], {"type": "image", "mime_type": "image/png",
                                                       "aspect_ratio": "1:1", "image_size": "1K"})
             self.assertEqual(len(body["input"]), 1)
@@ -242,7 +242,7 @@ class GeminiImageTests(unittest.TestCase):
         self.assertEqual(caught.exception.details["cost_observation"].basis, "UNVERIFIED_ESTIMATE")
 
     def test_invalid_model_metadata_never_leaks_or_replaces_provenance(self):
-        for model in ("http://internal.invalid/", "sk-" + "x" * 32, "x" * 161, None):
+        for model in ("gemini-3.8-flash", "http://internal.invalid/", "sk-" + "x" * 32, "x" * 161, None):
             with self.subTest(model_kind="invalid"), self.assertRaises(ProviderOutputInvalid):
                 self.provider(lambda _req: httpx.Response(200, json=interaction(model=model))).generate(request())
 

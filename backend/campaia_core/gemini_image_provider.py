@@ -30,6 +30,7 @@ from .asset_storage import MAX_ASSET_BYTES, PNG_SIGNATURE
 from .sanitizer import sanitize
 
 _ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions"
+_SUPPORTED_MODELS = frozenset({"gemini-nano-banana-2.1"})
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_CONTEXT_BYTES = 64 * 1024
 IMAGE_SCHEMA = OutputSchema("generated-image", frozenset({"mime_type", "data_base64", "width", "height"}),
@@ -73,6 +74,8 @@ class GeminiImageConfig:
             raise GeminiImageConfigError("Credencial de imagem inválida.", cost_observation=_not_sent())
         if self.model is not None:
             _metadata(self.model, model=True)
+            if self.model not in _SUPPORTED_MODELS:
+                raise GeminiImageConfigError("Modelo fora do perfil de imagem implementado.", cost_observation=_not_sent())
         if self.pricing_reference is not None:
             _metadata(self.pricing_reference)
         for value in (self.input_usd_per_million, self.output_usd_per_million):
@@ -264,6 +267,8 @@ class GeminiImageProvider:
         model = body.get("model", self.config.model)
         try:
             _metadata(model, model=True)
+            if model != self.config.model and not model.startswith(self.config.model + "-"):
+                raise GeminiImageConfigError("Modelo divergente.")
         except GeminiImageConfigError:
             raise ProviderOutputInvalid("Identidade de modelo inválida.", cost_observation=observation) from None
         output = self._image(body, observation)

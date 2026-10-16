@@ -16,6 +16,8 @@ O adaptador de texto existente permanece inalterado.
 
 ## Delta
 - GeminiImageProvider opt-in; sem modelo/tarifa padrão. Variáveis GEMINI_IMAGE_* separadas.
+- Perfil do protocolo restrito ao gemini-nano-banana-2.1 documentado; modelos de texto/
+  desconhecidos e resposta de família divergente são recusados. Não seleciona/ativa modelo real.
 - Nenhuma leitura de chave de texto quando desativado; nenhuma ligação a AppState/API/Web.
 - Contexto com limite, sanitização e trava de credenciais antes do HTTP.
 - Origem/path fixos, TLS padrão, sem proxy de ambiente/redirect/retry; resposta/corpo/tempo limitados.
@@ -37,7 +39,8 @@ do claim F3, não uma capacidade de idempotência externa inventada para o Googl
 ## Verificação
 MockTransport, sem rede/chave real: forma da requisição, configuração OFF, custos, schema,
 PII/credenciais, PNG normalizado, bloqueios, uso ausente, timeout, headers, tamanho, URI,
-múltiplas imagens e integração com AIGateway. CI completa no HEAD e pós-merge são exigidas.
+múltiplas imagens e integração com AIGateway. Primeira CI completa verde; reforçada a trava
+para modelo fora do perfil antes da rede. CI final no HEAD e pós-merge são exigidas.
 
 ## Próximos deltas
 Persistência/metadata de criativos por campanha, quota e armazenamento privado, fence de
