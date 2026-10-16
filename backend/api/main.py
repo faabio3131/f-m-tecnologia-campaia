@@ -49,7 +49,7 @@ from .routes_billing import (
     reactivate_billing_subscription,
 )
 from .routes_creatives import list_creative_proposals, quote_creative_proposal, generate_creative_proposal
-from .routes_generated_creatives import list_generated_creatives, get_generated_creative, quote_generated_creative, preview_generated_creative, decide_generated_creative_review, generate_campaign_image, reconcile_campaign_image, read_generated_creative_content
+from .routes_generated_creatives import list_generated_creatives, get_generated_creative, quote_generated_creative, preview_generated_creative, decide_generated_creative_review, delete_generated_creative, generate_campaign_image, reconcile_campaign_image, read_generated_creative_content
 from .routes_brand_assets import (
     list_brand_assets, upload_brand_asset, read_brand_asset,
     reconcile_brand_asset, delete_brand_asset,
@@ -197,6 +197,7 @@ routes = [
     Route("/campaigns/{campaignId}/images", generate_campaign_image, methods=["POST"]),
     Route("/campaigns/{campaignId}/images/quote", quote_generated_creative, methods=["GET"]),
     Route("/campaigns/{campaignId}/images/{creativeId}", get_generated_creative, methods=["GET"]),
+    Route("/campaigns/{campaignId}/images/{creativeId}", delete_generated_creative, methods=["DELETE"]),
     Route("/campaigns/{campaignId}/images/{creativeId}/review", decide_generated_creative_review, methods=["POST"]),
     Route("/campaigns/{campaignId}/images/{creativeId}/preview", preview_generated_creative, methods=["GET"]),
     Route("/campaigns/{campaignId}/images/{creativeId}/content", read_generated_creative_content, methods=["GET"]),
