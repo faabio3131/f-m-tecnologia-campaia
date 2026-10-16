@@ -3,7 +3,7 @@ import unittest
 from starlette.routing import Match
 
 from api.main import routes
-from api.routes_generated_creatives import _public, _paginate_private_creatives
+from api.routes_generated_creatives import _public, _paginate_private_creatives, _preview_policy
 from api.errors import ApiError
 from uuid import UUID
 
@@ -48,17 +48,35 @@ class GeneratedCreativeReadContractTests(unittest.TestCase):
             with self.subTest(cursor=cursor), self.assertRaises(ApiError):
                 _paginate_private_creatives(records, cursor)
 
+    def test_policy_preview_never_self_approves_generated_images(self):
+        from types import SimpleNamespace
+        campaign = SimpleNamespace(plan_version=3)
+        for state, version, generation in (
+            ("STORED", 3, "123"), ("STORED", 2, "123"),
+            ("STORAGE_PENDING", 3, None), ("FAILED", 3, None),
+        ):
+            with self.subTest(state=state, version=version):
+                row = {"identity": {"campaign_version": version},
+                       "state": state, "storage_generation": generation}
+                result = _preview_policy(row, campaign)
+                self.assertFalse(result["publication_allowed"])
+                self.assertEqual(result["human_review"], "NOT_REVIEWED")
+                self.assertIn("HUMAN_REVIEW_REQUIRED", result["blocking_reasons"])
+                self.assertEqual(result["preview_available"],
+                                 state == "STORED" and version == 3)
+
     def test_image_mutation_is_explicitly_guarded_by_single_post_route(self):
         images = [r for r in routes if getattr(r, "path", "").startswith(
             "/campaigns/{campaignId}/images")]
-        self.assertEqual(len(images), 6)
+        self.assertEqual(len(images), 7)
         self.assertEqual(sum("POST" in r.methods for r in images), 2)
-        self.assertEqual(sum("GET" in r.methods for r in images), 4)
+        self.assertEqual(sum("GET" in r.methods for r in images), 5)
         self.assertEqual({r.path for r in images}, {
             "/campaigns/{campaignId}/images",
             "/campaigns/{campaignId}/images/quote",
             "/campaigns/{campaignId}/images/{creativeId}",
             "/campaigns/{campaignId}/images/{creativeId}/content",
+            "/campaigns/{campaignId}/images/{creativeId}/preview",
             "/campaigns/{campaignId}/images/{creativeId}/reconcile",
         })
 
