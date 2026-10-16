@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@baba73a3e3c3965ff6ee4207eb4dd561ce834ad8`
+**CURRENT confirmado:** `main@957d99a7804f6a6d3e2b6379cbf58fbd280976fd`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -437,13 +437,14 @@ WP-R04-02 / PR #70 integrada, CI da PR e pós-merge verdes: ajuste seletivo de u
 lote anterior imutável e versão/validação/aprovação renovadas. Ver
 `docs/WP_R04_02_REVISAO_SELETIVA_COPY_20261016.md`.
 
-WP-R04-03 em validação: revisão humana dos materiais, solicitação de ajustes,
+WP-R04-03 / PR #71 integrada, CI da PR e pós-merge verdes: revisão humana dos materiais, solicitação de ajustes,
 reautenticação real existente e aprovações terminais sem rearmamento. Ver
 `docs/WP_R04_03_REVISAO_HUMANA_MATERIAIS_20261016.md`.
 
 - ligar policy/performance ao fluxo API/Web;
 - completar creative asset model;
-- geração de imagem real;
+- geração de imagem real: WP-R04-04A em validação do adaptador interno, default OFF;
+  sem AppState/rotas/UI/catálogo ativado. Ver `docs/WP_R04_04A_TRANSPORTE_IMAGEM_GEMINI_20261016.md`;
 - armazenar criativos no storage do tenant;
 - edição/regeneração seletiva;
 - preview Google/Meta/WhatsApp;
