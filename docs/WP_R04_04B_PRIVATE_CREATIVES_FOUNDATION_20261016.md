@@ -42,7 +42,7 @@ Run Backend, Frontend, F4 CI on exact PR head. Do not merge until evidence and d
 - Sem storage dispatch, GCS, créditos, API pública ou migration real. A fonte foi atualizada sem ativação operacional.
 
 ## Migração PostgreSQL versionada (fonte, ainda sem promoção)
-- Adicionada `009_creative_assets.up.sql` e rollback controlado `009_creative_assets.down.sql`. Tabela de runtime segregada por tenant com índices, trigger de tenant imutável e guardas DB para manifesto imutável, transições e revision CAS.
+- Adicionada `010_creative_assets.up.sql` e rollback controlado `010_creative_assets.down.sql`. Tabela de runtime segregada por tenant com índices, trigger de tenant imutável e guardas DB para manifesto imutável, transições e revision CAS.
 - `PostgresDatabase` passa a permitir a tabela apenas após migration explícita, sem criação implícita no startup.
 - Adicionado teste real no job PostgreSQL 16 existente: corrida de reserva entre duas instâncias independentes, quota, replay, cross-tenant, recuperação de estado após reabrir conexão e proteção de trigger contra atualização forjada.
 - CI no HEAD final ainda necessária. Estes testes não simulam storage, provider ou cobrança e não autorizam aplicar migration em produção.
