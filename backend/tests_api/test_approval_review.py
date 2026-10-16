@@ -2,6 +2,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 import threading
+import json
 import unittest
 from unittest.mock import patch
 
@@ -130,7 +131,7 @@ class ApprovalReviewTests(BillingCreditHarness, unittest.TestCase):
         actor = {**MARKETER, "Idempotency-Key": headers["Idempotency-Key"]}
         self.assertEqual(self.request(body=body, headers=actor).status_code, 409)
         self.state.tokens["demo-owner-token"] = replace(self.state.tokens["demo-owner-token"], business_unit_id="other-unit")
-        self.assertEqual(self.request(body=body, headers=headers).status_code, 409)
+        self.assertEqual(self.request(body=body, headers=headers).status_code, 404)
         self.assertEqual(len(self.state.approvals.list_for_tenant("demo-tenant")), 1)
 
     def test_changes_reason_survives_restart_and_is_returned_only_with_owned_approval(self):
@@ -228,7 +229,9 @@ class ApprovalReviewTests(BillingCreditHarness, unittest.TestCase):
         identity = self.request().json()["id"]
         before = len(self.state.audit.list_for_tenant("demo-tenant"))
         for reason in ("x" * 1001, chr(0xD800)):
-            result = self.decision(identity, "REQUEST_CHANGES", reason)
+            result = self.client.post("/approvals/" + identity + "/decision",
+                headers={**with_step_up(APPROVER), **unique_idem(), "Content-Type": "application/json"},
+                content=json.dumps({"decision": "REQUEST_CHANGES", "reason": reason}))
             self.assertEqual(result.status_code, 422, result.text)
         oversized = self.client.post("/approvals/" + identity + "/decision",
             headers={**with_step_up(APPROVER), **unique_idem(), "Content-Type": "application/json"},
