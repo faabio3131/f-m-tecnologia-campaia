@@ -3,7 +3,9 @@ import unittest
 from starlette.routing import Match
 
 from api.main import routes
-from api.routes_generated_creatives import _public
+from api.routes_generated_creatives import _public, _paginate_private_creatives
+from api.errors import ApiError
+from uuid import UUID
 
 
 class GeneratedCreativeReadContractTests(unittest.TestCase):
@@ -22,6 +24,29 @@ class GeneratedCreativeReadContractTests(unittest.TestCase):
         for forbidden in ("tenant_id", "business_unit_id", "sha256", "object_name",
                           "storage.googleapis.com", "storage_generation", "secret"):
             self.assertNotIn(forbidden, str(result))
+
+    def test_private_cursor_paginates_without_duplicates(self):
+        def row(n):
+            return {"identity": {"creative_id": str(UUID(int=n + 1))}}
+        records = [row(i) for i in reversed(range(105))]
+        first, more = _paginate_private_creatives(records, None)
+        self.assertEqual(len(first), 50)
+        self.assertTrue(more)
+        cursor = first[-1]["identity"]["creative_id"]
+        second, more = _paginate_private_creatives(records, cursor)
+        self.assertEqual(len(second), 50)
+        self.assertTrue(more)
+        third, more = _paginate_private_creatives(records, second[-1]["identity"]["creative_id"])
+        self.assertEqual(len(third), 5)
+        self.assertFalse(more)
+        combined = first + second + third
+        self.assertEqual(len({x["identity"]["creative_id"] for x in combined}), 105)
+
+    def test_cursor_must_belong_to_visible_campaign_scope(self):
+        records = [{"identity": {"creative_id": str(UUID(int=1))}}]
+        for cursor in ("not-a-uuid", str(UUID(int=2)), str(UUID(int=1)).upper()):
+            with self.subTest(cursor=cursor), self.assertRaises(ApiError):
+                _paginate_private_creatives(records, cursor)
 
     def test_image_mutation_is_explicitly_guarded_by_single_post_route(self):
         images = [r for r in routes if getattr(r, "path", "").startswith(
