@@ -2,6 +2,7 @@
 import base64
 from decimal import Decimal
 import json
+import os
 from pathlib import Path
 import unittest
 from types import SimpleNamespace
@@ -35,6 +36,8 @@ class SimImageProvider:
 class ImageApiSimulationTests(BillingCreditHarness, unittest.TestCase):
     def setUp(self):
         super().setUp()
+        # The explicit F3 internal cost ceiling is a test fixture, never a production default.
+        os.environ["CAMPAIA_IMAGE_MAX_COST_UNITS"] = "1"
         # Explicit contract snapshot: commercial action image = 15 credits for test.
         catalog_file = self.path.parent / "catalog.json"
         catalog = json.loads(catalog_file.read_text())
