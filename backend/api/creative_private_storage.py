@@ -11,6 +11,7 @@ from dataclasses import asdict
 from campaia_core.asset_storage import AssetStorageError, AssetStorageErrorCode as Code
 from campaia_core.creative_assets import (
     CreativeManifest, CreativeState, CreativeStateTransition, storage_manifest,
+    recovery_storage_manifest,
 )
 
 
@@ -51,6 +52,18 @@ class CreativePrivateStorage:
             return self._finalize(manifest, stored.generation)
         return self.reconcile(manifest, png)
 
+    def reconcile_after_restart(self, identity):
+        """Reload persisted manifest and observe private storage without in-memory image bytes."""
+        from campaia_core.creative_assets import CreativeIdentity
+        if not isinstance(identity, CreativeIdentity):
+            raise AssetStorageError(Code.INVALID)
+        current = self.repository.get(identity)
+        record = current["manifest"]
+        manifest = CreativeManifest(identity=identity, **{
+            k: v for k, v in record.items() if k != "identity"
+        })
+        return self.reconcile(manifest)
+
     def _finalize(self, manifest: CreativeManifest, generation: str):
         identity = manifest.identity
         current = self.repository.get(identity)
@@ -73,7 +86,7 @@ class CreativePrivateStorage:
                 raise
             return resolved
 
-    def reconcile(self, manifest: CreativeManifest, png: bytes):
+    def reconcile(self, manifest: CreativeManifest, png: bytes | None = None):
         """Unknown and missing are held pending; absence never proves safe redispatch."""
         self._outside_transaction()
         identity = manifest.identity
@@ -82,7 +95,8 @@ class CreativePrivateStorage:
             raise AssetStorageError(Code.CONFLICT)
         if current["state"] != CreativeState.STORAGE_PENDING.value:
             return current
-        expected = storage_manifest(manifest, png)
+        expected = (storage_manifest(manifest, png) if png is not None
+                    else recovery_storage_manifest(manifest))
         try:
             observed = self.storage.observe(expected)
         except AssetStorageError:
