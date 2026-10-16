@@ -1060,3 +1060,7 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - Criada rota GET `/campaigns/{campaignId}/images/{creativeId}/visual-preview/{channel}` (google/meta/whatsapp), exigindo permissão CAMPAIGN_VIEW, escopo tenant/unidade/campanha/versão e imagem STORED, servindo HTML same-origin com imagem privada e CSP restritiva. Layout é apenas **rascunho interno**, sem usar SDK ou dados oficiais dos canais, sem assumir preview de anúncio publicado.
 - Teste E2E simulado adicional verifica rotas para três canais, declaração inequívoca de rascunho, no-store, frame-ancestors none, acesso cross-tenant negado e canal inválido negado. A aprovação da revisão não concede por si só autorização de publicação.
 - PRs abertas conferidas: só #73, em Draft; não existe stack de PRs abertas a encerrar. A #73 permanece necessária para preservar trabalho em avaliação; **não fechar nem integrar com requisitos G7 ainda em PARTIAL**. A conclusão exige CI do HEAD novo, edição real de pixels com tratamento seguro e demais gates. Não executar merge/deploy sem decisão expressa.
+
+
+## G7 CI visual preview — 16/10/2026
+- Primeiro HEAD de prévias visuais `f21e525`: PostgreSQL integration PASS; Backend API FAIL porque teste de inventário estático esperava 10 rotas e 5 GETs, enquanto nova rota GET legítima elevou para 11 e 6. Ajustado o contrato explícito da rota, preservando contagem de 4 POST e 1 DELETE. Exige CI do HEAD exato antes de certificação.
