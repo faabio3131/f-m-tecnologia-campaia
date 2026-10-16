@@ -608,7 +608,9 @@ class AppState:
         if self.db is not None:
             from .ai_cost_store import PersistentAICostLedger
             previous_caps = dict(getattr(self.ai_gateway.ledger, 'caps', {}))
-            mode = 'SIMULATED' if isinstance(self.ai_provider, SimulatedAIProvider) else 'PROVIDER'
+            mode = ('SIMULATED' if isinstance(self.ai_provider, SimulatedAIProvider)
+                    and os.environ.get('GEMINI_IMAGE_ENABLED', 'false').strip().lower() != 'true'
+                    else 'PROVIDER')
             cost_ledger = PersistentAICostLedger(self, namespace=self.env + ':' + mode)
             self.ai_gateway.ledger = cost_ledger
             self.ai_gateway.cost_journal = cost_ledger
