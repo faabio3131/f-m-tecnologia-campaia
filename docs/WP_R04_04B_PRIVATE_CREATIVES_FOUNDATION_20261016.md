@@ -58,3 +58,13 @@ Run Backend, Frontend, F4 CI on exact PR head. Do not merge until evidence and d
 - Manifesto normalizado inclui MD5 canônico além de SHA-256, persistido na mesma transação F3 de claim; habilita reconstruir o AssetManifest esperado sem bytes originais no novo processo.
 - `reconcile_after_restart(identity)` lê manifesto persistente, executa apenas GET metadata via storage.observe e finaliza com geração imutável. Se ausência, erro ou MD5 ausente: não repete POST, mantém STORAGE_PENDING e quota.
 - Testes adicionados para nova conexão SQLite após reinício, confirmação de geração sem bytes e ausência de objeto sem postagem duplicada. Validação CI no novo HEAD obrigatória. Nenhuma ativação real GCS.
+
+
+## Implementação integrada API/Web + custo comercial — evidência atualizada
+- As descrições anteriores deste documento que diziam "sem POST/API/Web" estão SUPERSEDED pelos incrementos posteriores da PR #73. Não removem o histórico incremental.
+- Fluxo opt-in: BFF com autorização de tenant/unidade e versão da campanha → cotação/confirmação F5 → reservation idempotente F3 → AI Gateway/F3 cost journal (provider Gemini imagem habilitado explicitamente) → PNG normalizado → metadata+quota por tenant → storage privado GCS com fence de envio único → entrega e SETTLE F5 atômicos com auditoria.
+- Imagem disponibilizada apenas por GET autenticado, geração GCS pinada e cache privado. Web exibe inventário, confirmação comercial e recuperação de pendência; não publica campanha.
+- Reconciliação de upload incerto após reinício: observação de metadata imutável sem bytes em memória; transição STORED CAS e SETTLE F5 pela operação comercial persistida sem segundo POST.
+- Testes contra SIMULATOR explícito e banco persistente: happy path, replay, quota, cross-tenant, GET PNG, ACK de upload perdido, reconciliação e débito comercial único. Sem credenciais reais nem bucket de produção.
+- CI verde no commit `20acfe93248e26a4be74cf3b63ecfb6e5f8f8758`: Backend #410, Frontend #349 e F4 #244.
+- **Status PARTIAL:** após esse HEAD, nova alteração de UX/documentação exige CI; F7 G7 tem pendências de formatos por canal, edição/upload alternativo, políticas/preview, lifecycle/delete e governança de custos incertos. GCS/Gemini reais ficam EXTERNAL_INFRASTRUCTURE/EXTERNAL_CREDENTIAL até fase externa final.
