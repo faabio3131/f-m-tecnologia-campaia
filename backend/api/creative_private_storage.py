@@ -6,6 +6,8 @@ No route, provider activation, or commercial credit settlement.
 """
 from __future__ import annotations
 
+from dataclasses import asdict
+
 from campaia_core.asset_storage import AssetStorageError, AssetStorageErrorCode as Code
 from campaia_core.creative_assets import (
     CreativeManifest, CreativeState, CreativeStateTransition, storage_manifest,
@@ -27,8 +29,7 @@ class CreativePrivateStorage:
         self._outside_transaction()
         identity = manifest.identity
         current = self.repository.get(identity)
-        if current["manifest"]["sha256"] != manifest.sha256 or current["manifest"] != __import__(
-                "dataclasses", fromlist=["asdict"]).asdict(manifest):
+        if current["manifest"]["sha256"] != manifest.sha256 or current["manifest"] != asdict(manifest):
             raise AssetStorageError(Code.CONFLICT)
         if current["state"] == CreativeState.GENERATING.value:
             try:
@@ -37,7 +38,7 @@ class CreativePrivateStorage:
             except AssetStorageError as exc:
                 if exc.code != Code.CONFLICT:
                     raise
-                return self.reconcile(manifest)
+                return self.reconcile(manifest, png)
             # CAS committed. This caller is the ONLY writer allowed to dispatch.
             self._outside_transaction()
             try:
@@ -48,7 +49,7 @@ class CreativePrivateStorage:
             if stored.manifest != expected:
                 raise AssetStorageError(Code.INTEGRITY)
             return self._finalize(manifest, stored.generation)
-        return self.reconcile(manifest)
+        return self.reconcile(manifest, png)
 
     def _finalize(self, manifest: CreativeManifest, generation: str):
         identity = manifest.identity
@@ -72,22 +73,23 @@ class CreativePrivateStorage:
                 raise
             return resolved
 
-    def reconcile(self, manifest: CreativeManifest):
+    def reconcile(self, manifest: CreativeManifest, png: bytes):
         """Unknown and missing are held pending; absence never proves safe redispatch."""
         self._outside_transaction()
         identity = manifest.identity
         current = self.repository.get(identity)
-        from dataclasses import asdict
         if current["manifest"] != asdict(manifest):
             raise AssetStorageError(Code.CONFLICT)
         if current["state"] != CreativeState.STORAGE_PENDING.value:
             return current
-        # GCS observes expected object path + immutable metadata without needing PNG bytes.
-        from campaia_core.creative_assets import CreativeStorageIdentity
-        from campaia_core.asset_storage import AssetManifest
-        import base64
-        # MD5 is not stored in creative manifest: it cannot be derived from SHA-256.
-        # Fetching bytes would be unsafe without a generation pin. No blind GCS read.
-        # Dispatch success can finalize immediately; uncertain dispatch remains pending
-        # until a separate authorized recovery process obtains the original PNG bytes.
-        return current
+        expected = storage_manifest(manifest, png)
+        try:
+            observed = self.storage.observe(expected)
+        except AssetStorageError:
+            return current
+        if observed is None:
+            # No proof that an unknown POST did not commit. Hold quota and state.
+            return current
+        if observed.manifest != expected:
+            raise AssetStorageError(Code.INTEGRITY)
+        return self._finalize(manifest, observed.generation)
