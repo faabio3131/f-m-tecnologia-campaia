@@ -13,7 +13,7 @@ from PIL import Image, PngImagePlugin
 
 from campaia_core.asset_images import (
     AssetImageError, MAX_DIMENSION, MAX_PIXELS, _bounded_exchange,
-    normalize_asset_image, verify_normalized_png,
+    normalize_asset_image, verify_normalized_png, edit_normalized_png,
 )
 from campaia_core.asset_storage import MAX_ASSET_BYTES, PNG_SIGNATURE
 
@@ -41,6 +41,19 @@ class AssetImageTests(unittest.TestCase):
                     result.load()
                     self.assertEqual(result.mode, "RGB")
                     self.assertEqual(result.info, {})
+
+    def test_deterministic_pixel_edits_are_isolated_and_do_not_change_original(self):
+        original = normalize_asset_image(encoded())
+        for operation, size in (("rotate_90", (2, 3)),
+                                ("rotate_180", (3, 2)),
+                                ("flip_horizontal", (3, 2))):
+            with self.subTest(operation=operation):
+                edited = edit_normalized_png(original.data, operation)
+                self.assertEqual((edited.width, edited.height), size)
+                self.assertEqual(verify_normalized_png(edited.data), edited)
+        self.assertEqual((original.width, original.height), (3, 2))
+        with self.assertRaises(AssetImageError):
+            edit_normalized_png(original.data, "arbitrary")
 
     def test_png_transparency_preserved_without_metadata(self):
         metadata = PngImagePlugin.PngInfo()
