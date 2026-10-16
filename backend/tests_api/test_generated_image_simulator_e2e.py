@@ -107,5 +107,41 @@ class ImageApiSimulationTests(BillingCreditHarness, unittest.TestCase):
             delivered.json()["content_url"].removeprefix("/api/campaia"), headers=OTHER_OWNER).status_code, 404)
 
 
+    def test_uncertain_gcs_result_recovers_with_one_credit_settlement_and_no_second_post(self):
+        from campaia_core.asset_storage import AssetStorageError, AssetStorageErrorCode as Code
+        quote = self.client.get(self.base + "/quote", headers=OWNER).json()
+        version = self.state.campaigns.get("demo-tenant", self.campaign).plan_version
+        body = {"expected_plan_version": version, "prompt": "Produto visual em fundo neutro",
+                "credit_confirmation": {field: quote[field] for field in
+                    ("cycle_id", "policy_version", "credits", "extra_amount")}}
+        initial = self.usage().json()["balance"]
+        original = self.storage.upload_once
+        def lost_ack(*args, **kwargs):
+            original(*args, **kwargs)
+            raise AssetStorageError(Code.UNCERTAIN)
+        self.storage.upload_once = lost_ack
+        sent = self.client.post(self.base, headers={**OWNER, **unique_idem()}, json=body)
+        self.assertEqual(sent.status_code, 503, sent.text)
+        self.assertEqual(sent.json()["code"], "AI_OPERATION_PENDING")
+        self.assertEqual(self.storage.calls.count("POST"), 1)
+        inventory = self.client.get(self.base, headers=OWNER).json()
+        self.assertEqual(inventory["items"][0]["state"], "STORAGE_PENDING")
+        candidate = inventory["items"][0]["id"]
+        repaired = self.client.post(self.base + "/" + candidate + "/reconcile",
+            headers={**OWNER, **unique_idem()})
+        self.assertEqual(repaired.status_code, 200, repaired.text)
+        self.assertTrue(repaired.json()["available"])
+        self.assertEqual(self.storage.calls.count("POST"), 1)
+        self.assertEqual(self.fake.calls, 1)
+        after = self.usage().json()["balance"]
+        self.assertEqual(after["consumed_credits"] - initial["consumed_credits"], 15)
+        self.assertEqual(after["reserved_credits"], initial["reserved_credits"])
+        again = self.client.post(self.base + "/" + candidate + "/reconcile",
+            headers={**OWNER, **unique_idem()})
+        self.assertEqual(again.status_code, 200, again.text)
+        self.assertEqual(self.usage().json()["balance"]["consumed_credits"], after["consumed_credits"])
+        self.assertEqual(self.storage.calls.count("POST"), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
