@@ -21,7 +21,7 @@ from .creative_proposals import (
 from .deps import require_auth, require_idempotency_key, build_domain_principal
 from .errors import ApiError
 from .metered_execution import commercial_subscription, execute_metered, quote_action
-from .models import CopyProposalInput, AudienceProposalInput, CopyProposalOutput, AudienceProposalOutput
+from .models import CopyProposalInput, AudienceProposalInput, CopyRevisionInput, CopyProposalOutput, AudienceProposalOutput
 from .routes_campaigns import _authorize, _get_campaign_or_404
 from .unmetered_execution import execute_unmetered
 
@@ -30,7 +30,7 @@ _TASKS = {"copy": AITask.GENERATE_COPY, "audience": AITask.PROPOSE_AUDIENCE}
 
 def _owned(request, permission):
     fixture, state, principal = _authorize(request, permission)
-    kind = request.path_params["proposalKind"]
+    kind = request.path_params.get("proposalKind", "copy")
     if kind not in _TASKS:
         raise ApiError("NOT_FOUND", "Proposta indisponível.", status_code=404)
     record = _get_campaign_or_404(state, fixture.tenant_id, request.path_params["campaignId"], principal=principal)
@@ -173,14 +173,20 @@ async def quote_creative_proposal(request):
     _available(state, kind)
     _require_billing_mode(state, fixture.tenant_id)
     require_brand_assets(state, record)
-    result = quote_action(state, fixture.tenant_id, kind)
-    return JSONResponse({**result, "kind": kind, "max_variants": 5 if kind == "copy" else None},
+    source_id = request.path_params.get("proposalId")
+    if source_id:
+        require_editable(record, record.plan_version)
+        state.creative_proposals.revision_source(fixture.tenant_id, record, source_id)
+    result = quote_action(state, fixture.tenant_id, "revision" if source_id else kind)
+    return JSONResponse({**result, "kind": kind, "max_variants": 1 if source_id else 5 if kind == "copy" else None},
                         headers={"Cache-Control": "private, no-store"})
 
 
 async def generate_creative_proposal(request):
     fixture, state, _principal, record, kind = _owned(request, Permission.CAMPAIGN_EDIT)
     nonce = require_idempotency_key(request)
+    source_id = request.path_params.get("proposalId")
+    action = "revision" if source_id else kind
     _available(state, kind)
     _require_billing_mode(state, fixture.tenant_id)
     if not state.proposal_rate_limiter.allow(fixture.tenant_id, now=datetime.now(timezone.utc)):
@@ -188,14 +194,19 @@ async def generate_creative_proposal(request):
     if not state.proposal_slots.acquire(blocking=False):
         raise ApiError("AI_BUSY", "Há outras propostas em geração. Tente novamente.", status_code=429)
     try:
-        body = await _proposal_body(request, CopyProposalInput if kind == "copy" else AudienceProposalInput)
+        body = await _proposal_body(request, CopyRevisionInput if source_id else CopyProposalInput if kind == "copy" else AudienceProposalInput)
         identity = {"campaign_id": record.campaign_id, "kind": kind,
                     "request": body.model_dump(mode="json", exclude={"credit_confirmation"})}
+        if source_id:
+            identity["revision_of"] = source_id
         captured = {}
         def snapshot():
             current = _fresh(request, fixture, state)
             require_editable(current, body.expected_plan_version)
             require_brand_assets(state, current)
+            if source_id:
+                state.creative_proposals.revision_source(fixture.tenant_id, current, source_id,
+                                                        channel=body.channel, index=body.variant_index)
             return source_digest(current), current.plan_version
 
         def generate():
@@ -205,11 +216,29 @@ async def generate_creative_proposal(request):
                 current = _fresh(request, fixture, state)
                 require_editable(current, body.expected_plan_version)
                 require_brand_assets(state, current)
-                summary, context = _inputs(current, kind, body)
+                effective = body
+                if source_id:
+                    parent = state.creative_proposals.revision_source(fixture.tenant_id, current, source_id,
+                                                                     channel=body.channel, index=body.variant_index)
+                    effective = CopyProposalInput(expected_plan_version=body.expected_plan_version,
+                        channel=body.channel, offer=parent["request_summary"]["offer"],
+                        tone=parent["request_summary"]["tone"], variants=1)
+                summary, context = _inputs(current, kind, effective)
+                if source_id:
+                    context["revisao"] = {"texto_original": parent["output"]["variacoes"][body.variant_index],
+                                         "instrucoes": body.instructions}
+                    # One new text replaces exactly one index; the other delivered variants are frozen.
+                    summary.update(variants=len(parent["output"]["variacoes"]), revision_of=source_id,
+                                   variant_index=body.variant_index, instructions=body.instructions)
+                    captured["original_variants"] = deepcopy(parent["output"]["variacoes"])
+                    try:
+                        json.dumps(context, ensure_ascii=False, allow_nan=False).encode("utf-8")
+                    except (ValueError, TypeError, UnicodeError):
+                        raise ApiError("AI_CONTEXT_MISSING", "Confira as instruções antes de gerar.", status_code=422) from None
                 captured.update(source=source_digest(current), summary=deepcopy(summary))
             # Claim/reservation and capture have committed; agent/provider owns no DB lock.
             proposal = state.agent_runner.run(kind, tenant_id=fixture.tenant_id, context=context)
-            return proposal, _validated_output(kind, proposal, body, fixture.tenant_id)
+            return proposal, _validated_output(kind, proposal, effective, fixture.tenant_id)
 
         def deliver(generated):
             current = _fresh(request, fixture, state)
@@ -218,6 +247,15 @@ async def generate_creative_proposal(request):
             if source_digest(current) != captured["source"]:
                 raise ApiError("AI_INPUT_CHANGED", "O contexto mudou durante a geração; entrega descartada.", status_code=409)
             proposal, output = generated
+            if source_id:
+                state.creative_proposals.revision_source(fixture.tenant_id, current, source_id,
+                                                        channel=body.channel, index=body.variant_index)
+                revised = output["variacoes"][0]
+                if revised == captured["original_variants"][body.variant_index]:
+                    raise ApiError("AI_OUTPUT_UNCHANGED", "A geração não alterou o texto escolhido; não houve consumo.", status_code=422)
+                combined = deepcopy(captured["original_variants"])
+                combined[body.variant_index] = revised
+                output = {"variacoes": combined}
             invalidate_review(current)
             row = state.creative_proposals.append(fixture, current, kind, output, captured["summary"], proposal)
             state.audit.append(tenant_id=fixture.tenant_id, actor=fixture.user_id,
@@ -227,12 +265,12 @@ async def generate_creative_proposal(request):
             return serialize_proposal(row, current_source=source_digest(current))
 
         def execute():
-            key = "creative:" + kind + ":" + record.campaign_id + ":" + nonce
+            key = "creative:" + action + ":" + record.campaign_id + ":" + (source_id + ":" if source_id else "") + nonce
             if commercial_subscription(state, fixture.tenant_id) is not None:
                 confirmation = body.credit_confirmation.model_dump(mode="json") if body.credit_confirmation else None
-                return execute_metered(state, fixture, "http:" + key, identity, confirmation, kind, generate, deliver)
+                return execute_metered(state, fixture, "http:" + key, identity, confirmation, action, generate, deliver)
             return execute_unmetered(state, fixture, key, record.campaign_id, snapshot, generate, deliver,
-                                     namespace=kind, request_identity=identity)
+                                     namespace=action, request_identity=identity)
         result = await run_in_threadpool(execute)
         return JSONResponse(result, status_code=201, headers={"Cache-Control": "private, no-store"})
     finally:

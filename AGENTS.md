@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@89a1063e056b230c3223aad272338da4fa7a0921`
+**CURRENT confirmado:** `main@2992cb61099ab32398297b270836fd62acea1cca`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -426,14 +426,18 @@ Sem seleção automática, visão multimodal ou uso visual fictício do logo.
 ### Já existe
 AIGateway, Gemini real, agentes copy/audience/policy/performance/strategist, Policy Engine e approvals.
 
-WP-R04-01 em validação: propostas textuais de copy/audience com versão, histórico privado,
+WP-R04-01 / PR #69 integrada, CI da PR e pós-merge verdes: propostas textuais de copy/audience com versão, histórico privado,
 quote/confirmação comercial, entrega atômica e invalidação das aprovações anteriores.
 Migração 009 somente em fonte/CI. Propostas não certificam qualidade, targeting real,
 imagem, preview de plataforma nem publicação real. Ver
 `docs/WP_R04_01_PROPOSTAS_COPY_AUDIENCE_20261016.md`.
 
 ### Falta
-- concluir copy/audience API/Web e ligar policy/performance ao fluxo API/Web;
+WP-R04-02 em validação: ajuste seletivo de uma variação por 1 crédito configurado,
+lote anterior imutável e versão/validação/aprovação renovadas. Ver
+`docs/WP_R04_02_REVISAO_SELETIVA_COPY_20261016.md`.
+
+- ligar policy/performance ao fluxo API/Web;
 - completar creative asset model;
 - geração de imagem real;
 - armazenar criativos no storage do tenant;

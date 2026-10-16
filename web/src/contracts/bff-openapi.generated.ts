@@ -1258,6 +1258,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/campaigns/{campaignId}/proposals/copy/{proposalId}/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reviseCopyProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/campaigns/{campaignId}/proposals/copy/{proposalId}/revisions/quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["quoteCopyRevision"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1397,6 +1429,14 @@ export interface components {
             policy_version: string;
             credits: number;
             extra_amount: string;
+        };
+        CopyRevisionInput: {
+            expected_plan_version: number;
+            /** @enum {string} */
+            channel: "GOOGLE_ADS" | "META_ADS" | "META_FACEBOOK" | "META_INSTAGRAM" | "WHATSAPP";
+            variant_index: number;
+            instructions: string;
+            credit_confirmation?: components["schemas"]["CreditConfirmation"];
         };
         CopyProposalInput: {
             expected_plan_version: number;
@@ -5439,6 +5479,72 @@ export interface operations {
                     "application/json": components["schemas"]["CreativeProposalQuote"];
                 };
             };
+            409: components["responses"]["InvalidState"];
+        };
+    };
+    reviseCopyProposal: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                campaignId: components["parameters"]["CampaignId"];
+                proposalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CopyRevisionInput"];
+            };
+        };
+        responses: {
+            /** @description Nova versao do lote com apenas um texto substituido */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeProposal"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["InvalidState"];
+            422: components["responses"]["ValidationError"];
+            /** @description Operacao indisponivel ou incerta sem redispatch */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    quoteCopyRevision: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaignId: components["parameters"]["CampaignId"];
+                proposalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Consumo para revisar somente uma variacao existente */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeProposalQuote"];
+                };
+            };
+            404: components["responses"]["NotFound"];
             409: components["responses"]["InvalidState"];
         };
     };

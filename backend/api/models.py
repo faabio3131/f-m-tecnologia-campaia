@@ -359,6 +359,11 @@ class CopyProposalInput(CreativeProposalInput):
     variants: int = Field(default=5, ge=1, le=5, strict=True)
 
 
+class CopyRevisionInput(CreativeProposalInput):
+    variant_index: int = Field(ge=0, le=4, strict=True)
+    instructions: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
+
+
 class AudienceProposalInput(CreativeProposalInput):
     audience: str = Field(default="", max_length=2000)
     region: str = Field(default="", max_length=120)

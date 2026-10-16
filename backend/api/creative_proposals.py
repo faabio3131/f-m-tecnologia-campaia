@@ -64,6 +64,19 @@ class CreativeProposalRepository:
         return next(iter(sorted((row for row in self._rows(tenant, campaign, kind)
                     if row["source_digest"] == digest), key=lambda row: row["version"], reverse=True)), None)
 
+    def revision_source(self, tenant, record, identity, *, channel=None, index=None):
+        row = self.table.get_for_tenant(identity, tenant)
+        if row is None or row["campaign_id"] != record.campaign_id or row["kind"] != "copy":
+            raise ApiError("NOT_FOUND", "Texto indisponível.", status_code=404)
+        latest = self.latest(tenant, record.campaign_id, "copy", source_digest(record))
+        if latest is None or latest["id"] != identity:
+            raise ApiError("PROPOSAL_STALE", "Escolha a versão mais recente dos textos desta estratégia.", status_code=409)
+        if channel is not None and row["request_summary"]["channel"] != channel:
+            raise ApiError("VALIDATION_FAILED", "A revisão deve preservar o canal do texto original.", status_code=422)
+        if index is not None and index >= len(row["output"]["variacoes"]):
+            raise ApiError("VALIDATION_FAILED", "Escolha uma variação existente.", status_code=422)
+        return row
+
     def append(self, fixture, record, kind, output, summary, proposal):
         if not self.table._database.in_transaction:
             raise RuntimeError("A proposal delivery requires an active F3 transaction.")
