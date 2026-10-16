@@ -368,3 +368,58 @@ async def read_generated_creative_content(request):
         "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
         "Content-Security-Policy": "default-src 'none'; sandbox",
     })
+
+async def decide_generated_creative_review(request):
+    """Only a freshly stepped-up, authorized independent reviewer can decide."""
+    from uuid import UUID
+    from pydantic import BaseModel, ConfigDict
+    from .deps import require_idempotency_key, require_step_up, build_domain_principal
+    from .bounded_body import parse_bounded_body
+    from .creative_image_review import CreativeImageReviewStore, ReviewDecision
+    from campaia_core.creative_assets import CreativeIdentity
+    from campaia_core.asset_storage import AssetStorageError
+
+    class ImageReviewInput(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        decision: ReviewDecision
+        expected_sha256: str
+        expected_generation: str
+
+    fixture, state, campaign, repository = _scope(request, Permission.APPROVAL_DECIDE)
+    require_step_up(request, fixture)
+    require_idempotency_key(request)
+    body = await parse_bounded_body(request, ImageReviewInput, max_bytes=2048)
+    try:
+        creative_id = str(UUID(request.path_params["creativeId"]))
+    except (ValueError, TypeError):
+        raise ApiError("NOT_FOUND", "Criativo indisponível.", status_code=404) from None
+    row = repository.table.get_for_tenant(creative_id, fixture.tenant_id)
+    if (row is None or row["identity"]["campaign_id"] != campaign.campaign_id
+            or row["identity"]["business_unit_id"] != campaign.business_unit_id
+            or row["identity"]["campaign_version"] != campaign.plan_version):
+        raise ApiError("NOT_FOUND", "Criativo indisponível.", status_code=404)
+    # Reviewer must be distinct from the verified generator actor. Older assets
+    # without server-persisted authorship cannot be safely approved.
+    requester_id = row.get("requested_by")
+    if not requester_id:
+        raise ApiError("REVIEW_ORIGIN_UNAVAILABLE", "Autoria não comprovada.", status_code=409)
+    principal = build_domain_principal(request, state, fixture)
+    resource = Resource(tenant_id=fixture.tenant_id, business_unit_id=campaign.business_unit_id,
+                        resource_id=creative_id, created_by=requester_id)
+    from campaia_core.permissions import can_approve
+    decision = can_approve(principal, resource, now=datetime.now(timezone.utc),
+                           requester_id=requester_id, already_decided_by=frozenset(), amount=None)
+    if not decision.allowed:
+        raise ApiError(decision.code.value, decision.reason)
+    identity = CreativeIdentity(**row["identity"])
+    try:
+        record, replayed = CreativeImageReviewStore(state).decide(
+            identity, reviewer_id=fixture.user_id, requester_id=requester_id,
+            decision=body.decision, expected_sha256=body.expected_sha256,
+            expected_generation=body.expected_generation)
+    except AssetStorageError:
+        raise ApiError("REVIEW_CONFLICT", "Decisão incompatível com a versão da imagem.", status_code=409) from None
+    return JSONResponse({"decision": record["decision"], "reviewer_id": record["reviewer_id"],
+                         "replayed": replayed}, headers={"Cache-Control": "private, no-store"})
+
+
