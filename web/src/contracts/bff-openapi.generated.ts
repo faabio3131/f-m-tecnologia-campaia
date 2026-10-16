@@ -1866,6 +1866,7 @@ export interface components {
         Campaign: {
             brief?: {
                 brand_snapshot_v1?: components["schemas"]["CampaignBrandSnapshot"];
+            } & {
                 [key: string]: unknown;
             };
             /** Format: uuid */

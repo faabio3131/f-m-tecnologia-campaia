@@ -40,6 +40,7 @@ export function CampaignBrandSelector({ value, onChange, disabled }: {
   }, [identity]);
   useEffect(() => { loadAssets(); }, [loadAssets]);
   function choose(identity: string) {
+    epoch.current++;
     setError(null); setAssets([]); setCursor(null);
     const profile = profiles.find(item => item.id === identity);
     onChange(profile && profile.id ? { brand_profile_id: profile.id, expected_version: profile.version ?? 1, asset_ids: [] } : null);
