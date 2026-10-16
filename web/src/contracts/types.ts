@@ -52,3 +52,7 @@ export type BrandProfileUpdate = components["schemas"]["BrandProfileUpdate"];
 
 export type BrandAsset = components["schemas"]["BrandAsset"];
 export type BrandAssetPage = components["schemas"]["BrandAssetPage"];
+
+export type BrandSelectionInput = components["schemas"]["BrandSelectionInput"];
+export type BriefInput = components["schemas"]["BriefInput"];
+export type CampaignBrandSnapshot = components["schemas"]["CampaignBrandSnapshot"];

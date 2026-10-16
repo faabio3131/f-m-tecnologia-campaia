@@ -295,7 +295,7 @@ test.describe("Protocolo de sessao real", () => {
 
   test("L. WP-04 real: Brand Kit e Conexao completos via UI, backend real", async ({ page }) => {
     await page.goto("/login");
-    await loginViaTestHarness(page, TENANT_A_TESTID);
+    const { body: brandLoginBody } = await loginViaTestHarness(page, TENANT_A_TESTID);
     await expect(page).toHaveURL(/\/dashboard/);
 
     // Brand Kit: cria um real via UI, backend real persiste. Nao assume lista vazia --
@@ -304,6 +304,7 @@ test.describe("Protocolo de sessao real", () => {
     await page.goto("/brand-kit");
     await page.getByLabel("Nome").fill("Marca E2E");
     await page.getByLabel("Tom de voz").fill("inspirador");
+    await page.getByLabel(/Restrições de comunicação/).fill("Evite promessas de retorno garantido.");
     const createResponsePromise = page.waitForResponse(
       (r) => r.url().endsWith("/brand-profiles") && r.request().method() === "POST",
     );
@@ -371,6 +372,43 @@ test.describe("Protocolo de sessao real", () => {
     expect(foreign.status()).toBe(404);
     await contextAssetB.close();
 
+
+    const briefPage = await page.context().newPage();
+    await briefPage.goto("/campaigns");
+    await briefPage.getByRole("button", { name: "Escolher Brand Kit", exact: true }).click();
+    await expect(briefPage.getByRole("option", { name: "Marca E2E · versão 2", exact: true }).last()).toBeAttached();
+    await briefPage.getByLabel("Brand Kit da campanha").selectOption(createdBrand.id);
+    await briefPage.getByRole("checkbox").check();
+    await briefPage.getByLabel("Objetivo", { exact: true }).fill("Campanha com marca registrada E2E");
+    const briefPromise = briefPage.waitForResponse(response => response.url().endsWith("/briefs") && response.request().method() === "POST");
+    await briefPage.getByRole("button", { name: "Enviar briefing", exact: true }).click();
+    const briefResponse = await briefPromise;
+    expect(briefResponse.status()).toBe(202);
+    const brandedCampaign = await briefResponse.json();
+    expect(brandedCampaign.brief.brand_snapshot_v1.profile.version).toBe(2);
+    expect(brandedCampaign.brief.brand_snapshot_v1.assets.map((asset: { id: string }) => asset.id)).toEqual([uploaded.id]);
+    const changedBrand = await page.request.put('/api/campaia/brand-profiles/' + createdBrand.id, {
+      headers: { ...(await sessionCookieHeader(page)), "x-csrf-token": brandLoginBody.csrf_token,
+        "idempotency-key": "e2e-brand-edit-after-brief-" + createdBrand.id },
+      data: { name: createdBrand.name, tone: "editado depois do briefing", colors: [],
+        differentiators: [], restrictions: ["Evite promessas de retorno garantido."], expected_version: 2 },
+    });
+    expect(changedBrand.status()).toBe(200);
+    await briefPage.goto('/campaigns/' + brandedCampaign.id);
+    const frozenBrand = briefPage.getByRole("region", { name: "Marca registrada nesta campanha" });
+    await expect(frozenBrand.getByText("Marca E2E · versão 2", { exact: true })).toBeVisible();
+    await expect(frozenBrand.getByText("Tom de voz: direto", { exact: true })).toBeVisible();
+    await expect(frozenBrand.getByText("Evite promessas de retorno garantido.", { exact: true })).toBeVisible();
+    const strategyPromise = briefPage.waitForResponse(response => response.url().endsWith("/plan/regenerate") && response.request().method() === "POST");
+    await briefPage.getByRole("button", { name: "Gerar estratégia", exact: true }).click();
+    expect((await strategyPromise).status()).toBe(202);
+    const policyPromise = briefPage.waitForResponse(response => response.url().endsWith("/validate") && response.request().method() === "POST");
+    await briefPage.getByRole("button", { name: "Validar campanha", exact: true }).click();
+    const brandDecision = await (await policyPromise).json();
+    expect(brandDecision.requires_human_approval).toBe(true);
+    expect(brandDecision.findings.map((finding: { code: string }) => finding.code)).toContain("BRAND_GUIDANCE_REVIEW_REQUIRED");
+    await briefPage.close();
+
     const assetUrl = '/api/campaia/brand-profiles/' + createdBrand.id + '/assets/' + uploaded.id;
     const withoutCsrf = await page.request.delete(assetUrl, {
       headers: { ...(await sessionCookieHeader(page)), "idempotency-key": "e2e-asset-no-csrf-0001" },
@@ -384,6 +422,13 @@ test.describe("Protocolo de sessao real", () => {
     await expect(assetsPanel.getByText("Nenhum arquivo registrado.")).toBeVisible();
     const removed = await page.request.get(uploaded.content_url, { headers: await sessionCookieHeader(page) });
     expect(removed.status()).toBe(404);
+    const blockedStrategy = await page.request.post('/api/campaia/campaigns/' + brandedCampaign.id + '/plan/regenerate', {
+      headers: { ...(await sessionCookieHeader(page)), "x-csrf-token": brandLoginBody.csrf_token,
+        "idempotency-key": "e2e-brand-removed-plan-" + brandedCampaign.id }, data: {},
+    });
+    expect(blockedStrategy.status()).toBe(409);
+    expect((await blockedStrategy.json()).code).toBe("BRAND_ASSET_UNAVAILABLE");
+
 
     // Conexoes: fecha o ciclo real start -> callback -> Connection persistida.
     await page.goto("/connections");

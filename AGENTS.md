@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@45a1ad6fd838d579ad7f1b094a13014eacefb550`
+**CURRENT confirmado:** `main@c1a1271866d8b6bd40858f840e691b86f43e310b`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -242,9 +242,11 @@ No CURRENT:
 - não existe adapter real Google Ads/Meta/WhatsApp em `campaia_core`;
 - Insights devolve `points=[]` honestamente;
 - optimizer/pacing/reconciliation existem, mas não estão ligados a métricas externas reais;
-- Brand Kit ainda não possui upload/assets completos;
+- Brand Kit tem edição/histórico (PR #64) e assets privados API/Web (PRs #65–#67) com CI/pós-merge verdes;
+  GCS/ADC/runtimes reais e aplicação explícita ao pipeline ainda são deltas, sem nova infraestrutura;
 - fluxo de criativos/imagem/preview ainda não está completo;
-- Billing Web inicial e histórico/fatura hospedada integrados nas PRs #45/#46; entrada inicial/trial integrados na PR #47; consumo e checkout completo pendentes;
+- Billing Web/consumo/checkout revisado/encerramento/garantia/emissão/avisos e evidência interna de custos integrados nas PRs #45–#63;
+  ativação do catálogo, custos reais/jurídico, jobs e pagamento externo ainda pendentes; não refazer as superfícies;
 - Premium final ainda não foi executado;
 - G18/G19/G20 ainda não ocorreram.
 
@@ -397,17 +399,22 @@ AppState ou UI; nenhuma ativação ou chamada real. Ver
 WP-R03-02B / PR #66 integrada, CI da PR e pós-merge verdes: decoder de imagem em processo restrito, formatos estáticos
 PNG/JPEG/WebP, normalização sem metadados e envelope de saída verificado pelo pai.
 Sem ativação real. Ver `docs/WP_R03_02B_VALIDACAO_ISOLADA_IMAGENS_20261016.md`.
-WP-R03-02C em validação: assets privados com API/Web, quota por organização, fence de
+WP-R03-02C / PR #67 integrada, CI da PR e pós-merge verdes: assets privados com API/Web, quota por organização, fence de
 upload/delete, normalização isolada e metadata persistente. Migração 008 somente em
 fonte/CI; default desabilitado. E2E usa armazenamento SIMULATOR explícito, não prova GCS
 real. Ver `docs/WP_R03_02C_ASSETS_PRIVADOS_API_WEB_20261016.md`.
 
+WP-R03-03 em validação: seleção explícita de Brand Kit/versão/assets no briefing,
+snapshot persistente e contexto da estratégia, revisão humana para orientação em texto
+e bloqueio de arquivo removido. Ver `docs/WP_R03_03_MARCA_SELECIONADA_PIPELINE_20261016.md`.
+Sem seleção automática, visão multimodal ou uso visual fictício do logo.
+
 ### Falta
-- upload real de logo/assets;
-- metadata e private/signed access;
-- isolamento cross-tenant dos objetos;
-- lifecycle/delete/retenção;
-- aplicar Brand Kit selecionado ao pipeline de campanha/IA.
+- homologação GCS/ADC/worker em runtime real para upload de logo/assets;
+- confirmar metadata e acesso privado no GCS real (fluxo fonte/CI já integrado);
+- confirmar isolamento dos objetos no GCS real (API/CI já cobertos);
+- confirmar lifecycle/delete real e política jurídica de retenção;
+- concluir validação da seleção/snapshot/contexto e fechar aplicação visual nos criativos F7.
 
 **Não reprovisionar Cloud Storage sem drift comprovado.**
 

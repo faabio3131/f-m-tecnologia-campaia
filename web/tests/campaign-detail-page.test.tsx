@@ -3,6 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setCsrfToken } from "@/lib/api/client";
 
+vi.mock("@/providers/AuthProvider", () => ({ useAuth: () => ({
+  session: { tenant_id: "a", user_id: "owner" }, me: { business_unit_id: "bu-1" },
+}) }));
 vi.mock("next/navigation", () => ({
   useParams: () => ({ campaignId: "camp-1" }),
 }));

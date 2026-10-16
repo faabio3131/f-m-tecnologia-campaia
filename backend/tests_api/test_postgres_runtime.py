@@ -817,6 +817,61 @@ class PostgresRuntimeTests(unittest.TestCase):
                 revoked.result(timeout=10)
             self.assertIsNone(a.sessions.get(candidate.session_id))
 
+    def test_campaign_brand_snapshot_survives_other_worker_edits_and_restart(self):
+        from starlette.testclient import TestClient
+        from tests_api.test_brand_versions import BODY
+        from tests_api.test_campaign_brand import BRIEF
+        from tests_api.test_helpers import OWNER, OTHER_OWNER, unique_idem
+        a = TestClient(create_app(database_url=DSN, env="test"))
+        b = TestClient(create_app(database_url=DSN, env="test"))
+        self.addCleanup(a.app.state.campaia.db.close)
+        self.addCleanup(b.app.state.campaia.db.close)
+        profile = a.post("/brand-profiles", headers={**OWNER, **unique_idem()}, json=BODY).json()
+        selection = {"brand_profile_id": profile["id"], "expected_version": 1, "asset_ids": []}
+        headers = {**OWNER, **unique_idem()}
+        body = {**BRIEF, "brand_selection": selection}
+        created = a.post("/briefs", headers=headers, json=body)
+        self.assertEqual(created.status_code, 202, created.text)
+        snapshot = created.json()["brief"]["brand_snapshot_v1"]
+        self.assertEqual(snapshot["profile"], profile)
+        self.assertEqual(b.put("/brand-profiles/" + profile["id"], headers={**OWNER, **unique_idem()},
+            json={**BODY, "expected_version": 1, "tone": "novo tom"}).status_code, 200)
+        self.assertEqual(b.post("/briefs", headers=headers, json=body).json(), created.json())
+        current = b.get("/campaigns/" + created.json()["id"], headers=OWNER)
+        self.assertEqual(current.json()["brief"]["brand_snapshot_v1"], snapshot)
+        self.assertEqual(b.get("/campaigns/" + created.json()["id"], headers=OTHER_OWNER).status_code, 404)
+        self.assertEqual(b.post("/briefs", headers={**OWNER, **unique_idem()}, json=body).status_code, 409)
+
+    def test_campaign_brand_selection_serializes_with_concurrent_profile_edit(self):
+        from starlette.testclient import TestClient
+        from tests_api.test_brand_versions import BODY
+        from tests_api.test_campaign_brand import BRIEF
+        from tests_api.test_helpers import OWNER, unique_idem
+        a = TestClient(create_app(database_url=DSN, env="test"))
+        b = TestClient(create_app(database_url=DSN, env="test"))
+        self.addCleanup(a.app.state.campaia.db.close)
+        self.addCleanup(b.app.state.campaia.db.close)
+        profile = a.post("/brand-profiles", headers={**OWNER, **unique_idem()}, json=BODY).json()
+        gate = threading.Barrier(2)
+        def create():
+            gate.wait()
+            return a.post("/briefs", headers={**OWNER, **unique_idem()}, json={
+                **BRIEF, "brand_selection": {"brand_profile_id": profile["id"], "expected_version": 1}})
+        def edit():
+            gate.wait()
+            return b.put("/brand-profiles/" + profile["id"], headers={**OWNER, **unique_idem()},
+                json={**BODY, "expected_version": 1, "tone": "concorrente"})
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            created, edited = pool.submit(create), pool.submit(edit)
+            result, changed = created.result(timeout=10), edited.result(timeout=10)
+        self.assertEqual(changed.status_code, 200, changed.text)
+        self.assertIn(result.status_code, (202, 409), result.text)
+        if result.status_code == 202:
+            self.assertEqual(result.json()["brief"]["brand_snapshot_v1"]["profile"], profile)
+        else:
+            self.assertEqual(result.json()["code"], "BRAND_VERSION_CHANGED")
+            self.assertEqual(a.app.state.campaia.campaigns.list_for_tenant("demo-tenant"), [])
+
     def test_00_migration_up_down_up_is_reversible_and_covers_current_stores(self) -> None:
         self.assertEqual(
             set(self.runner.applied_versions()),
