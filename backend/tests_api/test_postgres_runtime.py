@@ -1172,6 +1172,30 @@ class PostgresRuntimeTests(unittest.TestCase):
                   if entry.action in ("APPROVAL_APPROVE", "APPROVAL_REJECT")]
         self.assertEqual(len(events), 1)
 
+    def test_generated_creative_claim_concurrent_postgres_workers_is_exactly_once(self):
+        from uuid import uuid4
+        from api.creative_repository import CreativeRepository
+        from campaia_core.creative_assets import CreativeIdentity, CreativeManifest
+        from campaia_core.asset_images import normalize_asset_image
+        from tests.test_asset_images import encoded
+        png = normalize_asset_image(encoded()).data
+        identity = CreativeIdentity("pg-creative-" + str(uuid4()), "unit", "campaign", 1, str(uuid4()))
+        manifest = CreativeManifest.from_normalized_png(identity, png, provider="GEMINI_IMAGE",
+            model="gemini-nano-banana-2.1", generation_request_id="pg-claim")
+        gate = threading.Barrier(2)
+        def claim():
+            db = PostgresDatabase(DSN)
+            repo = CreativeRepository(db)
+            gate.wait(timeout=15)
+            _row, replay = repo.claim(manifest, "same-claim", len(png) * 2)
+            return replay
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: claim(), range(2)))
+        self.assertEqual(sorted(results), [False, True])
+        reader = CreativeRepository(PostgresDatabase(DSN))
+        self.assertEqual(reader.usage(identity.tenant_id), len(png))
+        self.assertIsNone(reader.table.get_for_tenant(identity.creative_id, "foreign-tenant"))
+
     def test_00_migration_up_down_up_is_reversible_and_covers_current_stores(self) -> None:
         self.assertEqual(
             set(self.runner.applied_versions()),
