@@ -49,13 +49,14 @@ def _public(row):
 
 def _generation_available(state, tenant_id):
     from campaia_core.gcs_asset_storage import configured_asset_storage
+    from campaia_core.asset_storage import AssetStorageError
     if not state.image_provider.config.enabled:
         return False
     try:
         storage = configured_asset_storage()
         return storage.mode == "PROVIDER" and quote_action(
             state, tenant_id, "image")["mode"] == "COMMERCIAL"
-    except (ApiError, ValueError):
+    except (ApiError, AssetStorageError, ValueError):
         return False
 
 
