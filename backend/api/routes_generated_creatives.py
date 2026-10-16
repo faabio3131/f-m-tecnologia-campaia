@@ -68,12 +68,8 @@ def _generation_available(state, tenant_id):
         return False
 
 
-async def list_generated_creatives(request):
-    fixture, state, campaign, repository = _scope(request, Permission.CAMPAIGN_VIEW)
-    rows = [row for _, _, row in repository.table.rows_for_tenant(fixture.tenant_id)
-            if row["identity"]["campaign_id"] == campaign.campaign_id
-            and row["identity"]["business_unit_id"] == campaign.business_unit_id
-            and row["state"] != "DELETED"]
+def _paginate_private_creatives(rows, cursor):
+    """Cursor valid only within the caller's already tenant/unit/campaign-filtered rows."""
     rows.sort(key=lambda row: row["identity"]["creative_id"])
     cursor = request.query_params.get("cursor")
     if cursor is not None:
@@ -88,8 +84,18 @@ async def list_generated_creatives(request):
             raise ApiError("NOT_FOUND", "Cursor indisponível.", status_code=404)
         rows = [row for row in rows if row["identity"]["creative_id"] > cursor]
     selected = rows[:50]
+    return selected, len(rows) > 50
+
+
+async def list_generated_creatives(request):
+    fixture, state, campaign, repository = _scope(request, Permission.CAMPAIGN_VIEW)
+    rows = [row for _, _, row in repository.table.rows_for_tenant(fixture.tenant_id)
+            if row["identity"]["campaign_id"] == campaign.campaign_id
+            and row["identity"]["business_unit_id"] == campaign.business_unit_id
+            and row["state"] != "DELETED"]
+    selected, has_more = _paginate_private_creatives(rows, request.query_params.get("cursor"))
     return JSONResponse({"items": [_public(row) for row in selected],
-                         "has_more": len(rows) > 50,
+                         "has_more": has_more,
                          "next_cursor": selected[-1]["identity"]["creative_id"]
                              if len(rows) > 50 else None,
                          "generation_enabled": _generation_available(state, fixture.tenant_id)},
