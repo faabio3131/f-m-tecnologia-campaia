@@ -45,11 +45,13 @@ class CreativeRepository:
                    if r["state"] != CreativeState.DELETED.value)
 
     def claim(self, manifest: CreativeManifest, request_key: str, max_active_bytes: int, *,
-              credit_operation_id: str | None = None):
+              credit_operation_id: str | None = None, requested_by: str | None = None):
         if not isinstance(manifest, CreativeManifest) or type(max_active_bytes) is not int or max_active_bytes <= 0:
             raise AssetStorageError(Code.INVALID)
         if credit_operation_id is not None and (not isinstance(credit_operation_id, str)
                 or not re.fullmatch(r"[0-9a-f]{64}", credit_operation_id)):
+            raise AssetStorageError(Code.INVALID)
+        if requested_by is not None and (not isinstance(requested_by, str) or not 1 <= len(requested_by) <= 256):
             raise AssetStorageError(Code.INVALID)
         identity = manifest.identity
         context = _context(identity, request_key)
@@ -58,7 +60,8 @@ class CreativeRepository:
             existing = self.table.get_for_tenant(identity.creative_id, identity.tenant_id)
             if existing is not None:
                 if (existing["context"] != context or existing["manifest"] != asdict(manifest)
-                        or existing.get("credit_operation_id") != credit_operation_id):
+                        or existing.get("credit_operation_id") != credit_operation_id
+                        or existing.get("requested_by") != requested_by):
                     raise AssetStorageError(Code.CONFLICT)
                 return existing, True
             if self.usage(identity.tenant_id) + manifest.size > max_active_bytes:
@@ -66,7 +69,7 @@ class CreativeRepository:
             row = {"identity": asdict(identity), "manifest": asdict(manifest),
                    "state": CreativeState.RESERVED.value, "revision": 0,
                    "storage_generation": None, "context": context,
-                   "credit_operation_id": credit_operation_id}
+                   "credit_operation_id": credit_operation_id, "requested_by": requested_by}
             try:
                 self.table.put(identity.creative_id, identity.tenant_id, row)
             except TenantIsolationViolation:
