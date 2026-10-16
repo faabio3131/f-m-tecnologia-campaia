@@ -138,7 +138,7 @@ def _preview_policy(row, campaign, review=None):
 
 async def preview_generated_creative(request):
     """Read-only preview policy without impersonating an approval decision."""
-    fixture, _state, campaign, repository = _scope(request, Permission.CAMPAIGN_VIEW)
+    fixture, state, campaign, repository = _scope(request, Permission.CAMPAIGN_VIEW)
     from uuid import UUID
     try:
         creative_id = str(UUID(request.path_params["creativeId"]))
