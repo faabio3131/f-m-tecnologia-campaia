@@ -110,6 +110,20 @@ class ImageApiSimulationTests(BillingCreditHarness, unittest.TestCase):
         self.assertEqual(preview.json()["policy"]["human_review"], "REVOKED")
         self.assertFalse(preview.json()["policy"]["publication_allowed"])
 
+    def test_selected_story_format_rejects_mismatched_provider_without_storage_or_credits(self):
+        quote = self.client.get(self.base + "/quote", headers=OWNER).json()
+        version = self.state.campaigns.get("demo-tenant", self.campaign).plan_version
+        body = {"expected_plan_version": version, "prompt": "Arte story vertical para testes",
+                "image_format": "STORY_9_16",
+                "credit_confirmation": {field: quote[field] for field in
+                    ("cycle_id", "policy_version", "credits", "extra_amount")}}
+        before = self.usage().json()["balance"]["consumed_credits"]
+        response = self.client.post(self.base, headers={**OWNER, **unique_idem()}, json=body)
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(response.json()["code"], "AI_FORMAT_MISMATCH")
+        self.assertEqual(self.storage.calls.count("POST"), 0)
+        self.assertEqual(self.usage().json()["balance"]["consumed_credits"], before)
+
     def test_unreviewed_generated_image_blocks_campaign_publication(self):
         quote = self.client.get(self.base + "/quote", headers=OWNER).json()
         version = self.state.campaigns.get("demo-tenant", self.campaign).plan_version
