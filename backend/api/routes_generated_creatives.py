@@ -204,6 +204,7 @@ async def generate_campaign_image(request):
         expected_plan_version: int = Field(ge=1, strict=True)
         prompt: str = Field(min_length=8, max_length=1500)
         image_format: str = "ORIGINAL"
+        source_creative_id: str | None = None
         credit_confirmation: CreditConfirmation
 
     fixture, state, campaign, repository = _scope(request, Permission.CAMPAIGN_EDIT)
@@ -230,6 +231,27 @@ async def generate_campaign_image(request):
     except (InvalidOperation, ValueError):
         raise ApiError("AI_COST_POLICY_UNAVAILABLE", "Teto interno de imagem não configurado.", status_code=503) from None
 
+    # Edits are new immutable generations; the source remains intact. No image
+    # bytes cross the LLM prompt or another tenant's scope.
+    source_row = None
+    if body.source_creative_id is not None:
+        from uuid import UUID
+        try:
+            source_id = str(UUID(body.source_creative_id))
+        except (TypeError, ValueError):
+            raise ApiError("IMAGE_SOURCE_INVALID", "Imagem original inválida.", status_code=422) from None
+        source_row = repository.table.get_for_tenant(source_id, fixture.tenant_id)
+        if (source_row is None or source_row["state"] != "STORED"
+                or source_row["identity"]["campaign_id"] != campaign.campaign_id
+                or source_row["identity"]["business_unit_id"] != campaign.business_unit_id
+                or source_row["identity"]["campaign_version"] != campaign.plan_version):
+            raise ApiError("IMAGE_SOURCE_INVALID", "Imagem original indisponível nesta versão.", status_code=409)
+        from .creative_image_review import CreativeImageReviewStore
+        from campaia_core.creative_assets import CreativeIdentity as SourceIdentity
+        review = CreativeImageReviewStore(state).get(SourceIdentity(**source_row["identity"]))
+        if review and review.get("decision") in ("APPROVE", "REVOKED"):
+            raise ApiError("IMAGE_SOURCE_LOCKED",
+                "A arte aprovada ou revogada não pode ser editada diretamente.", status_code=409)
     identity = CreativeIdentity(fixture.tenant_id, campaign.business_unit_id,
         campaign.campaign_id, campaign.plan_version,
         str(uuid5(NAMESPACE_URL, fixture.tenant_id + ":creative-image:" + key)))
@@ -237,6 +259,7 @@ async def generate_campaign_image(request):
         "campaign": campaign.campaign_id,
         "plan_version": campaign.plan_version, "prompt": body.prompt.strip(),
         "image_format": body.image_format,
+        "source_creative_id": body.source_creative_id,
     }
     bill_key = "image:" + campaign.campaign_id + ":" + key
 
@@ -246,7 +269,8 @@ async def generate_campaign_image(request):
             ai_request = AIRequest(
                 request_id=identity.creative_id, tenant_id=fixture.tenant_id,
                 task=AITask.GENERATE_IMAGE,
-                input={"prompt": body.prompt.strip() + ("" if body.image_format == "ORIGINAL" else "\\nFormato de saída obrigatório: " + body.image_format), "campaign": campaign.campaign_id,
+                input={"revision_of": body.source_creative_id,
+                       "prompt": body.prompt.strip() + ("" if body.image_format == "ORIGINAL" else "\\nFormato de saída obrigatório: " + body.image_format), "campaign": campaign.campaign_id,
                        "plan_version": campaign.plan_version,
                        "brand": brand_agent_context(campaign)},
                 output_schema_id="generated-image", max_cost_units=ceiling,
@@ -273,7 +297,8 @@ async def generate_campaign_image(request):
                 raise ApiError("AI_FORMAT_MISMATCH", "O provedor não entregou a proporção solicitada; não armazenar nem liquidar créditos.", status_code=422)
             operation = sha256((fixture.tenant_id + ":" + "http:" + bill_key).encode()).hexdigest()
             row, replay = repository.claim(manifest, bill_key, storage.max_active_bytes,
-                                           credit_operation_id=operation, requested_by=fixture.user_id)
+                                           credit_operation_id=operation, requested_by=fixture.user_id,
+                                           source_creative_id=body.source_creative_id)
             if not replay:
                 repository.transition(identity, CreativeStateTransition(
                     CreativeState.RESERVED, CreativeState.GENERATING, row["revision"]))
