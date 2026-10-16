@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from uuid import UUID
 
-from .asset_images import verify_normalized_png
+from .asset_images import AssetImageError, verify_normalized_png
 from .asset_storage import MAX_ASSET_BYTES, AssetStorageError, AssetStorageErrorCode
 
 
@@ -108,7 +108,10 @@ class CreativeManifest:
                    provider=provider, model=model, generation_request_id=generation_request_id)
 
     def verify(self, png: bytes) -> None:
-        checked = verify_normalized_png(png)
+        try:
+            checked = verify_normalized_png(png)
+        except AssetImageError:
+            raise AssetStorageError(AssetStorageErrorCode.INTEGRITY) from None
         if (len(png) != self.size or hashlib.sha256(png).hexdigest() != self.sha256
                 or (checked.width, checked.height) != (self.width, self.height)):
             raise AssetStorageError(AssetStorageErrorCode.INTEGRITY)
