@@ -19,6 +19,8 @@ class TestOnlyCreativeAIProvider(SimulatedAIProvider):
             count = request.input.get("quantidade_variacoes", 5)
             output = {"variacoes": [f"Proposta simulada {index + 1}: conheça a oferta e confira as condições."
                                     for index in range(count)]}
+            if "revisao" in request.input:
+                output = {"variacoes": ["Texto revisado simulado: confira a oferta e as condições disponíveis."]}
         elif request.task is AITask.PROPOSE_AUDIENCE:
             output = {"segmentos": ["Pessoas interessadas na oferta declarada"],
                       "exclusoes": list(request.input.get("exclusoes_declaradas", [])),

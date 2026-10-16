@@ -2365,6 +2365,56 @@ paths:
               schema: { $ref: '#/components/schemas/CreativeProposalQuote' }
         '409': { $ref: '#/components/responses/InvalidState' }
 
+  /campaigns/{campaignId}/proposals/copy/{proposalId}/revisions:
+    post:
+      operationId: reviseCopyProposal
+      security: [cookieAuth: []]
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - name: proposalId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CopyRevisionInput' }
+      responses:
+        '201':
+          description: Nova versao do lote com apenas um texto substituido
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreativeProposal' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InvalidState' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503':
+          description: Operacao indisponivel ou incerta sem redispatch
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /campaigns/{campaignId}/proposals/copy/{proposalId}/revisions/quote:
+    get:
+      operationId: quoteCopyRevision
+      security: [cookieAuth: []]
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - name: proposalId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Consumo para revisar somente uma variacao existente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreativeProposalQuote' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InvalidState' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2621,6 +2671,17 @@ components:
         policy_version: { type: string }
         credits: { type: integer, minimum: 1 }
         extra_amount: { type: string }
+
+    CopyRevisionInput:
+      type: object
+      additionalProperties: false
+      required: [expected_plan_version, channel, variant_index, instructions]
+      properties:
+        expected_plan_version: { type: integer, minimum: 1 }
+        channel: { type: string, enum: [GOOGLE_ADS, META_ADS, META_FACEBOOK, META_INSTAGRAM, WHATSAPP] }
+        variant_index: { type: integer, minimum: 0, maximum: 4 }
+        instructions: { type: string, minLength: 1, maxLength: 2000 }
+        credit_confirmation: { $ref: '#/components/schemas/CreditConfirmation' }
 
     CopyProposalInput:
       type: object

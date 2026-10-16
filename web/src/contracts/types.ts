@@ -62,3 +62,5 @@ export type AudienceProposalInput = components["schemas"]["AudienceProposalInput
 export type CreativeProposal = components["schemas"]["CreativeProposal"];
 export type CreativeProposalPage = components["schemas"]["CreativeProposalPage"];
 export type CreativeProposalQuote = components["schemas"]["CreativeProposalQuote"];
+
+export type CopyRevisionInput = components["schemas"]["CopyRevisionInput"];
