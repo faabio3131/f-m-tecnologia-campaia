@@ -15,28 +15,28 @@ export function CampaignBrandSelector({ value, onChange, disabled }: {
   const [error, setError] = useState<string | null>(null);
   const alive = useRef(false), epoch = useRef(0);
   const identity = value?.brand_profile_id ?? "";
-  const loadProfiles = useCallback(async () => {
-    try {
-      const result = await api.get<BrandProfile[]>("/brand-profiles");
-      if (alive.current) setProfiles(result);
-    } catch { if (alive.current) setError("Não foi possível consultar as marcas."); }
+  const profileEpoch = useRef(0);
+  const loadProfiles = useCallback(() => {
+    const current = ++profileEpoch.current;
+    return api.get<BrandProfile[]>("/brand-profiles").then(result => {
+      if (alive.current && current === profileEpoch.current) setProfiles(result);
+    }).catch(() => { if (alive.current && current === profileEpoch.current) setError("Não foi possível consultar as marcas."); });
   }, []);
   useEffect(() => {
     alive.current = true; loadProfiles();
-    return () => { alive.current = false; epoch.current++; };
+    return () => { alive.current = false; };
   }, [loadProfiles]);
-  const loadAssets = useCallback(async (before?: string) => {
+  const loadAssets = useCallback((before?: string) => {
     const current = ++epoch.current;
     if (!identity) return;
-    try {
-      const result = await api.get<BrandAssetPage>(`/brand-profiles/${encodeURIComponent(identity)}/assets` +
-        (before ? `?cursor=${encodeURIComponent(before)}` : ""));
+    return api.get<BrandAssetPage>(`/brand-profiles/${encodeURIComponent(identity)}/assets` +
+      (before ? `?cursor=${encodeURIComponent(before)}` : "")).then(result => {
       if (alive.current && current === epoch.current) {
         const ready = result.capability.enabled ? result.items.filter(asset => asset.status === "READY") : [];
         setAssets(previous => before ? [...previous, ...ready.filter(asset => !previous.some(item => item.id === asset.id))] : ready);
         setCursor(result.next_cursor);
       }
-    } catch { if (alive.current && current === epoch.current) setError("Não foi possível consultar os arquivos da marca."); }
+    }).catch(() => { if (alive.current && current === epoch.current) setError("Não foi possível consultar os arquivos da marca."); });
   }, [identity]);
   useEffect(() => { loadAssets(); }, [loadAssets]);
   function choose(identity: string) {

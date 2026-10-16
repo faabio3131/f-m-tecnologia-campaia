@@ -38,7 +38,7 @@ export function BrandAssetsPanel({ identity, name, canManage }: { identity: stri
   }, [load]);
   useEffect(() => {
     alive.current = true; refresh();
-    return () => { alive.current = false; epoch.current++; };
+    return () => { alive.current = false; };
   }, [refresh]);
   async function upload(event: FormEvent) {
     event.preventDefault();
