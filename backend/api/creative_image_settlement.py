@@ -28,7 +28,7 @@ def settle_stored_creative(state, *, identity: CreativeIdentity, operation_id: s
         # F5 refuses SETTLE if there was no matching RESERVE (or if already settled).
         result = state.credit_ledger.decide(identity.tenant_id, "finish",
                     operation_id=operation_id, kind="SETTLE",
-                    reference="image-delivery:" + identity.creative_id,
+                    reference="delivery:" + operation_id,
                     at=datetime.now(timezone.utc))
         state.audit.append(tenant_id=identity.tenant_id, actor=actor_id,
             action="CREATIVE_IMAGE_CREDITS_SETTLED", target=identity.creative_id,
