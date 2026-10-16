@@ -131,7 +131,7 @@ test.describe("WP-06: alteração de orçamento cross-stack (dois usuários reai
     const ownerContext = await browser.newContext();
     const ownerPage = await ownerContext.newPage();
     await ownerPage.goto("/login");
-    await loginViaTestHarness(ownerPage, OWNER_TESTID);
+    const { body: ownerLogin } = await loginViaTestHarness(ownerPage, OWNER_TESTID);
     await expect(ownerPage).toHaveURL(/\/dashboard/);
 
     const campaignId = await createCampaignViaUi(ownerPage, `WP-06 E2E self-approve ${Date.now()}`);
@@ -143,12 +143,16 @@ test.describe("WP-06: alteração de orçamento cross-stack (dois usuários reai
     await ownerPage.getByRole("button", { name: /propor mudança de orçamento/i }).click();
     const proposed = (await (await proposeResponse).json()) as { id: string };
 
-    // Segregacao de funcoes: o proprio OWNER (quem propos) tenta decidir a propria
-    // proposta na fila de Aprovacoes real -- a UI nunca esconde o botao (mesma
-    // disciplina do WP-05), o backend real recusa.
+    // The UI prevents self-approval; a direct authenticated attempt still proves server-side SoD.
     await ownerPage.goto("/approvals");
-    await ownerPage.getByTestId(`approve-${proposed.id}`).click();
-    await expect(ownerPage.getByText(/não foi possível decidir/i)).toBeVisible();
+    await expect(ownerPage.getByTestId(`approve-${proposed.id}`)).toBeDisabled();
+    const selfApproval = await ownerPage.request.post(`/api/campaia/approvals/${proposed.id}/decision`, {
+      data: { decision: "APPROVE" },
+      headers: { ...(await sessionCookieHeader(ownerPage)), "x-csrf-token": ownerLogin.csrf_token,
+        "x-step-up-token": "e2e-self-approval-proof", "idempotency-key": `e2e-self-approval-${Date.now()}` },
+    });
+    expect(selfApproval.status()).toBe(403);
+    expect((await selfApproval.json()).code).toBe("SEPARATION_OF_DUTIES");
 
     // Confirma que o orcamento NAO mudou (nenhuma autoaprovacao indevida teve
     // efeito de dominio).
@@ -160,14 +164,8 @@ test.describe("WP-06: alteração de orçamento cross-stack (dois usuários reai
     // STEP_UP_REQUIRED, mesmo sem approval_id valido (o gate de step-up roda antes
     // de qualquer lookup de aprovacao em routes_campaigns.py::patch_budget).
     //
-    // SECURITY FIX (27/09/2026 -- correcao final pre-Google-Ads): esta checagem
-    // precisa de uma sessao SEM nenhum step-up persistido ainda -- `ownerPage` ja
-    // nao serve mais, porque a tentativa de autoaprovacao acima (clique real na UI
-    // de Aprovacoes) ja enviou um X-Step-Up-Token genuino (STEP_UP_HEADER em
-    // approvals/page.tsx) e, corretamente, esse step-up agora permanece valido por
-    // ate' STEP_UP_MAX_AGE (10 min) -- reusar `ownerPage` aqui testaria uma sessao
-    // que JA tem step-up, nao a ausencia dele. Um segundo contexto/login do MESMO
-    // OWNER, que nunca passou por nenhuma acao com step-up, prova a exigencia real.
+    // The direct self-approval attempt presented test step-up on ownerPage.
+    // A fresh session, without any elevation, must still be rejected before application.
     const freshOwnerContext = await browser.newContext();
     const freshOwnerPage = await freshOwnerContext.newPage();
     await freshOwnerPage.goto("/login");

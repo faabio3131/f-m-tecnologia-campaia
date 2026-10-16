@@ -56,6 +56,20 @@ class ApprovalReviewTests(BillingCreditHarness, unittest.TestCase):
         wrong_actor = {**with_step_up(FINANCE), "Idempotency-Key": vote_headers["Idempotency-Key"]}
         self.assertEqual(self.decision(created["id"], headers=wrong_actor).status_code, 409)
 
+
+    def test_nonce_business_unit_binding_also_covers_a_globally_scoped_campaign(self):
+        owner = self.state.tokens["demo-owner-token"]
+        self.state.tokens["demo-owner-token"] = replace(owner, business_unit_id=None)
+        campaign = create_campaign(self.client)["id"]
+        body = {"campaign_id": campaign, "kind": "BUDGET_CHANGE"}
+        headers = {**OWNER, **unique_idem()}
+        created = self.request(body=body, headers=headers)
+        self.assertEqual(created.status_code, 201, created.text)
+        self.state.tokens["demo-owner-token"] = replace(owner, business_unit_id="other-unit")
+        replay = self.request(body=body, headers=headers)
+        self.assertEqual(replay.status_code, 409, replay.text)
+        self.assertEqual(replay.json()["code"], "IDEMPOTENCY_CONFLICT")
+
     def test_consumed_budget_approval_cannot_be_rearmed_by_another_eligible_reviewer(self):
         created = self.request(body={"campaign_id": self.campaign, "kind": "BUDGET_CHANGE"}).json()
         identity = created["id"]

@@ -24,6 +24,10 @@ A trilha de auditoria existente preserva a justificativa de cada decisão.
 Rearmamento de budget consumido, estados terminais, dois votos distintos, concorrência,
 rollback, restart, replay/rebind, tenant/unidade, revogação, Unicode e limites de corpo.
 API/PostgreSQL/Web/E2E, CI completa no HEAD e pós-merge antes de avançar.
+A CI de desenvolvimento confirmou rearmamento bloqueado em PostgreSQL e ciclo de ajustes/
+duas pessoas na UI. Corrigidos resets de React por chave/versão, fixture Unicode escapada
+e expectativas antigas de clicar em autoaprovação: a UI agora desabilita, e os E2E mantêm
+uma tentativa direta autenticada para provar 403/SoD no servidor, além do gate de step-up.
 
 ## Limites
 Sem deploy, migration, credencial ou custo real. Não amplia autoridade da IA.
