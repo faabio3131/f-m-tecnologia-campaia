@@ -91,6 +91,9 @@ def main():
         data = sys.stdin.buffer.read(_MAX_BYTES + 1)
         if not data or len(data) > _MAX_BYTES:
             raise ValueError("invalid image")
+        edit_mode = sys.argv[1] if len(sys.argv) == 2 else None
+        if edit_mode not in (None, "rotate_90", "rotate_180", "flip_horizontal"):
+            raise ValueError("invalid edit operation")
         allowed = ("PNG", "JPEG", "WEBP")
         with Image.open(io.BytesIO(data), formats=allowed) as check:
             width, height = check.size
@@ -103,6 +106,12 @@ def main():
             ImageOps.exif_transpose(image, in_place=True)
             mode = "RGBA" if image.mode in ("RGBA", "LA") or "transparency" in image.info else "RGB"
             pixels = image.convert(mode)
+            if edit_mode == "rotate_90":
+                pixels = pixels.transpose(Image.Transpose.ROTATE_90)
+            elif edit_mode == "rotate_180":
+                pixels = pixels.transpose(Image.Transpose.ROTATE_180)
+            elif edit_mode == "flip_horizontal":
+                pixels = pixels.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
             # A fresh image prevents propagation of comments, EXIF, ICC, XMP or extra chunks.
             clean = Image.new(mode, pixels.size)
             clean.paste(pixels)
