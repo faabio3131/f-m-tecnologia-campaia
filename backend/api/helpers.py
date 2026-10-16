@@ -65,6 +65,8 @@ def serialize_brand_profile(p: BrandProfile):
 
     return BrandProfileResponse(
         id=p.brand_profile_id,
+        version=p.version,
+        updated_at=p.updated_at,
         name=p.name,
         tone=p.tone,
         colors=p.colors,

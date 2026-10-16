@@ -46,3 +46,6 @@ export type BillingRenewal = components["schemas"]["BillingRenewal"];
 export type BillingNotices = components["schemas"]["BillingNotices"];
 export type BillingNotice = components["schemas"]["BillingNotice"];
 export type BillingNoticeRead = components["schemas"]["BillingNoticeRead"];
+
+export type BrandVersions = components["schemas"]["BrandVersions"];
+export type BrandProfileUpdate = components["schemas"]["BrandProfileUpdate"];

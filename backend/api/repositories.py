@@ -121,6 +121,12 @@ class BrandProfile:
     differentiators: list[str]
     restrictions: list[str]
     created_at: datetime = field(default_factory=now_utc)
+    version: int = 1
+    updated_at: datetime | None = None
+
+    def __post_init__(self):
+        if type(self.version) is not int or self.version < 1:
+            raise ValueError('Brand profile version must be a positive integer.')
 
 
 class BrandProfileRepository:
@@ -141,6 +147,18 @@ class BrandProfileRepository:
 
     def get(self, tenant_id: str, brand_profile_id: str) -> BrandProfile | None:
         return _live_get(self._table, self._items, brand_profile_id, tenant_id)
+
+    def replace_profile(self, tenant_id: str, identity: str, *, expected_version: int, at: datetime, **fields):
+        previous = self.get(tenant_id, identity)
+        if previous is None:
+            return None
+        if previous.version != expected_version:
+            raise ValueError('Brand profile version changed.')
+        updated = BrandProfile(brand_profile_id=identity, tenant_id=tenant_id,
+            created_at=previous.created_at, version=previous.version + 1, updated_at=at, **fields)
+        updated = _attach_persistence(self._table, identity, tenant_id, updated)
+        self._items[identity] = updated
+        return updated
 
 
 # --------------------------------------------------------------------------- connections
