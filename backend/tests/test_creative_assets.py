@@ -5,7 +5,7 @@ from dataclasses import replace
 from uuid import uuid4
 
 from campaia_core.asset_storage import AssetStorageError, AssetStorageErrorCode
-from campaia_core.creative_assets import CreativeIdentity, CreativeManifest, CreativeStoredProof
+from campaia_core.creative_assets import CreativeIdentity, CreativeManifest, CreativeStoredProof, CreativeState, CreativeStateTransition
 from tests.test_asset_images import encoded
 from campaia_core.asset_images import normalize_asset_image
 
@@ -71,6 +71,33 @@ class CreativeManifestTests(unittest.TestCase):
                         {"width": True}, {"height": 9000}, {"generation_request_id": ""}):
             with self.subTest(changes=changes), self.assertRaises(AssetStorageError):
                 replace(record, **changes)
+
+
+    def test_state_machine_requires_atomic_revision_and_valid_edge(self):
+        valid = [
+            (CreativeState.RESERVED, CreativeState.GENERATING),
+            (CreativeState.GENERATING, CreativeState.STORAGE_PENDING),
+            (CreativeState.STORAGE_PENDING, CreativeState.STORED),
+            (CreativeState.STORED, CreativeState.DELETE_PENDING),
+            (CreativeState.DELETE_PENDING, CreativeState.DELETED),
+        ]
+        for before, after in valid:
+            with self.subTest(before=before, after=after):
+                command = CreativeStateTransition(before, after, 4)
+                self.assertEqual(command.next_revision, 5)
+        for before, after in (
+            (CreativeState.RESERVED, CreativeState.STORED),
+            (CreativeState.GENERATING, CreativeState.STORED),
+            (CreativeState.STORAGE_PENDING, CreativeState.GENERATING),
+            (CreativeState.STORED, CreativeState.STORED),
+            (CreativeState.DELETED, CreativeState.STORED),
+            (CreativeState.FAILED, CreativeState.GENERATING),
+        ):
+            with self.subTest(before=before, after=after), self.assertRaises(AssetStorageError):
+                CreativeStateTransition(before, after, 0)
+        for revision in (-1, True, 2**63 - 1):
+            with self.subTest(revision=revision), self.assertRaises(AssetStorageError):
+                CreativeStateTransition(CreativeState.RESERVED, CreativeState.FAILED, revision)
 
 
 if __name__ == "__main__":
