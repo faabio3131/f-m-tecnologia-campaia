@@ -946,3 +946,10 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - Adicionado GET autenticado `/campaigns/{campaignId}/images/{creativeId}/preview`: retorna estado de armazenamento, compatibilidade com versão atual da campanha e bloqueios explícitos para revisão humana. O endpoint é exclusivamente de leitura, não aprova imagem nem autoriza publicação.
 - A prévia exige geração GCS confirmada e mesma versão da campanha; `publication_allowed=false` e `human_review=NOT_REVIEWED` até existir fluxo governado real de política/aprovação. Testes negativos cobrem imagens pendentes, falhas, mudança de versão e stored sem aprovação.
 - Novo HEAD exige CI. WP permanece PARTIAL; isto não fecha policy engine de criativos nem fluxo de aprovação de arte. Sem merge, deploy ou migrações reais. Externos mantidos pendentes para fase final.
+
+
+## WP-R04-04B — revisão humana imutável (16/10/2026)
+- Revisão CURRENT confirma rota de aprovação de campanha já existente, mas ela NÃO certifica a imagem por hash+generation; não reutilizar aprovação genérica como autorização de mídia.
+- Incluído contrato interno de decisão de arte `CreativeImageReviewStore`, com F3 idempotência, auditoria, separação solicitante/revisor, hash da imagem, geração GCS, versão da campanha e identidade do criativo; replay incompatível falha fechado.
+- Testes negativos para decisões antigas, geração substituída, versão alterada e REJECT. **API de aprovação ainda TARGET**: requer autoria da imagem persistida e vínculo com o principal autenticado/step-up/can_approve; não aceitar requester_id informado pelo navegador. Policy/preview atual continua sem permitir publicação, mesmo com este registro interno. Não alegar aprovação completa.
+- Lifecycle/delete completo também TARGET. Execução CI do novo HEAD pendente; homologação externa continua postergada. Sem merge/deploy/migration.
