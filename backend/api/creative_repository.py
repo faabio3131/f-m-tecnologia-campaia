@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from hashlib import sha256
 import json
+import re
 
 from campaia_core.asset_storage import AssetStorageError, AssetStorageErrorCode as Code
 from campaia_core.errors import TenantIsolationViolation
@@ -48,7 +49,7 @@ class CreativeRepository:
         if not isinstance(manifest, CreativeManifest) or type(max_active_bytes) is not int or max_active_bytes <= 0:
             raise AssetStorageError(Code.INVALID)
         if credit_operation_id is not None and (not isinstance(credit_operation_id, str)
-                or not __import__("re").fullmatch(r"[0-9a-f]{64}", credit_operation_id)):
+                or not re.fullmatch(r"[0-9a-f]{64}", credit_operation_id)):
             raise AssetStorageError(Code.INVALID)
         identity = manifest.identity
         context = _context(identity, request_key)
