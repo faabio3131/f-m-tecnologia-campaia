@@ -1032,3 +1032,9 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - Novo teste negativo: seleção de creative_id inexistente na publicação retorna IMAGE_SELECTION_INVALID antes de atingir a saga de publicação. Testa binding explícito da arte à versão da campanha; também já há cenário de seleção sem revisão.
 - Sequência correta: concluir testes/controles do WP-R04-04B; depois revisão de evidências e autorização específica para eventual merge. G8 Google Ads multi-tenant real permanece posterior a G7, EXTERNAL_CREDENTIAL / EXTERNAL_APPROVAL / EXTERNAL_INFRASTRUCTURE.
 - Nenhum merge/deploy/migration, nem alteração de segredo externo. Certificação do HEAD novo depende de nova CI.
+
+
+## G7 — análise de formatos sem falsa homologação (16/10/2026)
+- CURRENT verificado após HEAD `cd79eea`: Backend, Frontend e F4 CI SUCCESS. Gerador aceita prompt e persiste PNG normalizado/identidade, mas não oferece seleção fechada de proporções para Gemini, edição versionada da arte ou prévia real por canal. Nenhum desses itens deve ser marcado DONE_VERIFIED.
+- Incremento atual: preview privado informa `format_hints` por geometria (SQUARE, PORTRAIT_4_5, STORY_9_16), sem confiar no cliente, e mantém `channel_media_validated=false` e `publication_allowed=false`. Testes de proporções verificam que dicas não viram aprovação de canal.
+- Ainda TARGET: geração específica por proporção e canal, múltiplos derivados versionados e cobrados corretamente, edição antes da aprovação, preview real Google/Meta/WhatsApp e entrega de mídia nos conectores. G7 segue PARTIAL e não pode avançar para G8. Novo HEAD exige CI; sem merge, deploy ou segredos.
