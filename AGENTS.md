@@ -2,12 +2,12 @@
 
 ## Cronograma Mestre Operacional — DELTA REAL RESTANTE
 
-**Data de reconciliação:** 15/10/2026
+**Data de reconciliação:** 16/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@baba73a3e3c3965ff6ee4207eb4dd561ce834ad8`
+**CURRENT confirmado na leitura de 16/10/2026:** `main@957d99a7804f6a6d3e2b6379cbf58fbd280976fd` (revalidar no início de cada WP)
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
-**Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
+**Evidências:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`; PRs #64–#72 e documentos WP-R03/WP-R04 associados. A PR #72 ainda não certifica CI final/merge.
 
 Este arquivo orienta futuros agentes/executores sobre **o que ainda falta**.  
 Ele existe para impedir retrabalho sobre funcionalidades, integrações de infraestrutura ou ativos externos que já existem.
@@ -242,9 +242,9 @@ No CURRENT:
 - não existe adapter real Google Ads/Meta/WhatsApp em `campaia_core`;
 - Insights devolve `points=[]` honestamente;
 - optimizer/pacing/reconciliation existem, mas não estão ligados a métricas externas reais;
-- Brand Kit tem edição/histórico (PR #64) e assets privados API/Web (PRs #65–#67) com CI/pós-merge verdes;
-  GCS/ADC/runtimes reais e aplicação explícita ao pipeline ainda são deltas, sem nova infraestrutura;
-- fluxo de criativos/imagem/preview ainda não está completo;
+- Brand Kit tem edição/histórico (PR #64), assets privados API/Web (PRs #65–#67) e seleção/snapshot textual do Brand Kit na campanha (PR #68), com CI/pós-merge verdes;
+  GCS/ADC/worker reais, retenção/delete e aplicação VISUAL do logo na imagem continuam pendentes;
+- propostas copy/públicos e revisão humana (PRs #69–#71) já integradas; fluxo de imagem/armazenamento criativo/previews ainda incompleto. PR #72 é somente adaptador Gemini opt-in em validação;
 - Billing Web/consumo/checkout revisado/encerramento/garantia/emissão/avisos e evidência interna de custos integrados nas PRs #45–#63;
   ativação do catálogo, custos reais/jurídico, jobs e pagamento externo ainda pendentes; não refazer as superfícies;
 - Premium final ainda não foi executado;
@@ -263,9 +263,9 @@ Esses são os blocos prioritários restantes.
 | F2 | DONE_VERIFIED | gate G2 fechado; preservar evidências WP-R01 |
 | F3 | DONE_VERIFIED | nenhum core |
 | F4 | DONE_VERIFIED | nenhum core |
-| F5 | PARTIAL avançado | política comercial + Billing Web + produção Asaas + E2E real |
-| F6 | PARTIAL | upload/assets + aplicação do Brand Kit |
-| F7 | PARTIAL avançado | wiring dos agentes, imagem/criativos, preview/ajustes |
+| F5 | PARTIAL / HUMAN_DECISION / EXTERNAL_CREDENTIAL | motor e Web das PRs #45–#63 integrados; faltam ativação contratual/catálogo e custos reais, Asaas produção e pagamento→webhook→entitlement externo |
+| F6 | PARTIAL / EXTERNAL_INFRASTRUCTURE | edição, assets privados API/Web e snapshot para campanha (#64–#68) integrados; GCS/worker/ADC reais, retenção/delete e uso visual nos criativos não homologados |
+| F7 | PARTIAL | copy/públicos/revisões/aprovações (#69–#71) integrados; PR #72 aberta para transporte Gemini opt-in, sem ativação, imagem comercial, storage, previews ou G7 |
 | F8 | PARTIAL | ativos Google existem; OAuth Ads real por tenant falta |
 | F9 | PARTIAL | Saga/reconcile existem; Google publish/metrics reais faltam |
 | F10 | PARTIAL / EXTERNAL_APPROVAL | BM/Page/App existem; Meta OAuth/API real + aprovações faltam |
@@ -316,18 +316,12 @@ WP-R02-02 integrado na PR #46, main@f3428e6e, com CI pós-merge verde:
 histórico paginado por tenant, observações de gateway/ambiente e fatura hospedada Asaas validada.
 Não reconstruir histórico, cursor ou preservação do link do provedor.
 
-### Falta
-1. política V1 aprovada pelo Diretor em 15/10/2026; registro na proposta da PR #48;
-   publicação segue condicionada a custos/jurídico/homologação/produção;
-2. arquivo/catálogo comercial real;
-3. Billing Web restante:
-   - medição comercial persistente de uso/créditos (CostLedger em memória não é franquia mensal);
-   - entrada inicial/trial Web: WP-R02-03 integrado na PR #47, preservar;
-   - contratação inicial/checkout completo;
-4. credenciais/conta Asaas produção quando apropriado;
-5. checkout/fluxo de pagamento real;
-6. E2E real:
-   trial/assinatura -> cobrança -> pagamento -> webhook -> entitlement.
+### Falta (delta externo/ativação; não reconstruir PRs #45–#63)
+1. Política V1 aprovada em 15/10/2026; publicação ainda condicionada a custos, jurídico e homologação.
+2. Ativar catálogo comercial real e conferir tarifação/câmbio/margem com evidências, sem estimativa apresentada como custo real.
+3. Ativar jobs controlados e migrations reais somente mediante autorização específica; preservar ledger, checkout e Web integrados.
+4. Credenciais/conta Asaas produção quando apropriado e autorizado.
+5. Provar E2E externo: trial/assinatura -> cobrança -> pagamento -> webhook/reconciliação -> entitlement; nenhum simulador certifica G5.
 
 WP-R02-04 / PR #48: fundação interna do ledger comercial integrada, com CI pós-merge verde.
 Não integrada às chamadas IA/checkout nem ativada no produto. Ver
@@ -437,13 +431,14 @@ WP-R04-02 / PR #70 integrada, CI da PR e pós-merge verdes: ajuste seletivo de u
 lote anterior imutável e versão/validação/aprovação renovadas. Ver
 `docs/WP_R04_02_REVISAO_SELETIVA_COPY_20261016.md`.
 
-WP-R04-03 em validação: revisão humana dos materiais, solicitação de ajustes,
+WP-R04-03 / PR #71 integrada, CI da PR e pós-merge verdes: revisão humana dos materiais, solicitação de ajustes,
 reautenticação real existente e aprovações terminais sem rearmamento. Ver
 `docs/WP_R04_03_REVISAO_HUMANA_MATERIAIS_20261016.md`.
 
 - ligar policy/performance ao fluxo API/Web;
 - completar creative asset model;
-- geração de imagem real;
+- geração de imagem real: WP-R04-04A em validação do adaptador interno, default OFF;
+  sem AppState/rotas/UI/catálogo ativado. Ver `docs/WP_R04_04A_TRANSPORTE_IMAGEM_GEMINI_20261016.md`;
 - armazenar criativos no storage do tenant;
 - edição/regeneração seletiva;
 - preview Google/Meta/WhatsApp;
