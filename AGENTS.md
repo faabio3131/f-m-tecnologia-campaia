@@ -7,7 +7,7 @@
 **CURRENT confirmado na leitura de 16/10/2026:** `main@957d99a7804f6a6d3e2b6379cbf58fbd280976fd` (revalidar no início de cada WP)
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
-**Evidências:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`; PRs #64–#72 e documentos WP-R03/WP-R04 associados. A PR #72 ainda não certifica CI final/merge.
+**Evidências:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`; PRs #64–#72 e documentos WP-R03/WP-R04 associados. PR #72 integrada em main@2458cb3; pós-merge Backend #328, Frontend #266 e F4 #162 verdes (evidência GitHub Actions em 16/10/2026).
 
 Este arquivo orienta futuros agentes/executores sobre **o que ainda falta**.  
 Ele existe para impedir retrabalho sobre funcionalidades, integrações de infraestrutura ou ativos externos que já existem.
@@ -439,7 +439,7 @@ reautenticação real existente e aprovações terminais sem rearmamento. Ver
 - completar creative asset model;
 - geração de imagem real: WP-R04-04A em validação do adaptador interno, default OFF;
   sem AppState/rotas/UI/catálogo ativado. Ver `docs/WP_R04_04A_TRANSPORTE_IMAGEM_GEMINI_20261016.md`;
-- armazenar criativos no storage do tenant;
+- armazenar criativos no storage do tenant: WP-R04-04B slice 1 em branch, contrato de identidade/manifests/prova e testes; ainda SEM persistência F3, GCS real, API/Web ou ativação; ver `docs/WP_R04_04B_PRIVATE_CREATIVES_FOUNDATION_20261016.md`;
 - edição/regeneração seletiva;
 - preview Google/Meta/WhatsApp;
 - solicitar ajustes/rejeição quando aplicável;
