@@ -69,6 +69,10 @@ jobs:
       - name: Build backend image
         run: docker build --pull -t campaia-backend-ci backend
 
+      - name: Smoke restricted image worker in production container
+        run: |
+          docker run --rm campaia-backend-ci python3 -c "import io; from PIL import Image; from campaia_core.asset_images import normalize_asset_image; image = io.BytesIO(); Image.new('RGB', (2, 3), 'red').save(image, format='PNG'); result = normalize_asset_image(image.getvalue()); assert (result.width, result.height) == (2, 3)"
+
       - name: Smoke migration module entrypoint
         shell: bash
         run: |

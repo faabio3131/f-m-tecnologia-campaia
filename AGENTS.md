@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@c8590ee00b3e16b45c3990fcd850760e59271ca0`
+**CURRENT confirmado:** `main@ff5586ab6698324e62bb47df14589ab67c2dd0c2`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -390,10 +390,13 @@ com replay seguro na Web. Ver `docs/WP_R03_01_EDICAO_HISTORICO_MARCA_20261016.md
 O cadastro/listagem existentes foram preservados. Assets e aplicação explícita ao pipeline
 permanecem próximos deltas, não certificados por esta etapa.
 
-WP-R03-02A em validação: contrato interno e adaptador privado GCS com leitura fixada por geração,
+WP-R03-02A / PR #65 integrada, CI da PR e pós-merge verdes: contrato interno e adaptador privado GCS com leitura fixada por geração,
 integridade, limites de resposta e mutações condicionais sem retry automático. Ainda sem endpoint,
 AppState ou UI; nenhuma ativação ou chamada real. Ver
 `docs/WP_R03_02A_TRANSPORTE_STORAGE_PRIVADO_20261016.md`.
+WP-R03-02B em validação: decoder de imagem em processo restrito, formatos estáticos
+PNG/JPEG/WebP, normalização sem metadados e envelope de saída verificado pelo pai.
+Ainda sem endpoint/ativação. Ver `docs/WP_R03_02B_VALIDACAO_ISOLADA_IMAGENS_20261016.md`.
 
 ### Falta
 - upload real de logo/assets;
