@@ -44,7 +44,7 @@ class GeneratedCreativeReadContractTests(unittest.TestCase):
 
     def test_cursor_must_belong_to_visible_campaign_scope(self):
         records = [{"identity": {"creative_id": str(UUID(int=1))}}]
-        for cursor in ("not-a-uuid", str(UUID(int=2)), str(UUID(int=1)).upper()):
+        for cursor in ("not-a-uuid", str(UUID(int=2)), str(UUID(int=10)).upper()):
             with self.subTest(cursor=cursor), self.assertRaises(ApiError):
                 _paginate_private_creatives(records, cursor)
 
