@@ -866,3 +866,12 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - Adicionado posteriormente manifesto com MD5 canônico + recuperação `reconcile_after_restart` por observação GCS, sem segundo POST; testes SQLite de restart e objeto ausente. **Essas alterações exigem nova CI no HEAD exato.**
 - Continuam TARGET: contrato e2e API/Web de criativos, atomicidade do ledger 15 créditos, verificação externa GCS/ADC e recuperação/delete em todos os cenários de falha. G7 permanece PARTIAL; não ativar comercialmente.
 - Evidência técnica em `docs/WP_R04_04B_PRIVATE_CREATIVES_FOUNDATION_20261016.md`.
+
+
+## Diretriz do Diretor — construção completa antes da homologação externa (16/10/2026)
+
+- Priorizar completar TODOS os componentes funcionais internos, APIs, Web, persistência, controles, segurança, testes e visual conforme dependências e sequência do Cronograma Mestre.
+- Integrações externas devem ser implementadas como fluxos reais configuráveis de PLATFORM ou TENANT, nunca hardcoded para FM/Nova FM. Manter credenciais, conectividade, aprovação e homologação com serviço real documentadas como EXTERNAL_CREDENTIAL / EXTERNAL_INFRASTRUCTURE / EXTERNAL_APPROVAL até fase final de homologação externa.
+- Dependência externa não deve bloquear WP interno independente. Continuar implementando e verificando internamente com mocks/simuladores explicitamente rotulados; não declarar produção homologada com evidência simulada.
+- Não pular gates internos ou controles de segurança e não aplicar migrações reais, merge/deploy, produção ou ações irreversíveis sem autorização específica do Diretor.
+- Próximo escopo dentro de WP-R04-04B: API/Web de criativos e controles de créditos usando contratos F3/F5 existentes; não iniciar Fase Premium antecipadamente.
