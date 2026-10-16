@@ -182,7 +182,9 @@ async def generate_campaign_image(request):
                 model=result.provenance.model or state.image_provider.config.model,
                 generation_request_id=identity.creative_id,
             )
-            row, replay = repository.claim(manifest, bill_key, storage.max_active_bytes)
+            operation = sha256((fixture.tenant_id + ":" + "http:" + bill_key).encode()).hexdigest()
+            row, replay = repository.claim(manifest, bill_key, storage.max_active_bytes,
+                                           credit_operation_id=operation)
             if not replay:
                 repository.transition(identity, CreativeStateTransition(
                     CreativeState.RESERVED, CreativeState.GENERATING, row["revision"]))
