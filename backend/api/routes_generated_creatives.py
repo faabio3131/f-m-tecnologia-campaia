@@ -116,6 +116,41 @@ async def get_generated_creative(request):
     return JSONResponse(_public(record), headers={"Cache-Control": "private, no-store"})
 
 
+def _preview_policy(row, campaign):
+    """Fail-closed image preview: stored bytes never imply human approval/publishability."""
+    version_current = row["identity"]["campaign_version"] == campaign.plan_version
+    stored = row["state"] == "STORED" and bool(row.get("storage_generation"))
+    return {
+        "preview_available": stored and version_current,
+        "campaign_version_current": version_current,
+        "storage_verified": stored,
+        "human_review": "NOT_REVIEWED",
+        "publication_allowed": False,
+        "blocking_reasons": (
+            ([] if stored else ["IMAGE_NOT_STORED"]) +
+            ([] if version_current else ["CAMPAIGN_VERSION_CHANGED"]) +
+            ["HUMAN_REVIEW_REQUIRED"]
+        ),
+    }
+
+
+async def preview_generated_creative(request):
+    """Read-only preview policy without impersonating an approval decision."""
+    fixture, _state, campaign, repository = _scope(request, Permission.CAMPAIGN_VIEW)
+    from uuid import UUID
+    try:
+        creative_id = str(UUID(request.path_params["creativeId"]))
+    except (TypeError, ValueError):
+        raise ApiError("NOT_FOUND", "Criativo indisponível.", status_code=404) from None
+    row = repository.table.get_for_tenant(creative_id, fixture.tenant_id)
+    if (row is None or row["identity"]["campaign_id"] != campaign.campaign_id
+            or row["identity"]["business_unit_id"] != campaign.business_unit_id
+            or row["state"] == "DELETED"):
+        raise ApiError("NOT_FOUND", "Criativo indisponível.", status_code=404)
+    return JSONResponse({"creative": _public(row), "policy": _preview_policy(row, campaign)},
+                        headers={"Cache-Control": "private, no-store"})
+
+
 async def quote_generated_creative(request):
     fixture, state, _campaign, _repository = _scope(request, Permission.CAMPAIGN_EDIT)
     # This is a preview of the existing F5 commercial ledger policy. No charge or
