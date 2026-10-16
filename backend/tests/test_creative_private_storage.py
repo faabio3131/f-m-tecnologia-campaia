@@ -125,6 +125,29 @@ class CreativePrivateStorageTests(unittest.TestCase):
         self.assertEqual(self.handler.reconcile_delete(self.manifest.identity)["state"], "DELETED")
         self.assertEqual(self.storage.deletes, 1)
 
+    def test_pending_delete_with_visible_generation_retains_quota_and_does_not_retry(self):
+        self.handler.upload(self.manifest, self.png)
+        self.storage.delete_uncertain = True
+        original_delete = self.storage.delete_once
+        def uncertain_without_removal(asset):
+            self.storage.deletes += 1
+            raise AssetStorageError(Code.UNCERTAIN)
+        self.storage.delete_once = uncertain_without_removal
+        self.assertEqual(self.handler.delete(self.manifest.identity)["state"], "DELETE_PENDING")
+        self.assertEqual(self.repo.usage("tenant1"), len(self.png))
+        self.assertEqual(self.handler.reconcile_delete(self.manifest.identity)["state"], "DELETE_PENDING")
+        self.assertEqual(self.storage.deletes, 1)
+        self.storage.delete_once = original_delete
+
+    def test_delete_cas_replay_from_two_handles_does_not_dispatch_twice(self):
+        self.handler.upload(self.manifest, self.png)
+        second = CreativePrivateStorage(CreativeRepository(self.db), self.storage)
+        first_result = self.handler.delete(self.manifest.identity)
+        second_result = second.delete(self.manifest.identity)
+        self.assertEqual(first_result["state"], "DELETED")
+        self.assertEqual(second_result["state"], "DELETED")
+        self.assertEqual(self.storage.deletes, 1)
+
     def test_invalid_bytes_fail_before_dispatch(self):
         with self.assertRaises(AssetStorageError):
             self.handler.upload(self.manifest, self.png + b"x")
