@@ -10,24 +10,26 @@ type Plan = { campaign_id: string; plan_version: number; plan: Record<string, un
 type Props = { approval: ApprovalRequest; onReviewed: (id: string, ready: boolean) => void };
 type Data = { campaign: Campaign; plan: Plan; copy: CreativeProposalPage; audience: CreativeProposalPage };
 
-export function ApprovalMaterialsReview({ approval, onReviewed }: Props) {
+export function ApprovalMaterialsReview(props: Props) {
+  return <MaterialsContent key={[props.approval.id, props.approval.campaign_id, props.approval.plan_version].join(":")} {...props} />;
+}
+function MaterialsContent({ approval, onReviewed }: Props) {
   const [data, setData] = useState<Data | null>(null), [error, setError] = useState(false);
   useEffect(() => {
     let active = true;
-    setData(null); setError(false); onReviewed(approval.id, false);
     const base = "/campaigns/" + encodeURIComponent(approval.campaign_id);
     Promise.all([api.get<Campaign>(base), api.get<Plan>(base + "/plan"),
       api.get<CreativeProposalPage>(base + "/proposals/copy"), api.get<CreativeProposalPage>(base + "/proposals/audience")])
       .then(([campaign, plan, copy, audience]) => {
         if (!active) return;
         const matches = plan.plan_version === approval.plan_version && plan.plan !== null;
-        setData({ campaign, plan, copy, audience }); onReviewed(approval.id, matches);
-      }).catch(() => { if (active) { setError(true); onReviewed(approval.id, false); } });
+        setData({ campaign, plan, copy, audience }); onReviewed(approval.id + ":" + String(approval.plan_version), matches);
+      }).catch(() => { if (active) { setError(true); onReviewed(approval.id + ":" + String(approval.plan_version), false); } });
     return () => { active = false; };
   }, [approval.id, approval.campaign_id, approval.plan_version, onReviewed]);
   if (error) return <ErrorState title="Materiais indisponíveis" description="Não foi possível conferir esta versão. Recarregue a fila antes de decidir." />;
   if (!data) return <Spinner label="Conferindo materiais da campanha" />;
-  const current = data.plan.plan_version === approval.plan_version;
+  const current = data.plan.plan_version === approval.plan_version && data.plan.plan !== null;
   const copy = data.copy.items.find(item => item.current);
   const audience = data.audience.items.find(item => item.current);
   return <section aria-label={"Materiais do pedido " + approval.id} style={{ overflowWrap: "anywhere" }}>

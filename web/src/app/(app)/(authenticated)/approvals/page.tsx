@@ -109,7 +109,7 @@ function ApprovalsContent({ userId, canDecide }: { userId?: string; canDecide: b
         const own = userId === approval.requested_by;
         const voted = Boolean(userId && approval.decided_by.includes(userId));
         const eligible = canDecide && !own && !voted && stepUp.ready;
-        const needsReview = approval.kind === "PUBLISH" && !reviewed[approval.id];
+        const needsReview = approval.kind === "PUBLISH" && !reviewed[approval.id + ":" + String(approval.plan_version)];
         return <Card key={approval.id} className={styles.card} data-testid={"approval-" + approval.id}>
           <p className={styles.itemTitle}>Campanha {approval.campaign_id} — {approval.reason || approval.kind}</p>
           <p className={styles.itemDetail}>Status: {approval.status} · Solicitado por: {approval.requested_by} · Plano {approval.plan_version ?? "não informado"}</p>
@@ -118,7 +118,10 @@ function ApprovalsContent({ userId, canDecide }: { userId?: string; canDecide: b
           {approval.decision_reason ? <p>Motivo da decisão: {approval.decision_reason}</p> : null}
           <a href={"/campaigns/" + encodeURIComponent(approval.campaign_id)}>Abrir campanha</a>
           {approval.kind === "PUBLISH" ? <>
-            <Button variant="secondary" disabled={busyId !== null} onClick={() => setExpanded(previous => ({ ...previous, [approval.id]: !previous[approval.id] }))}>
+            <Button variant="secondary" disabled={busyId !== null} onClick={() => {
+              if (!expanded[approval.id]) onReviewed(approval.id + ":" + String(approval.plan_version), false);
+              setExpanded(previous => ({ ...previous, [approval.id]: !previous[approval.id] }));
+            }}>
               {expanded[approval.id] ? "Ocultar materiais" : "Ver materiais para revisar"}
             </Button>
             {expanded[approval.id] ? <ApprovalMaterialsReview approval={approval} onReviewed={onReviewed} /> : null}
