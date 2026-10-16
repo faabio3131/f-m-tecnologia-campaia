@@ -972,3 +972,8 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - O storage existente faz tombstone STORED→DELETE_PENDING antes de um único DELETE, impede leitura no proxy em DELETE_PENDING e reconsulta GCS para confirmar DELETED. Resposta incerta não dispara segundo DELETE e quota não é liberada sem comprovação da ausência de geração.
 - Política de retenção **não confundir com apagamento físico definitivo**: metadados imutáveis e evidência de auditoria permanecem no banco. A remoção do objeto da API de GCS não certifica eliminação de backups, versões ou retenções de fornecedor. Configuração jurídica/operacional detalhada de prazos de retenção e remoção de dados pessoais continua HUMAN_DECISION/PRODUCTION_GATE antes do lançamento real.
 - Testes de contrato atualizados para DELETE explícito, além dos testes existentes de fence/delete, replay e falha. A matriz E2E específica da nova rota (CSRF, cross-tenant, step-up vencido, conflito de aprovação) ainda precisa ser ampliada: WP PARTIAL até evidências. CI do HEAD deste commit pendente; sem merge/deploy/migration.
+
+
+## Correção de teste de exclusão/step-up (16/10/2026)
+- Backend vermelho em `b0808f5`: teste `test_delete_route_rejects_missing_step_up_and_cross_tenant` assumia erroneamente que a ausência do header significava sessão sem elevação. `BillingCreditHarness.setup_subscription()` havia concedido step-up válido persistido por sessão; a rota retornou 200 de acordo com a política vigente.
+- Corrigido o **arranjo do teste**, invalidando explicitamente a elevação existente no estado canônico antes de testar ausência de step-up. Não foi removida nem flexibilizada a proteção RBAC/step-up da rota. Repetir CI exata antes de certificar.
