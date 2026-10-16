@@ -423,3 +423,37 @@ async def decide_generated_creative_review(request):
                          "replayed": replayed}, headers={"Cache-Control": "private, no-store"})
 
 
+
+async def delete_generated_creative(request):
+    """Authorized tombstone-before-delete; unknown GCS outcomes remain pending."""
+    from uuid import UUID
+    from starlette.concurrency import run_in_threadpool
+    from .deps import require_idempotency_key, require_step_up
+    from .creative_private_storage import CreativePrivateStorage
+    from campaia_core.creative_assets import CreativeIdentity
+    from campaia_core.gcs_asset_storage import configured_asset_storage
+
+    fixture, state, campaign, repository = _scope(request, Permission.CAMPAIGN_EDIT)
+    require_step_up(request, fixture)
+    require_idempotency_key(request)
+    try:
+        creative_id = str(UUID(request.path_params["creativeId"]))
+    except (ValueError, TypeError):
+        raise ApiError("NOT_FOUND", "Criativo indisponível.", status_code=404) from None
+    row = repository.table.get_for_tenant(creative_id, fixture.tenant_id)
+    if (row is None or row["identity"]["campaign_id"] != campaign.campaign_id
+            or row["identity"]["business_unit_id"] != campaign.business_unit_id
+            or row["identity"]["campaign_version"] != campaign.plan_version):
+        raise ApiError("NOT_FOUND", "Criativo indisponível.", status_code=404)
+    if row["state"] not in ("STORED", "DELETE_PENDING", "DELETED"):
+        raise ApiError("IMAGE_NOT_DELETABLE", "O criativo ainda não pode ser excluído.", status_code=409)
+    storage = configured_asset_storage()
+    if not _storage_usable(state, storage):
+        raise ApiError("ASSET_STORAGE_DISABLED", "Armazenamento privado indisponível.", status_code=503)
+    identity = CreativeIdentity(**row["identity"])
+    result = await run_in_threadpool(CreativePrivateStorage(repository, storage).delete, identity)
+    return JSONResponse({"id": creative_id, "state": result["state"],
+                         "deletion_confirmed": result["state"] == "DELETED",
+                         "retention_note": "Metadados e trilha de auditoria preservados."},
+                        status_code=200 if result["state"] == "DELETED" else 202,
+                        headers={"Cache-Control": "private, no-store"})
