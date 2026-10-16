@@ -430,7 +430,7 @@ class PostgresRuntimeTests(unittest.TestCase):
                     'ASAAS_WEBHOOK_TOKEN': 'pg-renewal-proof', 'ASAAS_API_KEY': '', 'GEMINI_API_KEY': ''}):
                 clients = [TestClient(create_app(database_url=DSN, env='test')) for _ in range(2)]
                 for client in clients:
-                    self.addCleanup(client.app.state.campaia.db._conn.close)
+                    self.addCleanup(client.close)
                 a, b = clients
                 setup = a.put('/billing/subscription', headers={**with_step_up(OWNER), **unique_idem()},
                     json={'plan_id': plans[0]['plan_id'], 'customer_document': '11144477735'})
