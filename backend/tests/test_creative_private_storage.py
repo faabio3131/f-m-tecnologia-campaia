@@ -78,6 +78,28 @@ class CreativePrivateStorageTests(unittest.TestCase):
         self.assertEqual(self.storage.uploads, 1)
         self.assertEqual(self.repo.usage("tenant1"), len(self.png))
 
+    def test_restart_recovers_without_original_png_or_second_post(self):
+        self.storage.uncertain = True
+        pending = self.handler.upload(self.manifest, self.png)
+        self.assertEqual(pending["state"], "STORAGE_PENDING")
+        recovered_db = Database(self.db._conn.execute("PRAGMA database_list").fetchone()[2])
+        self.addCleanup(recovered_db.close)
+        fresh = CreativePrivateStorage(CreativeRepository(recovered_db), self.storage)
+        restored = fresh.reconcile_after_restart(self.manifest.identity)
+        self.assertEqual(restored["state"], "STORED")
+        self.assertEqual(restored["storage_generation"], "17")
+        self.assertEqual(self.storage.uploads, 1)
+        self.assertEqual(self.storage.observations, 1)
+
+    def test_restart_missing_object_holds_quota_without_post(self):
+        self.storage.uncertain = True
+        self.handler.upload(self.manifest, self.png)
+        self.storage.saved = None
+        current = self.handler.reconcile_after_restart(self.manifest.identity)
+        self.assertEqual(current["state"], "STORAGE_PENDING")
+        self.assertEqual(self.repo.usage("tenant1"), len(self.png))
+        self.assertEqual(self.storage.uploads, 1)
+
     def test_invalid_bytes_fail_before_dispatch(self):
         with self.assertRaises(AssetStorageError):
             self.handler.upload(self.manifest, self.png + b"x")
