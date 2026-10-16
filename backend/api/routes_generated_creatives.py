@@ -252,7 +252,7 @@ async def generate_campaign_image(request):
             )
             operation = sha256((fixture.tenant_id + ":" + "http:" + bill_key).encode()).hexdigest()
             row, replay = repository.claim(manifest, bill_key, storage.max_active_bytes,
-                                           credit_operation_id=operation)
+                                           credit_operation_id=operation, requested_by=fixture.user_id)
             if not replay:
                 repository.transition(identity, CreativeStateTransition(
                     CreativeState.RESERVED, CreativeState.GENERATING, row["revision"]))
