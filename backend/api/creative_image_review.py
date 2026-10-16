@@ -68,6 +68,8 @@ class CreativeImageReviewStore:
                 or reviewer_id == requester_id or not requester_id):
             raise AssetStorageError(Code.CONFLICT)
         key = "creative-review:" + identity.creative_id + ":" + str(identity.campaign_version)
+        if self.state.idempotency.get(identity.tenant_id, "creative-review-revoke:" + identity.creative_id):
+            raise AssetStorageError(Code.CONFLICT)
 
         def commit():
             if self.state.idempotency.get(identity.tenant_id, "creative-review-revoke:" + identity.creative_id):
