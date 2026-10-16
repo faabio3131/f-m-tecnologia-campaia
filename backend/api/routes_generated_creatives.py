@@ -50,6 +50,11 @@ def _public(row):
     }
 
 
+def _storage_usable(state, storage):
+    return (storage.mode == "PROVIDER" or
+            (state.env in ("test", "dev-local") and storage.mode == "SIMULATOR"))
+
+
 def _generation_available(state, tenant_id):
     from campaia_core.gcs_asset_storage import configured_asset_storage
     from campaia_core.asset_storage import AssetStorageError
@@ -57,7 +62,7 @@ def _generation_available(state, tenant_id):
         return False
     try:
         storage = configured_asset_storage()
-        return storage.mode == "PROVIDER" and quote_action(
+        return _storage_usable(state, storage) and quote_action(
             state, tenant_id, "image")["mode"] == "COMMERCIAL"
     except (ApiError, AssetStorageError, ValueError):
         return False
@@ -142,7 +147,7 @@ async def generate_campaign_image(request):
     if not state.image_provider.config.enabled:
         raise ApiError("AI_CAPABILITY_UNAVAILABLE", "Geração de imagem indisponível.", status_code=503)
     storage = configured_asset_storage()
-    if storage.mode != "PROVIDER":
+    if not _storage_usable(state, storage):
         raise ApiError("ASSET_STORAGE_DISABLED", "Armazenamento privado indisponível.", status_code=503)
     try:
         ceiling = Decimal(os.environ.get("CAMPAIA_IMAGE_MAX_COST_UNITS", ""))
@@ -281,7 +286,7 @@ async def read_generated_creative_content(request):
     from campaia_core.creative_assets import CreativeIdentity, CreativeManifest, recovery_storage_manifest
     from campaia_core.gcs_asset_storage import configured_asset_storage
 
-    fixture, _state, campaign, repository = _scope(request, Permission.CAMPAIGN_VIEW)
+    fixture, state, campaign, repository = _scope(request, Permission.CAMPAIGN_VIEW)
     try:
         creative_id = str(UUID(request.path_params["creativeId"]))
     except (TypeError, ValueError):
