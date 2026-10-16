@@ -52,10 +52,6 @@ class ImageApiSimulationTests(BillingCreditHarness, unittest.TestCase):
             result.output.update(width=checked.width, height=checked.height)
             return result
         self.fake.generate = with_dimensions
-        self.state.ai_gateway.providers.append(self.fake)
-        self.state.ai_gateway.ledger.set_cap("demo-tenant", Decimal("1"))
-        self.state.image_provider = SimpleNamespace(config=SimpleNamespace(
-            enabled=True, model="gemini-nano-banana-2.1"))
         self.storage = TestOnlyAssetStorage()
         self.cloud = patch("campaia_core.gcs_asset_storage.configured_asset_storage", return_value=self.storage)
         self.cloud.start()
@@ -68,6 +64,10 @@ class ImageApiSimulationTests(BillingCreditHarness, unittest.TestCase):
         plan = self.client.post("/campaigns/" + self.campaign + "/plan/regenerate",
             headers={**OWNER, **unique_idem()}, json={})
         self.assertEqual(plan.status_code, 202, plan.text)
+        self.state.ai_gateway.providers.append(self.fake)
+        self.state.ai_gateway.ledger.set_cap("demo-tenant", Decimal("1"))
+        self.state.image_provider = SimpleNamespace(config=SimpleNamespace(
+            enabled=True, model="gemini-nano-banana-2.1"))
         self.setup_subscription(trial=True)
         self.base = "/campaigns/" + self.campaign + "/images"
 
