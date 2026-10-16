@@ -11,6 +11,8 @@ from campaia_core.billing_settlement import charge_command
 from campaia_core.payment_gateway import refund_snapshot
 from campaia_core.subscription import SubscriptionStatus, refresh_trial_status
 from .billing_guarantee import REQUEST_KEY
+from .billing_guarantee_scope import ensure_scope, access_scope_is_ended
+from .billing_guarantee_resolution import current_resolution
 from .billing_refund_policy import eligible_payments, refund_intent_key, processing_key, refund_progress, refund_review_key
 from .errors import ApiError
 
@@ -51,6 +53,11 @@ def process_guarantee_refunds(state, tenant, *, execute=False, at=None):
     if stored is None:
         return {'state': 'UNAVAILABLE', 'items': [], 'excluded': []}
     case = stored.result
+    if execute:
+        try:
+            ensure_scope(state, tenant, case)
+        except ApiError as exc:
+            return {'state': 'REVIEW_REQUIRED', 'code': exc.code, 'items': [], 'excluded': []}
     try:
         eligible, excluded = eligible_payments(state, tenant, case, at=now)
         preview = refund_progress(state, tenant, case, at=now)
@@ -59,13 +66,13 @@ def process_guarantee_refunds(state, tenant, *, execute=False, at=None):
     if not execute:
         return {'state': 'DRY_RUN', 'request_id': case['request_id'], 'items': preview, 'excluded': excluded}
     sub = state.subscriptions.get(tenant)
-    if sub is None or refresh_trial_status(sub, now=now).status is not SubscriptionStatus.CANCELED:
+    if sub is None or not access_scope_is_ended(state, tenant, case, refresh_trial_status(sub, now=now)):
         return {'state': 'REVIEW_REQUIRED', 'code': 'PAID_ACCESS_NOT_ENDED', 'items': preview, 'excluded': excluded}
     if not callable(getattr(state.billing_gateway, 'refund_charge', None)):
         return {'state': 'REVIEW_REQUIRED', 'code': 'REFUND_UNSUPPORTED', 'items': preview, 'excluded': excluded}
-    resolution = state.idempotency.get(tenant, 'billing-guarantee-resolution')
+    resolution = current_resolution(state, tenant, case)
     if resolution is not None:
-        return {'state': 'REVIEW_REQUIRED', 'code': 'CASE_RESOLUTION_REQUIRES_REVIEW', 'items': preview, 'excluded': excluded}
+        return {'state': 'FINANCIALLY_RESOLVED', 'request_id': case['request_id'], 'items': preview, 'excluded': excluded}
     enabled = getattr(state.billing_gateway, 'refund_dispatch_enabled', False) is True
     has_intent = any(state.idempotency.get(tenant, refund_intent_key(case['request_id'], charge.billing_id))
                      is not None for _gateway_id, charge, _record in eligible)
@@ -114,9 +121,10 @@ def process_guarantee_refunds(state, tenant, *, execute=False, at=None):
                     raise ApiError('BILLING_RECONCILIATION_REQUIRED', 'Pedido mudou antes do envio.', status_code=409)
                 subscription = state.subscriptions[tenant]
                 fresh = state.charges[gateway_id]
-                if (refresh_trial_status(subscription, now=now).status is not SubscriptionStatus.CANCELED
+                if (not access_scope_is_ended(state, tenant, case, refresh_trial_status(subscription, now=now))
                         or fresh.tenant_id != tenant or fresh.billing_id != charge.billing_id
                         or fresh.status.value != 'SETTLED' or fresh.amount != charge.amount
+                        or fresh.gateway_chargeback_status is not None
                         or fresh.gateway_refund_state in {'MISSING', 'INVALID', 'AMOUNT_CONFLICT', 'OBSERVATION_CONFLICT'}
                         or (fresh.payment_reconciliation_state in {'REVERSAL_PENDING', 'CANCELLATION_CONFLICT'}
                             and fresh.gateway_refund_state not in {'NO_COMPLETED_REFUND', 'PARTIAL_DONE'})

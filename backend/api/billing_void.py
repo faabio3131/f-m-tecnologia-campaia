@@ -37,8 +37,13 @@ def withdrawal_quote(state, gateway_id, charge):
     if sub is None:
         return None
     sub = refresh_trial_status(sub)
+    if sub.paid_cycle_schedule is None or sub.paid_cycle_schedule.lifecycle_id != charge.commercial_lifecycle_id:
+        closed = state.idempotency.get(charge.tenant_id, 'billing-closure:' + (charge.commercial_lifecycle_id or ''))
+        if closed is None:
+            return None
+        sub = closed.result
     schedule = sub.paid_cycle_schedule
-    if (sub.status is not SubscriptionStatus.CANCELED or schedule is None or schedule.anchor_at is None
+    if (sub.status is not SubscriptionStatus.CANCELED or schedule is None
             or charge.commercial_lifecycle_id != schedule.lifecycle_id
             or charge.commercial_cycle_index != schedule.paid_through_index + 1
             or charge.purpose is ChargePurpose.FINAL_USAGE or charge.status is ChargeStatus.SETTLED

@@ -6,6 +6,7 @@ import json
 
 from .billing_facts import FIRST_PAID_KEY, fact_key
 from .billing_receipts import tenant_charges
+from .billing_guarantee_scope import get_scope
 from .errors import ApiError
 
 
@@ -46,10 +47,15 @@ def eligible_payments(state, tenant, case, *, at):
     start, end, requested = validate_case(state, tenant, case)
     if at < requested:
         raise ApiError('BILLING_GUARANTEE_REVIEW_REQUIRED', 'Relógio anterior ao recebimento do pedido.', status_code=409)
+    scope = get_scope(state, tenant, case)
     eligible = []
     excluded = []
     seen = set()
     for gateway_id, charge in tenant_charges(state, tenant):
+        if scope is not None and charge.billing_id not in scope['billing_ids']:
+            if charge.status.value == 'SETTLED':
+                excluded.append({'billing_id': charge.billing_id, 'state': 'OUTSIDE_ACCEPTED_REQUEST'})
+            continue
         if charge.status.value != 'SETTLED':
             continue
         stored = state.idempotency.get(tenant, fact_key(charge.billing_id))

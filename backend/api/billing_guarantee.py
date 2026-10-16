@@ -6,18 +6,23 @@ import json
 
 from campaia_core.subscription import cancel_subscription
 from .billing_facts import FIRST_PAID_KEY, fact_key
+from .billing_guarantee_scope import capture_scope, REQUEST_KEY
 from .billing_receipts import tenant_charges
 from .billing_refund_policy import processing_key, refund_progress
+from .billing_guarantee_resolution import current_resolution
 from .billing_closure import record_closed_lifecycle
 from .errors import ApiError
-
-REQUEST_KEY = 'billing-guarantee-request'
 
 
 def guarantee_quote(state, tenant, *, at):
     pending = state.idempotency.get(tenant, REQUEST_KEY)
     if pending is not None:
         result = {**pending.result}
+        resolution = current_resolution(state, tenant, pending.result)
+        if resolution is not None:
+            result.update(state='FINANCIALLY_RESOLVED', financial_resolved_at=resolution['resolved_at'],
+                          fiscal_adjustment_state=resolution['fiscal_adjustment_state'])
+            return result
         processing = state.idempotency.get(tenant, processing_key(result['request_id']))
         if processing is not None:
             result['state'] = 'PROCESSING'
@@ -98,6 +103,7 @@ def request_guarantee(state, fixture, key, body, *, at):
             result = {**quote, 'state': 'REQUESTED',
                 'request_id': 'campaia:guarantee:' + sha256((tenant + ':' + quote['first_paid_at']).encode()).hexdigest(),
                 'requested_at': at.isoformat()}
+            capture_scope(state, tenant, result, canceled)
             state.audit.append(tenant_id=tenant, actor=fixture.user_id, action='BILLING_GUARANTEE_REQUESTED',
                 target=result['request_id'], details={'paid_amount': quote['paid_amount'],
                     'billing_ids': [item['billing_id'] for item in quote['items']],

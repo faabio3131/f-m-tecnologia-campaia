@@ -665,6 +665,7 @@ class BillingChargeHistoryItem(BaseModel):
     invoice_url: str | None
     gateway_observed_amount: str | None = None
     payment_reconciliation_state: str | None = None
+    gateway_chargeback_status: str | None = None
     gateway_refund_amount: str | None = None
     gateway_refund_state: str | None = None
     gateway_refund_observed_at: datetime | None = None

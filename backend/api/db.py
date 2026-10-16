@@ -152,7 +152,7 @@ _COMMERCIAL_FIELDS = {
     ("campaia_core.subscription", "SubscriptionCharge"): frozenset({
         "commercial_cycle_index", "commercial_lifecycle_id", "commercial_plan", "commercial_due_at", "commercial_gateway_provider", "commercial_gateway_mode",
         "gateway_observed_amount", "payment_reconciliation_state",
-        "gateway_refund_amount", "gateway_refund_state", "gateway_refund_observed_at",
+        "gateway_refund_amount", "gateway_refund_state", "gateway_refund_observed_at", "gateway_chargeback_status",
     }),
 }
 

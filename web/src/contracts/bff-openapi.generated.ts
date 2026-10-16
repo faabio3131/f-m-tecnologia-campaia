@@ -1173,6 +1173,7 @@ export interface components {
             plan_id: string | null;
             gateway_observed_amount?: string | null;
             payment_reconciliation_state?: string | null;
+            gateway_chargeback_status?: string | null;
             gateway_refund_amount?: string | null;
             gateway_refund_state?: string | null;
             /** Format: date-time */
@@ -1275,7 +1276,7 @@ export interface components {
         };
         BillingClosure: {
             /** @enum {string} */
-            state: "UNAVAILABLE" | "PENDING_USAGE" | "NO_CHARGE" | "MINIMUM_UNAVAILABLE" | "ABSORBABLE" | "ABSORBED" | "INVOICE_REQUIRED" | "INVOICED" | "SETTLED" | "RECONCILIATION_REQUIRED";
+            state: "UNAVAILABLE" | "PENDING_USAGE" | "NO_CHARGE" | "MINIMUM_UNAVAILABLE" | "ABSORBABLE" | "ABSORBED" | "INVOICE_REQUIRED" | "INVOICED" | "SETTLED" | "GUARANTEE_CLOSED" | "RECONCILIATION_REQUIRED";
             fingerprint: string | null;
             amount: string | null;
             minimum: string | null;
@@ -1288,7 +1289,7 @@ export interface components {
         };
         BillingGuarantee: {
             /** @enum {string} */
-            state: "UNAVAILABLE" | "MANUAL_REVIEW" | "ELIGIBLE" | "EXPIRED" | "REQUESTED" | "PROCESSING";
+            state: "UNAVAILABLE" | "MANUAL_REVIEW" | "ELIGIBLE" | "EXPIRED" | "REQUESTED" | "PROCESSING" | "FINANCIALLY_RESOLVED";
             fingerprint: string | null;
             /** Format: date-time */
             first_paid_at: string | null;
@@ -1310,6 +1311,9 @@ export interface components {
             request_id: string | null;
             /** Format: date-time */
             requested_at: string | null;
+            /** Format: date-time */
+            financial_resolved_at?: string | null;
+            fiscal_adjustment_state?: string | null;
             /** Format: date-time */
             processing_started_at?: string | null;
             processing_review_required?: boolean;

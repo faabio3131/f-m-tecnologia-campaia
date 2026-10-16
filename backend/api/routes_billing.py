@@ -449,10 +449,17 @@ async def reactivate_billing_subscription(request: Request) -> JSONResponse:
         subscription = _require_subscription(state, fixture.tenant_id)
         try:
             if subscription.plan.credit_policy is not None and subscription.status in {SubscriptionStatus.CANCELED, SubscriptionStatus.EXPIRED}:
-                if any(charge.gateway_status == "OVERDUE" and charge.status is not ChargeStatus.SETTLED
+                if any((charge.gateway_status == "OVERDUE" or charge.commercial_lifecycle_id is not None)
+                       and charge.status is not ChargeStatus.SETTLED
                        and not verified_void(state, fixture.tenant_id, charge.billing_id)
                        for _key, charge in state.charges.items_for_tenant(fixture.tenant_id)):
-                    raise ValueError("Existe dívida vencida não conciliada; resolva antes de nova contratação.")
+                    raise ValueError("Existe obrigação anterior aberta não conciliada; resolva ou comprove sua retirada antes de nova contratação.")
+            schedule = subscription.paid_cycle_schedule
+            if subscription.plan.credit_policy is not None and schedule is not None:
+                pending_id = schedule.obligation_id(fixture.tenant_id, schedule.paid_through_index + 1)
+                if (state.idempotency.get(fixture.tenant_id, 'billing-dispatch:' + pending_id) is not None
+                        and not any(charge.billing_id == pending_id for _gid, charge in state.charges.items_for_tenant(fixture.tenant_id))):
+                    raise ValueError("Emissão anterior incerta; concilie a mesma solicitação antes de nova contratação.")
             require_no_payment_review(state, fixture.tenant_id)
             require_final_usage_resolved(state, subscription, actor=fixture.user_id)
             updated = request_reactivation(subscription, now=datetime.now(timezone.utc), lifecycle_id=uuid4().hex)
@@ -555,6 +562,7 @@ async def list_billing_charges(request: Request) -> JSONResponse:
         status_source=charge.status_source,
         gateway_observed_amount=(str(charge.gateway_observed_amount) if charge.gateway_observed_amount is not None else None),
         payment_reconciliation_state=charge.payment_reconciliation_state,
+        gateway_chargeback_status=charge.gateway_chargeback_status,
         gateway_refund_amount=(str(charge.gateway_refund_amount) if charge.gateway_refund_amount is not None else None),
         gateway_refund_state=charge.gateway_refund_state,
         gateway_refund_observed_at=charge.gateway_refund_observed_at,
@@ -617,7 +625,7 @@ async def close_billing_usage(request: Request) -> JSONResponse:
         quote = closure_quote(state, sub)
         if not body.accept or body.fingerprint != quote['fingerprint']:
             raise ApiError("BILLING_QUOTE_CHANGED", "Revise e aceite o fechamento antes de confirmar.", status_code=409)
-        if quote['state'] not in {'NO_CHARGE', 'ABSORBABLE', 'ABSORBED', 'INVOICE_REQUIRED', 'INVOICED', 'SETTLED'}:
+        if quote['state'] not in {'NO_CHARGE', 'ABSORBABLE', 'ABSORBED', 'INVOICE_REQUIRED', 'INVOICED', 'SETTLED', 'GUARANTEE_CLOSED'}:
             raise ApiError("BILLING_FINAL_USAGE_PENDING", "Fechamento ainda exige conciliação.", status_code=409)
         state.audit.append(tenant_id=fixture.tenant_id, actor=fixture.user_id,
                            action="BILLING_FINAL_USAGE_ACCEPTED", target=quote['lifecycle_id'],
@@ -627,7 +635,7 @@ async def close_billing_usage(request: Request) -> JSONResponse:
     if accepted['context'] != context:
         raise ApiError("IDEMPOTENCY_CONFLICT", "A chave identifica outro fechamento/contexto.", status_code=409)
     sub = accepted['sub']; quote = accepted['quote']
-    if quote['state'] == 'SETTLED':
+    if quote['state'] in {'SETTLED', 'GUARANTEE_CLOSED'}:
         return JSONResponse(quote)
     if quote['state'] in {'NO_CHARGE', 'ABSORBABLE', 'ABSORBED'}:
         result, _ = state.idempotency.execute(fixture.tenant_id, 'http:billing_closure:' + key,

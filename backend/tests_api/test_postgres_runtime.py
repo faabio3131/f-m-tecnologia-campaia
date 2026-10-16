@@ -394,6 +394,16 @@ class PostgresRuntimeTests(unittest.TestCase):
                 case_after = clients[0].get('/billing/guarantee', headers=OWNER).json()
                 self.assertEqual(case_after['state'], 'PROCESSING')
                 self.assertEqual(len(case_after['refund_progress']), 2)
+                from api.billing_guarantee_resolution import finalize_guarantee
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    resolved = list(pool.map(lambda client: finalize_guarantee(
+                        client.app.state.campaia, 'demo-tenant', execute=True), clients))
+                self.assertTrue(all(r['state'] == 'FINANCIALLY_RESOLVED' for r in resolved), resolved)
+                self.assertEqual(resolved[0], resolved[1])
+                self.assertEqual(clients[1].get('/billing/guarantee', headers=OWNER).json()['fiscal_adjustment_state'], 'PENDING_CAPABILITY')
+                self.assertEqual(clients[1].get('/billing/closure', headers=OWNER).json()['state'], 'GUARANTEE_CLOSED')
+                self.assertEqual(sum(e.action == 'BILLING_GUARANTEE_FINANCIALLY_RESOLVED' for e in
+                    clients[0].app.state.campaia.audit.list_for_tenant('demo-tenant')), 1)
                 self.assertEqual(sum(e.kind == 'OPEN' for e in clients[0].app.state.campaia.credit_ledger.entries('demo-tenant')), 2)
 
 
