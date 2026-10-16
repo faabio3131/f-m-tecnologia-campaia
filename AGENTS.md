@@ -959,3 +959,9 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - Adicionado POST /campaigns/{campaignId}/images/{creativeId}/review: autenticação server-side, escopo tenant/unidade/campanha, Permission.APPROVAL_DECIDE, step-up, Idempotency-Key, can_approve e revisão imutável ligada a SHA-256, generation GCS e versão da campanha.
 - O criador de cada imagem nova é agora registrado no claim F3 via sessão autenticada (requested_by); imagens históricas sem origem comprovada falham fechado. Revisão não autoriza publicação automaticamente; policy/preview continua conservador.
 - Teste do contrato de rotas atualizado. **Revisão API e lifecycle de delete ainda PARTIAL até nova CI e testes E2E negativos reais da rota.** Não declarar gate de publicação concluído; sem merge/deploy/migration.
+
+
+## WP-R04-04B — tombstone e exclusão privada com fence (16/10/2026)
+- Incremento de lifecycle: `CreativePrivateStorage.delete()` faz CAS STORED→DELETE_PENDING antes do DELETE externo (acesso binário já bloqueado), permite uma única tentativa de remoção da geração imutável GCS, e usa `reconcile_delete()` apenas com observação de metadata para confirmar DELETED. Em dúvida, mantém DELETE_PENDING e quota, sem repetir DELETE automaticamente.
+- Testes de simulador: exclusão idempotente, liberação de quota após observação e recuperação de resposta UNCERTAIN sem segundo DELETE. Não representa homologação GCS real nem expiração de retenção externa.
+- API Web de exclusão por usuário com RBAC/step-up ainda TARGET; revisar requisitos de retenção/auditoria e cobertura API e GCS negativas antes de fechar gate. HEAD atual requer nova CI, sem merge/deploy/migration.
