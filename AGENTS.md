@@ -983,3 +983,11 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - Incluídos testes de API para: cross-tenant negado, step-up revogado negado, step-up fresco autorizando DELETE, mídia privada inacessível após tombstone e segundo DELETE sem repetição da operação externa.
 - Incluídos testes F3/storage para resposta incerta com objeto ainda visível (mantém DELETE_PENDING/quota) e replay do DELETE entre dois handles com somente um dispatch; a exclusão confirmada só libera quota após observação.
 - CURRENT permanece PR #73 sem merge, WP PARTIAL; próximos gates: revalidação completa de aprovação/retention, concorrência multiworker PostgreSQL e custo incerto do provedor. Sem declarar homologação real Gemini/GCS por simulação. Exige CI do HEAD exato e revisão de eventuais falhas.
+
+
+## WP-R04-04B — auditoria final de gates internos (16/10/2026)
+- Adicionado teste PostgreSQL real de corrida entre duas instâncias independentes de CreativeRepository sobre o mesmo claim: somente um writer deve criar o manifesto, outro deve receber replay; quota usada uma vez e leitura cross-tenant negada. Evidência final requer CI PostgreSQL no novo HEAD.
+- Auditoria CURRENT de custo F3: `PersistentAICostLedger._stats` já mantém `held` quando não há OUTCOME ou custo observado é UNKNOWN, e `report` sinaliza `INCOMPLETE`. **Ainda não há reconciliação operacional governada com fonte externa verificada para liberar reservas incertas**: PRODUCTION_GATE / EXTERNAL_CREDENTIAL; proibido converter UNKNOWN em custo zero.
+- Aprovação: `CreativeImageReviewStore` já exige revisor diferente da autoria e vincula hash, versão e generation. **A rota de preview não consulta a decisão persistida**, logo continua fail-closed para publicação, sem certificar material como aprovado. Integração efetiva no fluxo publication/policy permanece TARGET.
+- Retenção: DELETE confirmado pelo transporte GCS não equivale a eliminação de versões retidas/backups; prazo LGPD e revogação de aprovação são HUMAN_DECISION/PRODUCTION_GATE. Nunca tratar a PR como pronta para GO/NO-GO enquanto pendências permanecerem.
+- Escopo desta rodada: verificação CURRENT e novo teste PG. Sem merge/deploy/migration. CI HEAD pendente.
