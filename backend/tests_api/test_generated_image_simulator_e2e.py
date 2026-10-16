@@ -124,6 +124,27 @@ class ImageApiSimulationTests(BillingCreditHarness, unittest.TestCase):
         self.assertEqual(self.storage.calls.count("POST"), 0)
         self.assertEqual(self.usage().json()["balance"]["consumed_credits"], before)
 
+    def test_visual_channel_preview_is_scoped_and_cannot_claim_homologation(self):
+        quote = self.client.get(self.base + "/quote", headers=OWNER).json()
+        version = self.state.campaigns.get("demo-tenant", self.campaign).plan_version
+        body = {"expected_plan_version": version, "prompt": "Imagem visual de campanha para prévia",
+                "credit_confirmation": {field: quote[field] for field in
+                    ("cycle_id", "policy_version", "credits", "extra_amount")}}
+        created = self.client.post(self.base, headers={**OWNER, **unique_idem()}, json=body)
+        self.assertEqual(created.status_code, 201, created.text)
+        url = self.base + "/" + created.json()["id"] + "/visual-preview/"
+        for channel in ("google", "meta", "whatsapp"):
+            result = self.client.get(url + channel, headers=OWNER)
+            self.assertEqual(result.status_code, 200, result.text)
+            self.assertIn("Simulação visual interna", result.text)
+            self.assertIn("/content", result.text)
+            self.assertIn("no-store", result.headers.get("cache-control", ""))
+            self.assertIn("frame-ancestors 'none'", result.headers.get("content-security-policy", ""))
+        denied = self.client.get(url + "google", headers=OTHER_OWNER)
+        self.assertEqual(denied.status_code, 404, denied.text)
+        unknown = self.client.get(url + "invalid", headers=OWNER)
+        self.assertEqual(unknown.status_code, 404, unknown.text)
+
     def test_image_revision_preserves_source_and_rejects_foreign_source(self):
         quote = self.client.get(self.base + "/quote", headers=OWNER).json()
         version = self.state.campaigns.get("demo-tenant", self.campaign).plan_version
