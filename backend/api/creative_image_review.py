@@ -54,6 +54,9 @@ class CreativeImageReviewStore:
         key = "creative-review:" + identity.creative_id + ":" + str(identity.campaign_version)
         previous = self.state.idempotency.get(identity.tenant_id, key)
         review = previous.result if previous is not None else None
+        revoked = self.state.idempotency.get(identity.tenant_id, "creative-review-revoke:" + identity.creative_id)
+        if revoked is not None:
+            return {"decision": "REVOKED", "reviewer_id": None}
         if review and not decision_applies(row, review):
             return {"decision": "STALE", "reviewer_id": None}
         return review
@@ -67,6 +70,8 @@ class CreativeImageReviewStore:
         key = "creative-review:" + identity.creative_id + ":" + str(identity.campaign_version)
 
         def commit():
+            if self.state.idempotency.get(identity.tenant_id, "creative-review-revoke:" + identity.creative_id):
+                raise AssetStorageError(Code.CONFLICT)
             row = CreativeRepository(self.state.db).get(identity)
             if (row["state"] != "STORED"
                     or row["manifest"]["sha256"] != expected_sha256
@@ -90,5 +95,36 @@ class CreativeImageReviewStore:
                 or result["requester_id"] != requester_id
                 or result["sha256"] != expected_sha256
                 or result["generation"] != expected_generation):
+            raise AssetStorageError(Code.CONFLICT)
+        return result, replay
+
+    def revoke(self, identity, *, actor_id, expected_sha256, expected_generation, reason):
+        """Irreversible F3 review revocation; no silent reapproval/reuse."""
+        if (not isinstance(actor_id, str) or not actor_id
+                or not isinstance(reason, str) or not 8 <= len(reason) <= 500):
+            raise AssetStorageError(Code.INVALID)
+        key = "creative-review-revoke:" + identity.creative_id
+        from .creative_repository import CreativeRepository
+
+        def commit():
+            row = CreativeRepository(self.state.db).get(identity)
+            current = self.get(identity)
+            if (row["state"] != "STORED"
+                    or row["manifest"]["sha256"] != expected_sha256
+                    or row["storage_generation"] != expected_generation
+                    or not decision_applies(row, current)):
+                raise AssetStorageError(Code.CONFLICT)
+            result = {"creative_id": identity.creative_id, "decision": "REVOKED",
+                      "actor_id": actor_id, "sha256": expected_sha256,
+                      "generation": expected_generation, "reason": reason}
+            self.state.audit.append(tenant_id=identity.tenant_id, actor=actor_id,
+                action="CREATIVE_IMAGE_REVIEW_REVOKED", target=identity.creative_id,
+                details={"reason": reason})
+            return result
+
+        result, replay = self.state.idempotency.execute(identity.tenant_id, key, commit)
+        if any(result[k] != v for k, v in {
+                "actor_id": actor_id, "sha256": expected_sha256,
+                "generation": expected_generation, "reason": reason}.items()):
             raise AssetStorageError(Code.CONFLICT)
         return result, replay
