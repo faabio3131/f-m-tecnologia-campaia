@@ -883,3 +883,10 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - Rotas de geração POST, billing de 15 créditos, liberação de mídia e UX Web de geração **ainda TARGET**; não ativar mutação de imagem antes de validar reserva, external dispatch, resultado, entrega e SETTLE/RELEASE atômicos.
 - Testes de contrato impedem mutação acidental e vazamento de identidade/manifesto do objeto. CI do HEAD novo ainda pendente; não confundir código com DONE_VERIFIED.
 - Homologação GCS externa: `EXTERNAL_INFRASTRUCTURE`, postergada conforme decisão do Diretor até fechamento funcional, sem bloquear WPs internos independentes.
+
+
+## WP-R04-04B — extensão de liquidação interna F3/F5 (16/10/2026)
+
+- `api.creative_image_settlement.settle_stored_creative`: subrotina interna, chamada somente após autorização e reserva comercial, exige manifesto STORED com generation persistida; SETTLE F5, idempotência e auditoria na mesma transação F3. Testes unitários de rejeição pendente e liquidação verificada.
+- **Não há ainda rota POST de geração nem componente Web operacional**: não apresentar este helper como entrega API/Web completa. Integração custo F3, provedor Gemini, commit storage, créditos, entrega e status assíncrono requerem fechamento e testes E2E; dependência da homologação GCS real permanece EXTERNAL_INFRASTRUCTURE.
+- Novo HEAD necessita CI. A PR #73 permanece PARTIAL; não fazer merge, deploy nem migrations reais sem aprovação específica.
