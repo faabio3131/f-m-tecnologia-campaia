@@ -191,6 +191,74 @@ class PostgresRuntimeTests(unittest.TestCase):
                 ).fetchall()
             }
 
+    def test_creative_claim_replay_multiworker_and_crash_recovery(self) -> None:
+        from uuid import uuid4
+        from api.creative_repository import CreativeRepository
+        from campaia_core.creative_assets import (
+            CreativeIdentity, CreativeManifest, CreativeState, CreativeStateTransition,
+        )
+        from campaia_core.asset_storage import AssetStorageError
+
+        def make(tenant="creative-tenant", creative_id=None):
+            ident = CreativeIdentity(tenant, "unit", "campaign", 1, creative_id or str(uuid4()))
+            return CreativeManifest(ident, "a" * 64, 64, 1, 1, "GEMINI_IMAGE",
+                                    "gemini-nano-banana-2.1", "request")
+        a = CreativeRepository(PostgresDatabase(DSN))
+        b = CreativeRepository(PostgresDatabase(DSN))
+        one, two = make(), make()
+        start = threading.Barrier(2)
+        def claim(repo, item):
+            start.wait(timeout=10)
+            try:
+                repo.claim(item, item.identity.creative_id, 64)
+                return "ok"
+            except AssetStorageError:
+                return "quota-rejected"
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            f1 = pool.submit(claim, a, one)
+            f2 = pool.submit(claim, b, two)
+            outcomes = sorted([f1.result(timeout=10), f2.result(timeout=10)])
+        self.assertEqual(outcomes, ["ok", "quota-rejected"])
+        winner = one if a.table.get_for_tenant(one.identity.creative_id, one.identity.tenant_id) else two
+        self.assertEqual(a.usage("creative-tenant"), 64)
+        same, replay = b.claim(winner, winner.identity.creative_id, 64)
+        self.assertTrue(replay)
+        self.assertEqual(same["revision"], 0)
+        other = make("other-tenant", winner.identity.creative_id)
+        with self.assertRaises(AssetStorageError):
+            b.claim(other, "distinct", 64)
+        with self.assertRaises(AssetStorageError):
+            b.get(other.identity)
+
+        a.transition(winner.identity, CreativeStateTransition(
+            CreativeState.RESERVED, CreativeState.GENERATING, 0))
+        a.transition(winner.identity, CreativeStateTransition(
+            CreativeState.GENERATING, CreativeState.STORAGE_PENDING, 1))
+        with self.assertRaises(AssetStorageError):
+            b.transition(winner.identity, CreativeStateTransition(
+                CreativeState.GENERATING, CreativeState.STORAGE_PENDING, 1))
+        self.assertEqual(b.get(winner.identity)["state"], "STORAGE_PENDING")
+        with self.assertRaises(AssetStorageError):
+            b.transition(winner.identity, CreativeStateTransition(
+                CreativeState.STORAGE_PENDING, CreativeState.STORED, 2))
+        self.assertEqual(a.get(winner.identity)["revision"], 2)
+        finished = b.transition(winner.identity, CreativeStateTransition(
+            CreativeState.STORAGE_PENDING, CreativeState.STORED, 2), storage_generation="42")
+        self.assertEqual(finished["storage_generation"], "42")
+        self.assertEqual(a.get(winner.identity)["revision"], 3)
+
+        # PostgreSQL trigger prevents a forged direct replay/state jump even when
+        # an internal caller bypasses the domain repository.
+        with self.assertRaises(psycopg.Error):
+            with psycopg.connect(DSN) as conn:
+                conn.execute(
+                    "UPDATE campaia_runtime.creative_assets "
+                    "SET data = jsonb_set(data, '{state}', '\"RESERVED\"'::jsonb) "
+                    "WHERE id = %s AND tenant_id = %s",
+                    (winner.identity.creative_id, winner.identity.tenant_id),
+                )
+        self.assertEqual(a.get(winner.identity)["state"], "STORED")
+
     def test_commercial_payment_webhook_is_atomic_across_workers(self) -> None:
         import json
         from pathlib import Path
