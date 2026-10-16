@@ -65,7 +65,7 @@ class CampaignBrandTests(BillingCreditHarness, unittest.TestCase):
         from types import SimpleNamespace
         from api.campaign_brand import brand_agent_context
         from campaia_core.sanitizer import sanitize
-        profile = {**self.profile, "name": "Contato 11999998888"}
+        profile = {**self.profile, "name": "Contato +55 (11) 99999-8888"}
         assets = [{"id": identity, "kind": "LOGO", "width": 3, "height": 2}
                   for identity in ("db45bc0e-583a-44fb-bd5b-9d6764268221",
                                    "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")]
@@ -74,7 +74,7 @@ class CampaignBrandTests(BillingCreditHarness, unittest.TestCase):
         self.assertEqual(clean["arquivos_selecionados"], [
             {"referencia": "arquivo-1", "kind": "LOGO", "width": 3, "height": 2},
             {"referencia": "arquivo-2", "kind": "LOGO", "width": 3, "height": 2}])
-        self.assertNotIn("11999998888", str(clean))
+        self.assertNotIn("+55 (11) 99999-8888", str(clean))
         self.assertIn("[TELEFONE_", clean["marca"]["name"])
         self.assertNotIn(assets[0]["id"], str(clean))
         self.assertEqual(record.brief["brand_snapshot_v1"]["assets"], assets)
