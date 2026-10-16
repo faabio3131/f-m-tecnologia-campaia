@@ -31,14 +31,15 @@ export function CreativeProposalsPanel({ campaignId, planVersion, channels, prod
   const [prepared, setPrepared] = useState<Prepared | null>(null);
   const [error, setError] = useState<string | null>(null), [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const active = useRef(false), alive = useRef(false);
+  const active = useRef(false), alive = useRef(false), readEpoch = useRef(0);
   const base = "/campaigns/" + encodeURIComponent(campaignId) + "/proposals/";
 
   async function refresh() {
+    const epoch = ++readEpoch.current;
     const [copy, publicos] = await Promise.all([
       api.get<CreativeProposalPage>(base + "copy"), api.get<CreativeProposalPage>(base + "audience"),
     ]);
-    if (alive.current) setPages({ copy, audience: publicos });
+    if (alive.current && readEpoch.current === epoch) setPages({ copy, audience: publicos });
   }
   useEffect(() => {
     alive.current = true;
@@ -47,7 +48,7 @@ export function CreativeProposalsPanel({ campaignId, planVersion, channels, prod
     return () => { alive.current = false; };
     // Campaign scope is keyed by the parent, including tenant and business unit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [campaignId]);
+  }, [campaignId, planVersion]);
 
   async function deliver(intent: Prepared) {
     const sent = { ...intent, sent: true };

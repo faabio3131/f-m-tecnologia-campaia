@@ -77,6 +77,38 @@ class CreativeProposalTests(BillingCreditHarness, unittest.TestCase):
             headers={**with_step_up(OWNER), **unique_idem()},
             json={"policy_decision_id": policy, "approval_id": approval})
 
+
+    def test_legacy_known_invalid_output_replays_failure_without_another_dispatch(self):
+        body, headers = self.body(), {**OWNER, **unique_idem()}
+        original = self.provider.generate
+        def invalid(request):
+            return replace(original(request), output={"variacoes": [" "] * 5})
+        with patch.object(self.provider, "generate", side_effect=invalid):
+            first = self.send(body=body, headers=headers)
+        self.assertEqual(first.status_code, 422, first.text)
+        before = self.provider.calls
+        repeated = self.send(body=body, headers=headers)
+        self.assertEqual(repeated.status_code, 422, repeated.text)
+        self.assertEqual(repeated.json()["code"], "AI_OPERATION_FAILED")
+        self.assertEqual(self.provider.calls, before)
+        self.assertEqual(self.history().json()["items"], [])
+
+
+    def test_agents_receive_strategy_and_declared_context_without_internal_plan_metadata(self):
+        captured = []
+        original = self.provider.generate
+        def inspect(request):
+            captured.append(request.input)
+            return original(request)
+        with patch.object(self.provider, "generate", side_effect=inspect):
+            response = self.send()
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(captured[0]["estrategia"], self.record().plan["output"])
+        self.assertEqual(captured[0]["objetivo"], BRIEF["objective"])
+        self.assertEqual(captured[0]["quantidade_variacoes"], 5)
+        self.assertNotIn("proposal_id", captured[0])
+        self.assertNotIn("provenance", captured[0])
+
     def test_copy_five_variants_and_audience_charge_three_and_two_only_on_delivery(self):
         self.setup_subscription(trial=True)
         before = self.included()

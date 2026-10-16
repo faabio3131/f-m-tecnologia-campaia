@@ -49,7 +49,7 @@ def execute_unmetered(state, fixture, key, campaign_id, snapshot, generate, deli
     except ApiError as exc:
         if exc.code == 'AI_OPERATION_PENDING':
             raise
-        state.idempotency.execute(tenant, 'ai-unmetered-failure:' + key, lambda: {'known_no_delivery': True})
+        state.idempotency.execute(tenant, failure_key, lambda: {'known_no_delivery': True})
         raise
     except Exception as exc:
         raise ApiError('AI_OPERATION_PENDING', 'Resultado externo incerto; execução não será repetida automaticamente.', status_code=503) from exc

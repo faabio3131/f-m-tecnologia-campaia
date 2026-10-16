@@ -192,7 +192,7 @@ function CampaignDetailContent({ campaignId }: { campaignId: string }) {
 
       <Button variant="secondary" disabled={busy} onClick={() => setShowProposals(true)}>Abrir textos e públicos</Button>
       {showProposals ? <CreativeProposalsPanel campaignId={campaignId} planVersion={plan?.plan_version ?? 0}
-        channels={campaign.channels}
+        channels={campaign.channels ?? []}
         product={typeof campaign.brief?.product === "string" ? campaign.brief.product : ""}
         audience={typeof campaign.brief?.audience === "string" ? campaign.brief.audience : ""}
         busy={busy} onBusy={setBusy} onDelivered={contentDelivered} /> : null}

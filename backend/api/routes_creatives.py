@@ -75,7 +75,11 @@ def _fresh(request, original, state):
 def _inputs(record, kind, body):
     if body.channel not in record.planned_channels:
         raise ApiError("VALIDATION_FAILED", "Escolha um canal declarado para esta campanha.", status_code=422)
-    branding = brand_agent_context(record)
+    branding = {**brand_agent_context(record),
+        "estrategia": deepcopy(dict(record.plan.get("output", {}))),
+        "objetivo": str(record.brief.get("objective", "")),
+        "produto": str(record.brief.get("product", "")),
+        "publico_briefing": str(record.brief.get("audience", ""))}
     if kind == "copy":
         offer = body.offer.strip() or str(record.brief.get("product", "")).strip()
         brand_tone = branding.get("marca", {}).get("tone") or ""
