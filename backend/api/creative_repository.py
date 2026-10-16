@@ -10,6 +10,7 @@ from hashlib import sha256
 import json
 
 from campaia_core.asset_storage import AssetStorageError, AssetStorageErrorCode as Code
+from campaia_core.errors import TenantIsolationViolation
 from campaia_core.creative_assets import CreativeIdentity, CreativeManifest, CreativeState, CreativeStateTransition
 
 
@@ -59,7 +60,10 @@ class CreativeRepository:
             row = {"identity": asdict(identity), "manifest": asdict(manifest),
                    "state": CreativeState.RESERVED.value, "revision": 0,
                    "storage_generation": None, "context": context}
-            self.table.put(identity.creative_id, identity.tenant_id, row)
+            try:
+                self.table.put(identity.creative_id, identity.tenant_id, row)
+            except TenantIsolationViolation:
+                raise AssetStorageError(Code.CONFLICT) from None
             return row, False
 
     def transition(self, identity: CreativeIdentity, command: CreativeStateTransition, *,
