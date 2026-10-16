@@ -68,7 +68,7 @@ class ImageApiSimulationTests(BillingCreditHarness, unittest.TestCase):
             headers={**OWNER, **unique_idem()}, json={})
         self.assertEqual(plan.status_code, 202, plan.text)
         self.state.ai_gateway.providers.append(self.fake)
-        self.state.ai_gateway.ledger.set_cap("demo-tenant", Decimal("1"))
+        self.state.ai_gateway.ledger.set_cap("demo-tenant", Decimal("1000"))
         self.state.image_provider = SimpleNamespace(config=SimpleNamespace(
             enabled=True, model="gemini-nano-banana-2.1"))
         self.setup_subscription(trial=True)
