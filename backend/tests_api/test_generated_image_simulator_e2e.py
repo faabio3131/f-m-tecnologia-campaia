@@ -124,6 +124,32 @@ class ImageApiSimulationTests(BillingCreditHarness, unittest.TestCase):
         self.assertEqual(self.storage.calls.count("POST"), 0)
         self.assertEqual(self.usage().json()["balance"]["consumed_credits"], before)
 
+    def test_image_revision_preserves_source_and_rejects_foreign_source(self):
+        quote = self.client.get(self.base + "/quote", headers=OWNER).json()
+        version = self.state.campaigns.get("demo-tenant", self.campaign).plan_version
+        confirmation = {field: quote[field] for field in
+                        ("cycle_id", "policy_version", "credits", "extra_amount")}
+        original = self.client.post(self.base, headers={**OWNER, **unique_idem()},
+            json={"expected_plan_version": version, "prompt": "Imagem original para revisão",
+                  "credit_confirmation": confirmation})
+        self.assertEqual(original.status_code, 201, original.text)
+        original_id = original.json()["id"]
+        updated = self.client.post(self.base, headers={**OWNER, **unique_idem()},
+            json={"expected_plan_version": version, "prompt": "Revisão de composição e iluminação",
+                  "source_creative_id": original_id, "credit_confirmation": confirmation})
+        self.assertEqual(updated.status_code, 201, updated.text)
+        self.assertNotEqual(updated.json()["id"], original_id)
+        detail = self.client.get(self.base + "/" + updated.json()["id"], headers=OWNER)
+        self.assertEqual(detail.status_code, 200, detail.text)
+        self.assertEqual(detail.json()["source_creative_id"], original_id)
+        self.assertEqual(self.client.get(self.base + "/" + original_id, headers=OWNER).status_code, 200)
+        foreign = self.client.post(self.base, headers={**OWNER, **unique_idem()},
+            json={"expected_plan_version": version, "prompt": "Revisão inválida entre tenants",
+                  "source_creative_id": "00000000-0000-0000-0000-000000000001",
+                  "credit_confirmation": confirmation})
+        self.assertEqual(foreign.status_code, 409, foreign.text)
+        self.assertEqual(foreign.json()["code"], "IMAGE_SOURCE_INVALID")
+
     def test_unreviewed_generated_image_blocks_campaign_publication(self):
         quote = self.client.get(self.base + "/quote", headers=OWNER).json()
         version = self.state.campaigns.get("demo-tenant", self.campaign).plan_version
