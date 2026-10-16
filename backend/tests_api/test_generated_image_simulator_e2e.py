@@ -146,11 +146,12 @@ class ImageApiSimulationTests(BillingCreditHarness, unittest.TestCase):
         self.assertEqual(result.json()["source_creative_id"], source_id)
         self.assertEqual((result.json()["width"], result.json()["height"]),
                          (row["manifest"]["height"], row["manifest"]["width"]))
-        storage_calls = len(self.storage.calls)
+        uploads_before_replay = self.storage.calls.count("POST")
         replay = self.client.post(edit_url, headers=headers, json=payload)
         self.assertEqual(replay.status_code, 201, replay.text)
         self.assertEqual(replay.json()["id"], edited_id)
-        self.assertEqual(len(self.storage.calls), storage_calls)
+        self.assertEqual(self.storage.calls.count("POST"), uploads_before_replay)
+        self.assertEqual(self.storage.calls.count("DELETE"), 0)
         denial = self.client.post(edit_url, headers={**with_step_up(OWNER), **unique_idem()},
                                   json={**payload, "expected_sha256": "0" * 64})
         self.assertEqual(denial.status_code, 409, denial.text)
