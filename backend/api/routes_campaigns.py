@@ -49,6 +49,8 @@ from .repositories import ExternalResourceState
 from .unmetered_execution import execute_unmetered
 from .metered_execution import commercial_subscription, execute_metered, quote_action
 from .commercial_limits import enforce_campaign_capacity
+from .campaign_brand import (freeze_selected_brand, brand_agent_context, brand_guidance,
+    brand_assets_ready, require_brand_assets)
 
 
 def _authorize(request: Request, permission: Permission, *, amount: Decimal | None = None):
@@ -115,10 +117,15 @@ async def create_brief(request: Request) -> JSONResponse:
             "business_unit_id nao pertence as unidades de negocio do usuario.",
         )
 
+    fields = body.model_dump(mode="json")
+    context = sha256(json.dumps([fixture.user_id, business_unit_id, fields], sort_keys=True).encode()).hexdigest()
+
     def _do_create():
+        frozen_brand = freeze_selected_brand(state, fixture.tenant_id, body.brand_selection)
+        brief = {**fields, **({"brand_snapshot_v1": frozen_brand} if frozen_brand else {})}
         record = state.campaigns.create(
             fixture.tenant_id,
-            brief=body.model_dump(mode="json"),
+            brief=brief,
             business_unit_id=business_unit_id,
             created_by=fixture.user_id,
         )
@@ -131,13 +138,29 @@ async def create_brief(request: Request) -> JSONResponse:
             action="CAMPAIGN_CREATE",
             target=record.campaign_id,
         )
-        return serialize_campaign(record).model_dump(mode="json")
+        response = serialize_campaign(record).model_dump(mode="json")
+        return {"context": context, "response": response}
 
     result, _replay = state.idempotency.execute(
         fixture.tenant_id, f"http:create_brief:{idem_key}", _do_create
     )
-    # Contract: 202 Accepted -- strategy generation happens asynchronously (achado 4).
-    return JSONResponse(result, status_code=202)
+    if "context" in result and "response" in result:
+        if result["context"] != context:
+            raise ApiError("IDEMPOTENCY_CONFLICT", "A chave identifica outro briefing ou contexto.", status_code=409)
+        response = result["response"]
+    else:
+        # Compatibility with already-issued legacy responses; no new effect on replay.
+        response = result
+        legacy = dict(response.get("brief", {}))
+        expected = dict(fields)
+        if "brand_selection" not in legacy and expected["brand_selection"] is None:
+            expected.pop("brand_selection")
+        if legacy != expected:
+            raise ApiError("IDEMPOTENCY_CONFLICT", "A chave identifica outro briefing.", status_code=409)
+    owned = _get_campaign_or_404(state, fixture.tenant_id, response["id"], principal=principal)
+    if owned.created_by != fixture.user_id or owned.business_unit_id != business_unit_id:
+        raise ApiError("IDEMPOTENCY_CONFLICT", "O contexto do briefing mudou.", status_code=409)
+    return JSONResponse(response, status_code=202)
 
 
 # --------------------------------------------------------------------------- campaigns
@@ -183,7 +206,9 @@ async def get_campaign(request: Request) -> JSONResponse:
 
 def _run_strategist(state, fixture, record) -> dict:
     """Use the configured AgentRunner/provider; preserve structured provenance."""
+    require_brand_assets(state, record)
     context = {
+        **brand_agent_context(record),
         "objetivo": record.brief.get("objective", ""),
         "orcamento": str(record.brief.get("total_budget", "")),
         "publico": record.brief.get("audience", ""),
@@ -247,7 +272,9 @@ async def regenerate_plan(request: Request) -> JSONResponse:
                 tenant_id=fixture.tenant_id, campaign_id=campaign_id,
                 plan_version=version_snapshot + 1, action=ActionKind.FIRST_PUBLISH,
                 autonomy=scoped_record.autonomy, budget=scoped_record.budget,
-                plan_text=str(plan.get('output', ''))), now=datetime.now(timezone.utc))
+                plan_text=str(plan.get('output', '')),
+                brand_guidance=brand_guidance(scoped_record),
+                brand_assets_ready=brand_assets_ready(state, scoped_record)), now=datetime.now(timezone.utc))
             if decision.outcome.value == 'BLOCKED':
                 raise ApiError('POLICY_VIOLATION', 'Entrega bloqueada pela política, sem consumo comercial.', status_code=422)
             return plan
@@ -255,6 +282,7 @@ async def regenerate_plan(request: Request) -> JSONResponse:
             record = _get_campaign_or_404(state, fixture.tenant_id, campaign_id, principal=principal)
             if dict(record.brief) != brief_snapshot or record.plan_version != version_snapshot:
                 raise ApiError('AI_INPUT_CHANGED', 'A campanha mudou durante a geração; entrega descartada sem débito.', status_code=409)
+            require_brand_assets(state, record)
             record.plan = plan
             record.plan_version += 1
             if record.campaign.state is CampaignState.DRAFT:
@@ -279,6 +307,7 @@ async def regenerate_plan(request: Request) -> JSONResponse:
 
     def deliver_legacy(plan):
         record = _get_campaign_or_404(state, fixture.tenant_id, campaign_id, principal=principal)
+        require_brand_assets(state, record)
         record.plan = plan
         record.plan_version += 1
         if record.campaign.state is CampaignState.DRAFT:
@@ -301,9 +330,12 @@ async def validate_campaign(request: Request) -> JSONResponse:
     idem_key = require_idempotency_key(request)
     campaign_id = request.path_params["campaignId"]
     key = f"http:validate_campaign:{idem_key}"
+    _get_campaign_or_404(state, fixture.tenant_id, campaign_id, principal=principal)
 
     existing = state.idempotency.get(fixture.tenant_id, key)
     if existing is not None:
+        if existing.result.get("campaign_id") != campaign_id:
+            raise ApiError("IDEMPOTENCY_CONFLICT", "A chave identifica outra validação.", status_code=409)
         return JSONResponse(existing.result)
 
     def _do_validate():
@@ -340,6 +372,8 @@ async def validate_campaign(request: Request) -> JSONResponse:
             requested_amount=Decimal(str(record.brief.get("daily_cap", "0"))),
             channel_support=channel_support,
             brand_restrictions=tuple(),
+            brand_guidance=brand_guidance(record),
+            brand_assets_ready=brand_assets_ready(state, record),
             plan_text=str(record.plan.get("output", "")) if record.plan else "",
         )
         decision = engine.evaluate(req, now=datetime.now(timezone.utc))
@@ -378,10 +412,13 @@ async def publish_campaign(request: Request) -> JSONResponse:
     campaign_id = request.path_params["campaignId"]
     body = await parse_body(request, PublishRequest)
     key = f"http:publish:{idem_key}"
+    _get_campaign_or_404(state, fixture.tenant_id, campaign_id, principal=principal)
 
     # Fast replay path: never revalida estado mutado por uma chamada anterior.
     existing = state.idempotency.get(fixture.tenant_id, key)
     if existing is not None:
+        if existing.result.get("id") != campaign_id:
+            raise ApiError("IDEMPOTENCY_CONFLICT", "A chave identifica outra publicação.", status_code=409)
         return JSONResponse(existing.result, status_code=202)
 
     def _do_publish():
@@ -391,6 +428,7 @@ async def publish_campaign(request: Request) -> JSONResponse:
         record = _get_campaign_or_404(
             state, fixture.tenant_id, campaign_id, principal=principal
         )
+        require_brand_assets(state, record)
         enforce_campaign_capacity(state, fixture.tenant_id, record)
         decision = record.last_policy_decision
         if decision is None or decision.policy_decision_id != body.policy_decision_id:

@@ -38,7 +38,7 @@ export function BrandAssetsPanel({ identity, name, canManage }: { identity: stri
   }, [load]);
   useEffect(() => {
     alive.current = true; refresh();
-    return () => { alive.current = false; epoch.current++; };
+    return () => { alive.current = false; };
   }, [refresh]);
   async function upload(event: FormEvent) {
     event.preventDefault();
@@ -111,7 +111,7 @@ export function BrandAssetsPanel({ identity, name, canManage }: { identity: stri
           {canManage && page.capability.enabled && asset.status !== "READY" && asset.status !== "DELETED"
             ? <Button variant="secondary" disabled={locked} onClick={() => mutate(asset, "reconcile")}>Conferir arquivo</Button> : null}
           {canManage && page.capability.enabled && asset.status === "READY" ? deleteTarget === asset.id ? <div>
-            <p>Remover o acesso a esta imagem? A retenção do armazenamento pode conservar uma cópia.</p>
+            <p>Remover o acesso a esta imagem? Campanhas que a selecionaram não poderão gerar ou publicar novamente. Anúncios já publicados devem ser pausados separadamente. A retenção do armazenamento pode conservar uma cópia.</p>
             <Button disabled={locked} onClick={() => mutate(asset, "delete")}>Confirmar remoção</Button>{" "}
             <Button variant="secondary" disabled={locked} onClick={() => setDeleteTarget(null)}>Voltar</Button>
           </div> : <Button variant="secondary" disabled={locked} onClick={() => setDeleteTarget(asset.id)}>Remover imagem</Button> : null}

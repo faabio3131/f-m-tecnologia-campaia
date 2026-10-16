@@ -1752,6 +1752,30 @@ export interface components {
         BusinessUnitRenameRequest: {
             name: string;
         };
+        BrandSelectionInput: {
+            brand_profile_id: string;
+            expected_version: number;
+            asset_ids?: string[];
+        };
+        BriefInput: {
+            brand_selection?: components["schemas"]["BrandSelectionInput"] | null;
+            objective: string;
+            product?: string;
+            audience?: string;
+            region?: string;
+            currency?: string;
+            total_budget?: number | string;
+            daily_cap?: number | string;
+            channels?: string[];
+            connection_id?: string | null;
+            business_unit_id?: string | null;
+            name?: string;
+        };
+        CampaignBrandSnapshot: {
+            profile: components["schemas"]["BrandProfile"];
+            assets: components["schemas"]["BrandAsset"][];
+            recorded_at: string;
+        };
         BrandProfileInput: {
             name: string;
             tone: string;
@@ -1840,6 +1864,11 @@ export interface components {
             notes?: string | null;
         };
         Campaign: {
+            brief?: {
+                brand_snapshot_v1?: components["schemas"]["CampaignBrandSnapshot"];
+            } & {
+                [key: string]: unknown;
+            };
             /** Format: uuid */
             id?: string;
             name?: string;
@@ -3645,16 +3674,22 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /**
+                 * @description Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+                 *     login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+                 *     servidor. Ausente/invalido -> 403.
+                 */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
                 /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path?: never;
             cookie?: never;
         };
-        /** @description Conforme campaign-brief.schema.json, sem tenant_id (derivado do token). */
+        /** @description Entrada do briefing BFF, sem tenant ou snapshot fornecido pelo cliente. */
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["BriefInput"];
             };
         };
         responses: {

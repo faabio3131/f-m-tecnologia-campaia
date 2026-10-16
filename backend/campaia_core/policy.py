@@ -88,6 +88,9 @@ class PolicyRequest:
     has_legal_basis: bool = False
     kill_switch_active: bool = False
     high_risk: bool = False
+    #: Natural-language guidance requires human review; it is not a literal denylist.
+    brand_guidance: tuple[str, ...] = ()
+    brand_assets_ready: bool = True
 
 
 class PolicyEngine:
@@ -131,6 +134,13 @@ class PolicyEngine:
                         "Valor solicitado excede o teto diario autorizado.",
                     )
                 )
+
+        if not req.brand_assets_ready:
+            findings.append(Finding("BRAND_ASSET_UNAVAILABLE", Severity.BLOCKING,
+                "Um arquivo selecionado da marca foi removido ou está indisponível."))
+        if req.brand_guidance:
+            findings.append(Finding("BRAND_GUIDANCE_REVIEW_REQUIRED", Severity.WARNING,
+                "Confira as restrições de comunicação da marca selecionada. Regras em linguagem natural exigem revisão humana."))
 
         texto = req.plan_text.casefold()
         for termo in req.brand_restrictions:
@@ -190,7 +200,7 @@ class PolicyEngine:
             plan_version=req.plan_version,
             issued_at=now,
             expires_at=now + self._ttl,
-            requires_human_approval=autonomy.requires_human,
+            requires_human_approval=autonomy.requires_human or bool(req.brand_guidance),
             requires_dual_approval=autonomy.requires_dual_approval,
             findings=tuple(findings),
         )

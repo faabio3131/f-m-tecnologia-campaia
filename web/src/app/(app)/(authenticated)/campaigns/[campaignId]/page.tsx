@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { CampaignBrandSnapshot } from "@/components/CampaignBrandSnapshot";
+import { useAuth } from "@/providers/AuthProvider";
 import { StrategyGenerateButton } from "@/components/StrategyGenerateButton";
 import { BudgetPanel } from "../../../../../components/BudgetPanel";
 import { Button } from "../../../../../components/Button";
@@ -43,8 +45,11 @@ interface PlanResponse {
  */
 export default function CampaignDetailPage() {
   const params = useParams<{ campaignId: string }>();
-  const campaignId = params.campaignId;
-
+  const { me, session } = useAuth();
+  const scope = [session?.tenant_id, session?.user_id, me?.business_unit_id, params.campaignId].join(":");
+  return <CampaignDetailContent key={scope} campaignId={params.campaignId} />;
+}
+function CampaignDetailContent({ campaignId }: { campaignId: string }) {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [plan, setPlan] = useState<PlanResponse | null>(null);
   const [decision, setDecision] = useState<PolicyDecision | null>(null);
@@ -164,6 +169,8 @@ export default function CampaignDetailPage() {
         budget={campaign.budget}
         onApplied={loadCampaignAndPlan}
       />
+
+      {campaign.brief?.brand_snapshot_v1 ? <CampaignBrandSnapshot key={campaignId} snapshot={campaign.brief.brand_snapshot_v1} /> : null}
 
       <Card>
         <h2 className={styles.sectionTitle}>Estratégia (IA)</h2>

@@ -1152,14 +1152,16 @@ paths:
       tags: [Campanhas]
       summary: Submete briefing e cria campanha em DRAFT
       operationId: submitBrief
+      security: [cookieAuth: []]
       parameters:
+        - $ref: '#/components/parameters/CsrfToken'
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
-        description: Conforme campaign-brief.schema.json, sem tenant_id (derivado do token).
+        description: Entrada do briefing BFF, sem tenant ou snapshot fornecido pelo cliente.
         content:
           application/json:
-            schema: { type: object }
+            schema: { $ref: '#/components/schemas/BriefInput' }
       responses:
         '202':
           description: Aceito; geracao de estrategia em andamento
@@ -3044,6 +3046,54 @@ components:
       properties:
         name: { type: string, minLength: 1, maxLength: 120 }
 
+    BrandSelectionInput:
+      type: object
+      additionalProperties: false
+      required: [brand_profile_id, expected_version]
+      properties:
+        brand_profile_id: { type: string, minLength: 1, maxLength: 128 }
+        expected_version: { type: integer, minimum: 1 }
+        asset_ids:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 1, maxLength: 128 }
+
+    BriefInput:
+      type: object
+      additionalProperties: false
+      required: [objective]
+      properties:
+        brand_selection:
+          anyOf:
+            - $ref: '#/components/schemas/BrandSelectionInput'
+            - type: 'null'
+        objective: { type: string }
+        product: { type: string }
+        audience: { type: string }
+        region: { type: string }
+        currency: { type: string }
+        total_budget:
+          anyOf:
+            - type: number
+            - type: string
+        daily_cap:
+          anyOf:
+            - type: number
+            - type: string
+        channels: { type: array, items: { type: string } }
+        connection_id: { type: [string, 'null'] }
+        business_unit_id: { type: [string, 'null'] }
+        name: { type: string }
+
+    CampaignBrandSnapshot:
+      type: object
+      additionalProperties: false
+      required: [profile, assets, recorded_at]
+      properties:
+        profile: { $ref: '#/components/schemas/BrandProfile' }
+        assets: { type: array, items: { $ref: '#/components/schemas/BrandAsset' } }
+        recorded_at: { type: string }
+
     BrandProfileInput:
       type: object
       additionalProperties: false
@@ -3173,6 +3223,11 @@ components:
     Campaign:
       type: object
       properties:
+        brief:
+          type: object
+          additionalProperties: true
+          properties:
+            brand_snapshot_v1: { $ref: '#/components/schemas/CampaignBrandSnapshot' }
         id: { type: string, format: uuid }
         name: { type: string }
         state: { $ref: '#/components/schemas/CampaignState' }

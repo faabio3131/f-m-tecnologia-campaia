@@ -276,7 +276,14 @@ class CapabilityResponse(BaseModel):
 # --------------------------------------------------------------------------- briefs / campaigns
 
 
+class BrandSelectionInput(ApiModel):
+    brand_profile_id: str = Field(min_length=1, max_length=128)
+    expected_version: int = Field(ge=1, strict=True)
+    asset_ids: list[Annotated[str, Field(min_length=1, max_length=128)]] = Field(default_factory=list, max_length=20)
+
+
 class BriefCreate(ApiModel):
+    brand_selection: BrandSelectionInput | None = None
     objective: str
     product: str = ""
     audience: str = ""
