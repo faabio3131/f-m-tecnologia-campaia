@@ -1185,6 +1185,7 @@ class PostgresRuntimeTests(unittest.TestCase):
                 "007_ai_cost_evidence",
                 "008_brand_assets",
                 "009_creative_proposals",
+                "010_creative_assets",
             },
         )
         self.assertTrue(RUNTIME_TABLES.issubset(self._runtime_tables()))
@@ -1192,6 +1193,7 @@ class PostgresRuntimeTests(unittest.TestCase):
         self.assertEqual(
             self.runner.rollback_all(),
             [
+                "010_creative_assets",
                 "009_creative_proposals",
                 "008_brand_assets",
                 "007_ai_cost_evidence",
