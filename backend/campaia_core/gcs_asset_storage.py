@@ -8,6 +8,7 @@ and an uncertain result must be recovered by observe(), never by redispatching t
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 import os
 import re
 import threading
@@ -85,6 +86,16 @@ class GCSAssetStorage:
     config: GCSAssetConfig
     token_provider: Callable[[], str] = field(default_factory=LazyGoogleToken, repr=False)
     transport: httpx.BaseTransport | None = field(default=None, repr=False)
+
+    mode = "PROVIDER"
+
+    @property
+    def namespace(self) -> str:
+        return "gcs:" + sha256(self.config.bucket.encode()).hexdigest()
+
+    @property
+    def max_active_bytes(self) -> int:
+        return self.config.max_active_bytes
 
     def _headers(self) -> dict[str, str]:
         if not self.config.enabled:

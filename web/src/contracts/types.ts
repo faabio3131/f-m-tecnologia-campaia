@@ -49,3 +49,6 @@ export type BillingNoticeRead = components["schemas"]["BillingNoticeRead"];
 
 export type BrandVersions = components["schemas"]["BrandVersions"];
 export type BrandProfileUpdate = components["schemas"]["BrandProfileUpdate"];
+
+export type BrandAsset = components["schemas"]["BrandAsset"];
+export type BrandAssetPage = components["schemas"]["BrandAssetPage"];

@@ -130,6 +130,9 @@ class StoredAsset:
 
 
 class PrivateAssetStorage(Protocol):
+    namespace: str
+    mode: str
+    max_active_bytes: int
     def upload_once(self, manifest: AssetManifest, data: bytes) -> StoredAsset: ...
     def observe(self, manifest: AssetManifest, generation: str | None = None) -> StoredAsset | None: ...
     def read(self, asset: StoredAsset) -> bytes: ...
@@ -138,6 +141,9 @@ class PrivateAssetStorage(Protocol):
 
 class DisabledAssetStorage:
     """Default capability. Construction/import never discovers credentials or sends HTTP."""
+    namespace = "DISABLED"
+    mode = "DISABLED"
+    max_active_bytes = 0
     def upload_once(self, manifest: AssetManifest, data: bytes) -> StoredAsset:
         raise AssetStorageError(AssetStorageErrorCode.DISABLED)
 

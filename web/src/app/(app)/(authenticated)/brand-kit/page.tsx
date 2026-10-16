@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { BrandAssetsPanel } from "@/components/BrandAssetsPanel";
 import { BrandHistoryPanel } from "@/components/BrandHistoryPanel";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
@@ -25,6 +26,7 @@ function BrandKitContent({ canManage }: { canManage: boolean }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string; version: number } | null>(null);
   const [history, setHistory] = useState<string | null>(null);
+  const [assets, setAssets] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [tone, setTone] = useState("");
   const [colors, setColors] = useState("");
@@ -131,6 +133,8 @@ function BrandKitContent({ canManage }: { canManage: boolean }) {
           <p>Versão {profile.version ?? 1}{profile.updated_at ? ` · atualizada em ${new Date(profile.updated_at).toLocaleString("pt-BR")}` : ""}.</p>
           {canManage ? <Button variant="secondary" disabled={locked || !profile.id} onClick={() => edit(profile)}>Editar {profile.name}</Button> : null}
           <Button variant="secondary" disabled={!profile.id} onClick={() => setHistory(history === profile.id ? null : profile.id!)}>Histórico de {profile.name}</Button>
+          <Button variant="secondary" disabled={!profile.id} onClick={() => setAssets(assets === profile.id ? null : profile.id!)}>Arquivos de {profile.name}</Button>
+          {assets === profile.id && profile.id ? <BrandAssetsPanel key={profile.id} identity={profile.id} name={profile.name} canManage={canManage} /> : null}
           {history === profile.id && profile.id ? <BrandHistoryPanel key={`${profile.id}:${profile.version ?? 1}`} identity={profile.id} name={profile.name} /> : null}
         </li>)}</ul>}
       <Button variant="secondary" disabled={submitting} onClick={refresh}>Atualizar lista</Button>

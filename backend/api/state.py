@@ -8,6 +8,7 @@ is persisted across process restarts, and nothing here is a real credential.
 from __future__ import annotations
 
 import os
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
@@ -402,6 +403,13 @@ class AppState:
     #: aceito de um tenant diferente. Em memoria, mesma disciplina de `step_up_at`.
     oauth_pending_states: dict[str, "PendingOAuthState"] = field(default_factory=dict)
 
+    # Private asset storage stays disabled unless explicitly configured. No ADC at startup.
+    asset_storage: object | None = None
+    asset_store: object | None = field(default=None, init=False)
+    asset_upload_slots: object = field(default_factory=lambda: threading.BoundedSemaphore(2), repr=False)
+    asset_rate_limiter: object = field(default_factory=lambda: FixedWindowRateLimiter(
+        max_requests=30, window=timedelta(hours=1)))
+
     brand_profiles: BrandProfileRepository = field(default_factory=BrandProfileRepository)
     connections: ConnectionRepository = field(default_factory=ConnectionRepository)
     #: Cofre real de credenciais de terceiro, por tenant. Em staging/producao a
@@ -567,6 +575,20 @@ class AppState:
                 self.billing_gateway.idempotency = self.idempotency
 
             # capabilities and dev/test tokens remain startup fixtures, never persisted.
+
+        from campaia_core.gcs_asset_storage import configured_asset_storage
+        if self.asset_storage is None:
+            self.asset_storage = configured_asset_storage()
+        if getattr(self.asset_storage, "mode", None) == "SIMULATOR" and self.env not in DEV_AUTH_FIXTURE_ALLOWED_ENVS:
+            raise RuntimeError("Test asset storage is forbidden outside test/dev-local.")
+        if self.db is not None:
+            from .brand_assets import BrandAssetStore
+            self.asset_store = BrandAssetStore(self)
+            if self.database_url is not None:
+                from .postgres import PostgresFixedWindowRateLimiter
+                self.asset_rate_limiter = PostgresFixedWindowRateLimiter(
+                    self.db, scope="brand-assets-upload", max_requests=30,
+                    window=timedelta(hours=1))
 
         # The identity directory must be created AFTER persistence is selected so the
         # commercial directory observes the final OrganizationRepository instance.
