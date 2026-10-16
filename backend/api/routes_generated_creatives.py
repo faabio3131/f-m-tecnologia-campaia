@@ -122,7 +122,7 @@ def _preview_policy(row, campaign, review=None):
     stored = row["state"] == "STORED" and bool(row.get("storage_generation"))
     from .creative_image_review import decision_applies
     approved = stored and version_current and decision_applies(row, review)
-    width, height = row["manifest"]["width"], row["manifest"]["height"]
+    width, height = row.get("manifest", {}).get("width", 0), row.get("manifest", {}).get("height", 0)
     # Geometric hints only, never a provider-specific media acceptance certificate.
     ratio = width / height if height > 0 else 0
     format_hints = ([name for name, target in
@@ -203,11 +203,15 @@ async def generate_campaign_image(request):
         model_config = ConfigDict(extra="forbid")
         expected_plan_version: int = Field(ge=1, strict=True)
         prompt: str = Field(min_length=8, max_length=1500)
+        image_format: str = "ORIGINAL"
         credit_confirmation: CreditConfirmation
 
     fixture, state, campaign, repository = _scope(request, Permission.CAMPAIGN_EDIT)
     key = require_idempotency_key(request)
     body = await parse_bounded_body(request, ImageInput)
+    format_ratios = {"ORIGINAL": None, "SQUARE": 1.0, "PORTRAIT_4_5": 0.8, "STORY_9_16": 9 / 16}
+    if body.image_format not in format_ratios:
+        raise ApiError("IMAGE_FORMAT_INVALID", "Formato de imagem não suportado.", status_code=422)
     if len(body.prompt.strip()) < 8:
         raise ApiError("VALIDATION_FAILED", "Descreva a imagem em pelo menos oito caracteres.", status_code=422)
     if body.expected_plan_version != campaign.plan_version or campaign.plan is None:
@@ -232,6 +236,7 @@ async def generate_campaign_image(request):
     request_identity = {
         "campaign": campaign.campaign_id,
         "plan_version": campaign.plan_version, "prompt": body.prompt.strip(),
+        "image_format": body.image_format,
     }
     bill_key = "image:" + campaign.campaign_id + ":" + key
 
@@ -241,7 +246,7 @@ async def generate_campaign_image(request):
             ai_request = AIRequest(
                 request_id=identity.creative_id, tenant_id=fixture.tenant_id,
                 task=AITask.GENERATE_IMAGE,
-                input={"prompt": body.prompt.strip(), "campaign": campaign.campaign_id,
+                input={"prompt": body.prompt.strip() + ("" if body.image_format == "ORIGINAL" else "\\nFormato de saída obrigatório: " + body.image_format), "campaign": campaign.campaign_id,
                        "plan_version": campaign.plan_version,
                        "brand": brand_agent_context(campaign)},
                 output_schema_id="generated-image", max_cost_units=ceiling,
@@ -263,6 +268,9 @@ async def generate_campaign_image(request):
                 model=result.provenance.model or state.image_provider.config.model,
                 generation_request_id=identity.creative_id,
             )
+            ratio = format_ratios[body.image_format]
+            if ratio is not None and abs(manifest.width / manifest.height - ratio) > 0.02:
+                raise ApiError("AI_FORMAT_MISMATCH", "O provedor não entregou a proporção solicitada; não armazenar nem liquidar créditos.", status_code=422)
             operation = sha256((fixture.tenant_id + ":" + "http:" + bill_key).encode()).hexdigest()
             row, replay = repository.claim(manifest, bill_key, storage.max_active_bytes,
                                            credit_operation_id=operation, requested_by=fixture.user_id)
