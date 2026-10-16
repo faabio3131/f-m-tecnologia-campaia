@@ -899,3 +899,13 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - O helper de SETTLE F3/F5 passou no Backend #364, Frontend #303 e F4 #198 no commit `9c5b9296eef06555d5efb66f330930d406045b06`.
 - **Geração POST/IA/F3 cost guard/SETTLE+storage E2E não estão concluídos.** Esta tela é inventário de criativos e NÃO é a UI de geração funcional. Não avançar status além de PARTIAL sem prova concreta.
 - PR #73 sem merge; após inclusão da Web, executar nova CI no HEAD exato. Homologação GCS externa permanece fora do fechamento funcional interno, como determinado pelo Diretor.
+
+
+## WP-R04-04B — geração de imagens API/Web com governança interna (16/10/2026)
+
+- POST `/campaigns/{campaignId}/images` adicionado com RBAC por tenant/unidade/campanha, Idempotency-Key, versão esperada da estratégia, confirmação da cotação de créditos F5, armazenamento GCS privado explicitamente habilitado e teto interno de custo `CAMPAIA_IMAGE_MAX_COST_UNITS` configurável.
+- Provider Gemini imagem registrado no gateway F3 existente apenas mediante `GEMINI_IMAGE_ENABLED=true`; sem permissões ocultas da FM/Nova FM, sem credenciais hardcoded, sem chamadas externas por default.
+- Fluxo implementado: RESERVE de créditos comercial antes do dispatch; GATE F3 de custo/credenciais; PNG normalizado; claim criativo/quota; F3 commit de fence; upload único; entrega somente com generation STORED; SETTLE de créditos+auditoria na transação F3 da entrega. Falhas incertas preservam reserva para reconciliação, não há segundo POST automático.
+- UI Web agora possui formulário de imagem com revisão de créditos e confirmação explícita, além do inventário; configuração externa ausente desativa a ação, sem simular integração real.
+- `PARTIAL`: homologação real GCS/Gemini continua EXTERNAL_INFRASTRUCTURE / EXTERNAL_CREDENTIAL; testes e CI do HEAD atual PENDENTES, especialmente E2E de sucesso, erro, replay, corrupção, recovery e cross-tenant.
+- **Atenção:** ponte de reconciliação operacional `STORAGE_PENDING -> STORED -> SETTLE` após crash com reserva comercial segue TARGET, assim como entrega privada binária/autorizada, policy preview e paginação. Não liberar deploy/merge/G7 com esses blockers internos.
