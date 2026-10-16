@@ -141,4 +141,38 @@ class CreativeStoredProof:
             _invalid()
 
 
-__all__ = ["CreativeIdentity", "CreativeManifest", "CreativeStoredProof", "CreativeState"]
+# This state machine is a pure validation contract. A durable F3 transaction MUST
+# persist the expected revision and enforce compare-and-swap under row lock.
+# It must never be used as an in-memory replacement for atomic persistence.
+_ALLOWED_NEXT: dict[CreativeState, frozenset[CreativeState]] = {
+    CreativeState.RESERVED: frozenset({CreativeState.GENERATING, CreativeState.FAILED}),
+    CreativeState.GENERATING: frozenset({CreativeState.STORAGE_PENDING, CreativeState.FAILED}),
+    CreativeState.STORAGE_PENDING: frozenset({CreativeState.STORED}),
+    CreativeState.STORED: frozenset({CreativeState.DELETE_PENDING}),
+    CreativeState.DELETE_PENDING: frozenset({CreativeState.DELETED}),
+    CreativeState.FAILED: frozenset(),
+    CreativeState.DELETED: frozenset(),
+}
+
+
+@dataclass(frozen=True, slots=True)
+class CreativeStateTransition:
+    """Command validated before the repository applies CAS in one DB transaction."""
+    expected: CreativeState
+    target: CreativeState
+    expected_revision: int
+
+    def __post_init__(self) -> None:
+        if (not isinstance(self.expected, CreativeState)
+                or not isinstance(self.target, CreativeState)
+                or type(self.expected_revision) is not int
+                or not 0 <= self.expected_revision < 2**63 - 1
+                or self.target not in _ALLOWED_NEXT[self.expected]):
+            raise AssetStorageError(AssetStorageErrorCode.CONFLICT)
+
+    @property
+    def next_revision(self) -> int:
+        return self.expected_revision + 1
+
+
+__all__ = ["CreativeIdentity", "CreativeManifest", "CreativeStoredProof", "CreativeState", "CreativeStateTransition"]
