@@ -90,7 +90,7 @@ class ImageApiSimulationTests(BillingCreditHarness, unittest.TestCase):
             json={"policy_decision_id": validation.json()["policy_decision_id"],
                   "approval_id": "no-approval"})
         self.assertEqual(result.status_code, 409, result.text)
-        self.assertEqual(result.json()["code"], "IMAGE_REVIEW_REQUIRED")
+        self.assertEqual(result.json()["code"], "IMAGE_SELECTION_REQUIRED")
         self.assertEqual(self.storage.calls.count("POST"), 1)
 
     def test_confirm_one_delivery_no_duplicate_charge_private_png_and_cross_tenant(self):
