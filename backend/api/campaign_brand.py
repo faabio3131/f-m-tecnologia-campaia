@@ -70,6 +70,7 @@ def brand_agent_context(record):
     return {"marca": {key: deepcopy(profile.get(key)) for key in
             ("name", "tone", "colors", "differentiators", "restrictions")},
             "arquivos_selecionados": [
-                {key: asset[key] for key in ("id", "kind", "width", "height")}
-                for asset in snapshot["assets"]],
+                {"referencia": "arquivo-" + str(position + 1),
+                 **{key: asset[key] for key in ("kind", "width", "height")}}
+                for position, asset in enumerate(snapshot["assets"])],
             "marca_versao": profile["version"]}

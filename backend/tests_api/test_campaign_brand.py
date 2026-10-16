@@ -52,12 +52,32 @@ class CampaignBrandTests(BillingCreditHarness, unittest.TestCase):
         self.assertEqual(request.input["marca"]["tone"], BODY["tone"])
         self.assertEqual(request.input["marca"]["restrictions"], BODY["restrictions"])
         self.assertEqual(request.input["marca_versao"], 1)
-        self.assertEqual(request.input["arquivos_selecionados"], [{"id": self.asset["id"], "kind": "LOGO", "width": 3, "height": 2}])
+        self.assertEqual(request.input["arquivos_selecionados"], [{"referencia": "arquivo-1", "kind": "LOGO", "width": 3, "height": 2}])
         self.assertNotIn("content_url", str(request.input))
+        self.assertNotIn(self.asset["id"], str(request.input))
         peer = TestClient(create_app(env="test", db_path=str(self.path)))
         self.addCleanup(peer.app.state.campaia.db.close)
         self.assertEqual(peer.get("/campaigns/" + item["id"], headers=OWNER).json()["brief"]["brand_snapshot_v1"], frozen)
         self.assertEqual(self.create().status_code, 409)
+
+
+    def test_asset_references_do_not_depend_on_uuid_digits_and_never_bypass_pii_filter(self):
+        from types import SimpleNamespace
+        from api.campaign_brand import brand_agent_context
+        from campaia_core.sanitizer import sanitize
+        profile = {**self.profile, "name": "Contato 11999998888"}
+        assets = [{"id": identity, "kind": "LOGO", "width": 3, "height": 2}
+                  for identity in ("db45bc0e-583a-44fb-bd5b-9d6764268221",
+                                   "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")]
+        record = SimpleNamespace(brief={"brand_snapshot_v1": {"profile": profile, "assets": assets}})
+        clean, _report = sanitize(brand_agent_context(record))
+        self.assertEqual(clean["arquivos_selecionados"], [
+            {"referencia": "arquivo-1", "kind": "LOGO", "width": 3, "height": 2},
+            {"referencia": "arquivo-2", "kind": "LOGO", "width": 3, "height": 2}])
+        self.assertNotIn("11999998888", str(clean))
+        self.assertIn("[TELEFONE_", clean["marca"]["name"])
+        self.assertNotIn(assets[0]["id"], str(clean))
+        self.assertEqual(record.brief["brand_snapshot_v1"]["assets"], assets)
 
     def test_no_selection_never_selects_the_first_brand_implicitly(self):
         item = self.create(selection=False).json()

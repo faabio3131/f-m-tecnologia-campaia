@@ -22,6 +22,9 @@ Revisão final preserva contexto já entregue sem reinterpretá-lo como nova ent
 CI de desenvolvimento confirmou contrato/Web/E2E com revisão de apenas uma variação.
 A entrega já confirmada pode ser recuperada após restart mesmo com modelo desativado;
 falha terminal comprovada libera a interface, sem tratar rate limit como prova de falha.
+Uma falha intermitente revelou UUID de asset confundido com telefone pelo sanitizer.
+Contexto de IA passa a usar aliases locais arquivo-1/arquivo-2 com dimensões/tipo, sem UUID.
+Snapshot e controles de acesso reais não mudam; regressão determinística mantém PII redigida.
 CI final no HEAD e pós-merge pendentes; registrar resultados na PR #70.
 
 ## Limites
