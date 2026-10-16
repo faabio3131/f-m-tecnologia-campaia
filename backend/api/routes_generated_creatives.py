@@ -44,6 +44,9 @@ def _public(row):
         "content_type": "image/png",
         "revision": row["revision"],
         "available": row["state"] == "STORED",
+        "content_url": ("/api/campaia/campaigns/" + identity["campaign_id"] +
+                        "/images/" + identity["creative_id"] + "/content")
+                       if row["state"] == "STORED" else None,
     }
 
 
@@ -263,3 +266,37 @@ async def reconcile_campaign_image(request):
     result = await run_in_threadpool(reconcile)
     return JSONResponse(result, status_code=200 if result["available"] else 202,
                         headers={"Cache-Control": "private, no-store"})
+
+
+async def read_generated_creative_content(request):
+    """Authenticated same-origin PNG proxy pinned to immutable GCS generation."""
+    from uuid import UUID
+    from starlette.responses import Response
+    from starlette.concurrency import run_in_threadpool
+    from campaia_core.asset_storage import StoredAsset
+    from campaia_core.creative_assets import CreativeIdentity, CreativeManifest, recovery_storage_manifest
+    from campaia_core.gcs_asset_storage import configured_asset_storage
+
+    fixture, _state, campaign, repository = _scope(request, Permission.CAMPAIGN_VIEW)
+    try:
+        creative_id = str(UUID(request.path_params["creativeId"]))
+    except (TypeError, ValueError):
+        raise ApiError("NOT_FOUND", "Criativo indisponível.", status_code=404) from None
+    record = repository.table.get_for_tenant(creative_id, fixture.tenant_id)
+    if (record is None or record["identity"]["campaign_id"] != campaign.campaign_id
+            or record["identity"]["business_unit_id"] != campaign.business_unit_id
+            or record["state"] != "STORED" or not record["storage_generation"]):
+        raise ApiError("NOT_FOUND", "Criativo indisponível.", status_code=404)
+    identity = CreativeIdentity(**record["identity"])
+    manifest = CreativeManifest(identity=identity, **{
+        k: v for k, v in record["manifest"].items() if k != "identity"
+    })
+    storage = configured_asset_storage()
+    if storage.mode != "PROVIDER":
+        raise ApiError("ASSET_STORAGE_DISABLED", "Armazenamento privado indisponível.", status_code=503)
+    asset = StoredAsset(recovery_storage_manifest(manifest), record["storage_generation"])
+    data = await run_in_threadpool(storage.read, asset)
+    return Response(data, media_type="image/png", headers={
+        "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'; sandbox",
+    })
