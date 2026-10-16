@@ -1064,3 +1064,9 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 
 ## G7 CI visual preview — 16/10/2026
 - Primeiro HEAD de prévias visuais `f21e525`: PostgreSQL integration PASS; Backend API FAIL porque teste de inventário estático esperava 10 rotas e 5 GETs, enquanto nova rota GET legítima elevou para 11 e 6. Ajustado o contrato explícito da rota, preservando contagem de 4 POST e 1 DELETE. Exige CI do HEAD exato antes de certificação.
+
+
+## G7 — edição real de pixels, primeira camada segura (16/10/2026)
+- CURRENT PR #73, HEAD anterior `c025642` com Backend/Frontend/F4 verdes. Implementados no `asset_image_worker` isolado com seccomp os comandos determinísticos rotate_90/rotate_180/flip_horizontal (Image.Transpose). Nova função `edit_normalized_png` valida PNG normalizado antes e depois, usa subprocesso com limite e ambiente restrito, não altera original nem permite operação arbitrária.
+- Testes unitários exercitam três transformações, dimensões, integridade e operação inválida. **Ainda TARGET**: endpoint transacional para origin->edited asset com autorização/step-up, nova identidade imutável, quota e GCS CAS, reconciliação, crédito/billing se aplicável e auditoria. Este incremento de baixo nível não é editor utilizável comercialmente. Não declarar G7 encerrado.
+- PR #73 continua única aberta e Draft, sem merge/deploy. CI do novo HEAD obrigatória.
