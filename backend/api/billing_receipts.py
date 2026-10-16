@@ -110,7 +110,8 @@ def observe_payment(state, charge, event, *, at, gateway_status, source="WEBHOOK
             and event.observed_amount in {None, charge.amount}):
         strong_now = charge.gateway_refund_state == 'FULL_DONE' and charge.gateway_refund_amount == charge.amount
         preserved = (previous.gateway_refund_state == 'FULL_DONE' and previous.gateway_refund_amount == charge.amount
-                     and charge.gateway_refund_state not in {'AMOUNT_CONFLICT'})
+                     and charge.gateway_refund_state in {'FULL_DONE', 'MISSING', 'OBSERVATION_CONFLICT',
+                         'NO_COMPLETED_REFUND', 'PARTIAL_DONE', 'PROCESSING'})
         if strong_now or preserved:
             charge = replace(charge, gateway_refund_state='FULL_DONE', gateway_refund_amount=charge.amount,
                 gateway_refund_observed_at=(charge.gateway_refund_observed_at if strong_now

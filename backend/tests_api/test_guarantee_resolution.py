@@ -172,6 +172,20 @@ class GuaranteeResolutionTests(BillingCreditHarness, unittest.TestCase):
         self.assertEqual(self.state.charges[self.gateway].gateway_chargeback_status, 'REQUESTED')
         self.assertNotEqual(self.quote()['state'], 'FINANCIALLY_RESOLVED')
 
+    def test_invalid_new_refund_evidence_preserves_known_amount_but_reopens_review(self):
+        self.request(); self.finish_refunds([self.gateway]); self.finalize()
+        original = self.state.billing_gateway.inspect_charge
+        from dataclasses import replace
+        with patch.object(self.state.billing_gateway, 'inspect_charge', side_effect=lambda *args:
+                replace(original(*args), refunds_present=True, refund_observations=(('UNKNOWN', None),))):
+            r = self.client.post('/billing/charges/' + self.gateway + '/reconcile',
+                headers={**with_step_up(OWNER), **unique_idem()})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.state.charges[self.gateway].gateway_refund_amount, Decimal('1.00'))
+        self.assertEqual(self.state.charges[self.gateway].gateway_refund_state, 'INVALID')
+        self.assertNotEqual(self.quote()['state'], 'FINANCIALLY_RESOLVED')
+        self.assertEqual(self.finalize()['state'], 'REFUND_PROOF_REQUIRED')
+
     def test_two_workers_commit_one_adjustment_and_replay_after_restart(self):
         self.request(); self.finish_refunds([self.gateway])
         other = TestClient(create_app(env='test', db_path=str(self.path)))
