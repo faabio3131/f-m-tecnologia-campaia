@@ -953,3 +953,9 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - Incluído contrato interno de decisão de arte `CreativeImageReviewStore`, com F3 idempotência, auditoria, separação solicitante/revisor, hash da imagem, geração GCS, versão da campanha e identidade do criativo; replay incompatível falha fechado.
 - Testes negativos para decisões antigas, geração substituída, versão alterada e REJECT. **API de aprovação ainda TARGET**: requer autoria da imagem persistida e vínculo com o principal autenticado/step-up/can_approve; não aceitar requester_id informado pelo navegador. Policy/preview atual continua sem permitir publicação, mesmo com este registro interno. Não alegar aprovação completa.
 - Lifecycle/delete completo também TARGET. Execução CI do novo HEAD pendente; homologação externa continua postergada. Sem merge/deploy/migration.
+
+
+## WP-R04-04B — API de revisão com RBAC e step-up (16/10/2026)
+- Adicionado POST /campaigns/{campaignId}/images/{creativeId}/review: autenticação server-side, escopo tenant/unidade/campanha, Permission.APPROVAL_DECIDE, step-up, Idempotency-Key, can_approve e revisão imutável ligada a SHA-256, generation GCS e versão da campanha.
+- O criador de cada imagem nova é agora registrado no claim F3 via sessão autenticada (requested_by); imagens históricas sem origem comprovada falham fechado. Revisão não autoriza publicação automaticamente; policy/preview continua conservador.
+- Teste do contrato de rotas atualizado. **Revisão API e lifecycle de delete ainda PARTIAL até nova CI e testes E2E negativos reais da rota.** Não declarar gate de publicação concluído; sem merge/deploy/migration.
