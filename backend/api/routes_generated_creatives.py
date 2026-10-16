@@ -268,9 +268,10 @@ async def edit_generated_creative_pixels(request):
             raise ApiError("IMAGE_EDIT_CONFLICT", "Conflito de edição ou quota privada.", status_code=409) from None
         if result["state"] != "STORED":
             raise ApiError("IMAGE_EDIT_PENDING", "Resultado de armazenamento incerto: reconcile antes de repetir.", status_code=503)
-        state.audit.append(tenant_id=fixture.tenant_id, actor=fixture.user_id,
-            action="CREATIVE_PIXEL_EDIT", target=identity.creative_id,
-            details={"source_creative_id": source_id, "operation": body.operation})
+        if not replay:
+            state.audit.append(tenant_id=fixture.tenant_id, actor=fixture.user_id,
+                action="CREATIVE_PIXEL_EDIT", target=identity.creative_id,
+                details={"source_creative_id": source_id, "operation": body.operation})
         return _public(result)
 
     result = await run_in_threadpool(perform)
