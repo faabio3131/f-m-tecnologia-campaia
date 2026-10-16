@@ -53,10 +53,17 @@ Protocolo longo pode quebrar linha no mobile. Atualizações de cobrança/confer
 cotações antigas; chaves React distintas por painel/tenant são preservadas.
 
 Executor local continua indisponível desde a PR #56. Nenhuma execução local nova é alegada.
-A suíte completa no HEAD exato é o requisito de merge. A revisão da primeira árvore\nidentificou expansão indevida de texto ao inserir o regex do contrato; reconstruído a partir\ndo contrato preservado usando substituição literal, sem mudar validações de entrada. Novos testes API cobrem janela
+A suíte completa no HEAD exato é o requisito de merge. A revisão da primeira árvore
+identificou expansão indevida de texto ao inserir o regex do contrato; reconstruído a partir
+do contrato preservado usando substituição literal, sem mudar validações de entrada. Novos testes API cobrem janela
 inclusiva/excesso, replay, troca de ator, tenant, duas instâncias, restart, atomicidade,
 primeiro pagamento imutável, reativação sem reset e ausência de prova histórica.
 Teste PostgreSQL existente amplia o percurso para dois pedidos concorrentes e uma auditoria.
+O CI inicial também expôs uma asserção antiga de retirada concorrente: o segundo worker
+pode observar pendência antes do DELETE do primeiro terminar. A prova agora conserva as
+chaves, exige um único DELETE, aceita apenas a pendência prevista e confirma no retry após
+o primeiro terminar. Novo teste coordenado por eventos força essa janela; não relaxa a
+regra de prova externa nem muda a implementação financeira.
 Testes Web cobrem aceite/step-up, retry e distinção entre pedido e dinheiro devolvido.
 
 E2E existente ampliado ao final do percurso: após mensalidade fictícia de 12,50 e excedente
