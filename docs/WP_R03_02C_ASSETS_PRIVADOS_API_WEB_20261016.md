@@ -73,3 +73,13 @@ credencial já existente e homologação GCS/runtimes. Cloud SQL permanece desli
 Próximo delta: aplicação explícita da versão/assets selecionados ao pipeline; não
 seleciona automaticamente o primeiro Brand Kit/logo nem muda campanha já criada.
 F6 permanece PARTIAL até a prova externa e integração ao pipeline.
+
+## Correção necessária revelada pelo E2E persistente
+O harness passou de memória a SQLite para provar metadata durável. O cenário K então
+revelou que PersistentSessionStore.switch_principal tentava mudar tenant_id por UPDATE,
+corretamente bloqueado pelo guard F3 (403). Não se relaxou o guard nem a expectativa.
+A sessão só muda para um vínculo capturado da mesma identidade; troca de tenant faz
+delete+insert explícito na mesma transação, preservando cookie/CSRF/subject/expiração.
+Lock por session_id serializa switch com logout/revogação; falha no INSERT restaura
+a linha anterior. Testes SQLite e PostgreSQL provam rollback, alvo forjado negado,
+guard geral intacto e ausência de ressurreição na concorrência com revogação.

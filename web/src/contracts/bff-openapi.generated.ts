@@ -3033,7 +3033,6 @@ export interface operations {
     uploadBrandAsset: {
         parameters: {
             query: {
-                /** @enum {string} */
                 kind: "LOGO" | "REFERENCE";
             };
             header: {
@@ -3053,7 +3052,6 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /** Format: binary */
                 "application/octet-stream": string;
             };
         };
@@ -3177,7 +3175,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /** Format: binary */
                     "image/png": string;
                 };
             };

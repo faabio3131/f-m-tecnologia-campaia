@@ -781,6 +781,40 @@ class PostgresRuntimeTests(unittest.TestCase):
         self.assertEqual(b.asset_store.usage("demo-tenant"), len(image.data))
         self.assertEqual(len(a.asset_store.rows("demo-tenant")), 1)
 
+    def test_persistent_session_switch_is_atomic_and_serializes_revocation(self):
+        from dataclasses import replace
+        from unittest.mock import patch
+        a, b = self._states()
+        self.addCleanup(a.db.close)
+        self.addCleanup(b.db.close)
+        first = a.tokens["demo-owner-token"]
+        second = replace(first, tenant_id="other-tenant", user_id="other-member")
+        def create():
+            return a.sessions.create(first, now=datetime.now(timezone.utc),
+                available_principals=(first, second), subject="same-subject")
+        record = create()
+        switched = a.sessions.switch_principal(record.session_id, second)
+        self.assertEqual(switched.csrf_secret, record.csrf_secret)
+        self.assertEqual(b.sessions.get(record.session_id).principal, second)
+        self.assertIsNone(b.db.table("sessions").get_for_tenant(record.session_id, first.tenant_id))
+        self.assertIsNone(a.sessions.switch_principal(record.session_id, replace(second, user_id="foreign")))
+        with patch.object(a.sessions._table, "put", side_effect=RuntimeError("session insert failed")):
+            with self.assertRaisesRegex(RuntimeError, "session insert failed"):
+                a.sessions.switch_principal(record.session_id, first)
+        self.assertEqual(b.sessions.get(record.session_id).principal, second)
+        with self.assertRaises(psycopg.errors.InsufficientPrivilege):
+            with psycopg.connect(DSN) as conn:
+                conn.execute("UPDATE campaia_runtime.sessions SET tenant_id=%s WHERE id=%s", ("foreign", record.session_id))
+        for revoke in ("invalidate", "invalidate_membership"):
+            candidate = create()
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                switch = pool.submit(a.sessions.switch_principal, candidate.session_id, second)
+                revoked = pool.submit(getattr(b.sessions, revoke),
+                    candidate.session_id if revoke == "invalidate" else first.user_id)
+                switch.result(timeout=10)
+                revoked.result(timeout=10)
+            self.assertIsNone(a.sessions.get(candidate.session_id))
+
     def test_00_migration_up_down_up_is_reversible_and_covers_current_stores(self) -> None:
         self.assertEqual(
             set(self.runner.applied_versions()),

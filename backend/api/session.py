@@ -260,23 +260,29 @@ class PersistentSessionStore:
         return self._table.get(session_id)
 
     def invalidate(self, session_id: str) -> None:
-        self._table.delete(session_id)
+        with self._table.transaction():
+            self._table.lock_key("session:" + session_id)
+            self._table.delete(session_id)
 
     def invalidate_membership(self, membership_id: str) -> None:
         with self._table.transaction():
-            for session_id, _tenant_id, record in self._table.all_rows():
+            for session_id, _tenant_id, record in sorted(self._table.all_rows(), key=lambda row: row[0]):
                 if any(
                     principal.user_id == membership_id
                     for principal in record.available_principals
                 ):
-                    self._table.delete(session_id)
+                    self._table.lock_key("session:" + session_id)
+                    current = self._table.get(session_id)
+                    if current is not None and any(p.user_id == membership_id for p in current.available_principals):
+                        self._table.delete(session_id)
 
     def switch_principal(
         self, session_id: str, principal: TokenPrincipal
     ) -> SessionRecord | None:
         with self._table.transaction():
+            self._table.lock_key("session:" + session_id)
             current = self._table.get(session_id)
-            if current is None:
+            if current is None or principal not in current.available_principals:
                 return None
             updated = SessionRecord(
                 session_id=current.session_id,
@@ -287,6 +293,12 @@ class PersistentSessionStore:
                 available_principals=current.available_principals,
                 subject=current.subject,
             )
+            if current.principal.tenant_id != principal.tenant_id:
+                # This is an authenticated identity switching between its captured memberships,
+                # not an arbitrary resource rehome. Preserve the general immutable-tenant guard.
+                # Delete+insert is one transaction; any insertion failure restores the old row.
+                if not self._table.delete_for_tenant(session_id, current.principal.tenant_id):
+                    return None
             self._table.put(session_id, principal.tenant_id, updated)
             return updated
 
