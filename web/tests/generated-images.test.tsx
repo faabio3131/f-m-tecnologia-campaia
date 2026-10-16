@@ -23,7 +23,7 @@ describe("GeneratedImagesPanel", () => {
     });
     render(<GeneratedImagesPanel campaignId="c" planVersion={1} />);
     await screen.findByText(/STORAGE_PENDING/);
-    expect(screen.getByText(/Créditos previstos por geração: 15/)).toBeInTheDocument();
+    expect(screen.getByText(/Créditos previstos por imagem: 15/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Revisar créditos para gerar imagem" })).toBeDisabled();
     expect(screen.queryByText(/storage.googleapis.com/)).not.toBeInTheDocument();
     expect(calls).toHaveLength(2);
