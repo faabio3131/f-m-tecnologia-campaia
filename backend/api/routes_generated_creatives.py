@@ -47,8 +47,20 @@ def _public(row):
     }
 
 
+def _generation_available(state, tenant_id):
+    from campaia_core.gcs_asset_storage import configured_asset_storage
+    if not state.image_provider.config.enabled:
+        return False
+    try:
+        storage = configured_asset_storage()
+        return storage.mode == "PROVIDER" and quote_action(
+            state, tenant_id, "image")["mode"] == "COMMERCIAL"
+    except (ApiError, ValueError):
+        return False
+
+
 async def list_generated_creatives(request):
-    fixture, _state, campaign, repository = _scope(request, Permission.CAMPAIGN_VIEW)
+    fixture, state, campaign, repository = _scope(request, Permission.CAMPAIGN_VIEW)
     rows = [row for _, _, row in repository.table.rows_for_tenant(fixture.tenant_id)
             if row["identity"]["campaign_id"] == campaign.campaign_id
             and row["identity"]["business_unit_id"] == campaign.business_unit_id
@@ -56,7 +68,7 @@ async def list_generated_creatives(request):
     rows.sort(key=lambda row: row["identity"]["creative_id"])
     return JSONResponse({"items": [_public(row) for row in rows[:50]],
                          "has_more": len(rows) > 50,
-                         "generation_enabled": False},
+                         "generation_enabled": _generation_available(state, fixture.tenant_id)},
                         headers={"Cache-Control": "private, no-store"})
 
 
@@ -82,7 +94,7 @@ async def quote_generated_creative(request):
     quote = quote_action(state, fixture.tenant_id, "image")
     if quote["mode"] != "COMMERCIAL":
         raise ApiError("BILLING_USAGE_UNAVAILABLE", "Política de créditos de imagem indisponível.", status_code=503)
-    return JSONResponse({**quote, "generation_enabled": False},
+    return JSONResponse({**quote, "generation_enabled": _generation_available(state, fixture.tenant_id)},
                         headers={"Cache-Control": "private, no-store"})
 
 
