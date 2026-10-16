@@ -498,6 +498,12 @@ async def revoke_generated_creative_review(request):
             or row["identity"]["business_unit_id"] != campaign.business_unit_id
             or row["identity"]["campaign_version"] != campaign.plan_version):
         raise ApiError("NOT_FOUND", "Criativo indisponível.", status_code=404)
+    # Channel-side compensation is not implemented: never silently revoke an image
+    # once this campaign has a recorded external resource.
+    if campaign.external_resources:
+        raise ApiError("IMAGE_REVOCATION_REQUIRES_COMPENSATION",
+                       "Suspenda e reconcilie a publicação externa antes de revogar a arte.",
+                       status_code=409)
     author = row.get("requested_by")
     if not author:
         raise ApiError("REVIEW_ORIGIN_UNAVAILABLE", "Autoria não comprovada.", status_code=409)
