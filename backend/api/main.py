@@ -49,6 +49,7 @@ from .routes_billing import (
     reactivate_billing_subscription,
 )
 from .routes_creatives import list_creative_proposals, quote_creative_proposal, generate_creative_proposal
+from .routes_generated_creatives import list_generated_creatives, get_generated_creative, quote_generated_creative
 from .routes_brand_assets import (
     list_brand_assets, upload_brand_asset, read_brand_asset,
     reconcile_brand_asset, delete_brand_asset,
@@ -192,6 +193,9 @@ routes = [
     Route("/campaigns/{campaignId}/proposals/copy/{proposalId}/revisions", generate_creative_proposal, methods=["POST"]),
     Route("/campaigns/{campaignId}/proposals/{proposalKind}", list_creative_proposals, methods=["GET"]),
     Route("/campaigns/{campaignId}/proposals/{proposalKind}", generate_creative_proposal, methods=["POST"]),
+    Route("/campaigns/{campaignId}/images", list_generated_creatives, methods=["GET"]),
+    Route("/campaigns/{campaignId}/images/quote", quote_generated_creative, methods=["GET"]),
+    Route("/campaigns/{campaignId}/images/{creativeId}", get_generated_creative, methods=["GET"]),
     Route("/campaigns/{campaignId}/validate", validate_campaign, methods=["POST"]),
     Route("/campaigns/{campaignId}/publish", publish_campaign, methods=["POST"]),
     Route("/campaigns/{campaignId}/pause", pause_campaign, methods=["POST"]),
