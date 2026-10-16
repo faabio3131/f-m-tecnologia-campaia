@@ -68,8 +68,8 @@ class GeneratedCreativeReadContractTests(unittest.TestCase):
     def test_image_mutation_is_explicitly_guarded_by_single_post_route(self):
         images = [r for r in routes if getattr(r, "path", "").startswith(
             "/campaigns/{campaignId}/images")]
-        self.assertEqual(len(images), 7)
-        self.assertEqual(sum("POST" in r.methods for r in images), 2)
+        self.assertEqual(len(images), 8)
+        self.assertEqual(sum("POST" in r.methods for r in images), 3)
         self.assertEqual(sum("GET" in r.methods for r in images), 5)
         self.assertEqual({r.path for r in images}, {
             "/campaigns/{campaignId}/images",
@@ -77,6 +77,7 @@ class GeneratedCreativeReadContractTests(unittest.TestCase):
             "/campaigns/{campaignId}/images/{creativeId}",
             "/campaigns/{campaignId}/images/{creativeId}/content",
             "/campaigns/{campaignId}/images/{creativeId}/preview",
+            "/campaigns/{campaignId}/images/{creativeId}/review",
             "/campaigns/{campaignId}/images/{creativeId}/reconcile",
         })
 
