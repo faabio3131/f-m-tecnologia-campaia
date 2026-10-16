@@ -991,3 +991,9 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - Aprovação: `CreativeImageReviewStore` já exige revisor diferente da autoria e vincula hash, versão e generation. **A rota de preview não consulta a decisão persistida**, logo continua fail-closed para publicação, sem certificar material como aprovado. Integração efetiva no fluxo publication/policy permanece TARGET.
 - Retenção: DELETE confirmado pelo transporte GCS não equivale a eliminação de versões retidas/backups; prazo LGPD e revogação de aprovação são HUMAN_DECISION/PRODUCTION_GATE. Nunca tratar a PR como pronta para GO/NO-GO enquanto pendências permanecerem.
 - Escopo desta rodada: verificação CURRENT e novo teste PG. Sem merge/deploy/migration. CI HEAD pendente.
+
+
+## WP-R04-04B — política de publicação e reconciliação conservadora F3 (16/10/2026)
+- A rota existente de publicação agora impede publicação se existir qualquer imagem gerada pendente/não revisada da campanha e versão corrente. Imagem STORED exige revisão humana imutável correspondente ao hash+generation; caso contrário retorna IMAGE_REVIEW_REQUIRED, sem chamar provedor. Geração de imagem é opcional; campanhas sem imagens geradas preservam o fluxo anterior. Teste E2E simulado adicionado para falha fechada.
+- Adicionado `PersistentAICostLedger.reconciliation_queue(tenant)` somente leitura, listando tentativas START sem OUTCOME ou com UNKNOWN_COST, preservando budget hold F3 e segregação por tenant. Teste cobre durabilidade/restart e ausência de liberação automática. Não é reconciliação com fatura real nem permissão para fixar custo zero.
+- **PARTIAL:** uso efetivo da imagem selecionada no payload publicado, validação da arte pela policy e lifecycle de aprovação/revogação ainda requerem revisão/integração; reconciliação de custos com evidência assinada do provedor é EXTERNAL_CREDENTIAL/PRODUCTION_GATE. Nova CI precisa ser verificada no HEAD exato. Não solicitar merge ainda.
