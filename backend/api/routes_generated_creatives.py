@@ -71,7 +71,6 @@ def _generation_available(state, tenant_id):
 def _paginate_private_creatives(rows, cursor):
     """Cursor valid only within the caller's already tenant/unit/campaign-filtered rows."""
     rows.sort(key=lambda row: row["identity"]["creative_id"])
-    cursor = request.query_params.get("cursor")
     if cursor is not None:
         from uuid import UUID
         try:
@@ -97,7 +96,7 @@ async def list_generated_creatives(request):
     return JSONResponse({"items": [_public(row) for row in selected],
                          "has_more": has_more,
                          "next_cursor": selected[-1]["identity"]["creative_id"]
-                             if len(rows) > 50 else None,
+                             if has_more else None,
                          "generation_enabled": _generation_available(state, fixture.tenant_id)},
                         headers={"Cache-Control": "private, no-store"})
 
