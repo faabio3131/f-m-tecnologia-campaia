@@ -93,6 +93,25 @@ export function GeneratedImagesPanel({ campaignId, planVersion }: { campaignId: 
     }
   }
 
+  async function reconcile(item: ImageItem) {
+    if (busy || inflight.current || item.state !== "STORAGE_PENDING") return;
+    inflight.current = true; setBusy(true); setError(null);
+    try {
+      const result = await api.post<ImageItem>(base + "/" + encodeURIComponent(item.id) + "/reconcile",
+        undefined, { idempotencyKey: "creative-reconcile-" + item.id });
+      if (!alive.current) return;
+      if (result.available) {
+        setPending(null); setNotice("Armazenamento e créditos reconciliados.");
+      } else setNotice("Criativo ainda pendente; não é seguro repetir a geração.");
+      await refresh();
+    } catch (cause) {
+      if (alive.current) setError(cause instanceof ApiClientError ? cause.message : "Não foi possível reconciliar agora.");
+    } finally {
+      inflight.current = false;
+      if (alive.current) setBusy(false);
+    }
+  }
+
   const enabled = Boolean(page?.generation_enabled && quote?.generation_enabled && !pending);
   return <Card><section aria-label="Imagens da campanha">
     <h2>Imagens da campanha</h2>
@@ -124,6 +143,8 @@ export function GeneratedImagesPanel({ campaignId, planVersion }: { campaignId: 
         alt={"Criativo " + item.id} width={item.width} height={item.height}
         style={{ maxWidth: "min(100%, 320px)", height: "auto" }} /> : null}
       {!item.available ? <p>Entrega ainda não confirmada.</p> : null}
+      {item.state === "STORAGE_PENDING" ? <Button disabled={busy}
+        onClick={() => void reconcile(item)} variant="secondary">Conferir armazenamento</Button> : null}
     </div>)}
     {page?.has_more ? <p>Existem mais registros; consulte os históricos da campanha.</p> : null}
   </section></Card>;
