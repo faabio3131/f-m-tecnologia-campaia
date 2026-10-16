@@ -1070,3 +1070,9 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - CURRENT PR #73, HEAD anterior `c025642` com Backend/Frontend/F4 verdes. Implementados no `asset_image_worker` isolado com seccomp os comandos determinísticos rotate_90/rotate_180/flip_horizontal (Image.Transpose). Nova função `edit_normalized_png` valida PNG normalizado antes e depois, usa subprocesso com limite e ambiente restrito, não altera original nem permite operação arbitrária.
 - Testes unitários exercitam três transformações, dimensões, integridade e operação inválida. **Ainda TARGET**: endpoint transacional para origin->edited asset com autorização/step-up, nova identidade imutável, quota e GCS CAS, reconciliação, crédito/billing se aplicável e auditoria. Este incremento de baixo nível não é editor utilizável comercialmente. Não declarar G7 encerrado.
 - PR #73 continua única aberta e Draft, sem merge/deploy. CI do novo HEAD obrigatória.
+
+
+## G7 — endpoint real de edição de pixels (16/10/2026)
+- Implementado `POST /campaigns/{campaignId}/images/{creativeId}/pixel-edit`: IAM CAMPAIGN_EDIT + step-up + chave idempotente, identidade scope tenant/unidade/campanha/versão, hash e generation da origem, operação allowlisted rotate_90/rotate_180/flip_horizontal em worker isolado, nova identidade UUID, quota privada F3, CAS upload/observe e trilha de auditoria. Origem permanece intacta; saída expõe `source_creative_id`.
+- O endpoint bloqueia origem com revisão humana e campanha com recursos externos, além de requests cross-tenant, conflito de hash, operações arbitrárias. Tentativa replay reutiliza objeto anterior, sem segundo upload quando STORED. Falha de observação mantém erro de estado pendente.
+- Testes incluídos para transformação real de pixels, replay, hash inválido e tenant cruzado. CI do HEAD novo ainda necessária; não presumir êxito. UI de edição e policy oficial dos canais permanecem TARGET; sem merge/deploy.
