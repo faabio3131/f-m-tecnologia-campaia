@@ -35,6 +35,8 @@ from .payment_gateway import (
     ChargeCommand,
     parse_observed_amount,
     parse_refund_observations,
+    refund_snapshot,
+    parse_chargeback_status,
     ChargeResult,
     GatewayChargeStatus,
     GatewayMode,
@@ -156,6 +158,7 @@ class AsaasConfig:
     due_in_days: int
     # Account/method capability must be explicitly validated before residual write-off.
     minimum_charge_amount: Decimal | None = None
+    refund_dispatch_enabled: bool = False
 
     @classmethod
     def from_env(cls, prefix: str = "ASAAS_") -> "AsaasConfig":
@@ -183,6 +186,7 @@ class AsaasConfig:
             account_handle=os.environ.get(f"{prefix}ACCOUNT_HANDLE", "default"),
             due_in_days=int(os.environ.get(f"{prefix}DUE_IN_DAYS", "3")),
             minimum_charge_amount=parsed_minimum,
+            refund_dispatch_enabled=os.environ.get(f'{prefix}REFUND_DISPATCH_ENABLED', '').strip().lower() == 'true',
         )
 
 
@@ -208,6 +212,10 @@ class AsaasGateway:
     @property
     def minimum_charge_amount(self) -> Decimal | None:
         return self.config.minimum_charge_amount
+
+    @property
+    def refund_dispatch_enabled(self) -> bool:
+        return self.config.refund_dispatch_enabled
 
     def __post_init__(self) -> None:
         if not self.config.api_key:
@@ -306,7 +314,9 @@ class AsaasGateway:
         response = self._client.get(f"/payments/{quote(gateway_charge_id, safe='')}")
         _raise_for_response(response)
         body = response.json()
-        if (body.get('id') != gateway_charge_id or body.get('externalReference') != command.idempotency_key):
+        if (not isinstance(body, dict) or body.get('id') != gateway_charge_id
+                or body.get('externalReference') != command.idempotency_key
+                or not isinstance(body.get('status'), str) or not body['status'].strip()):
             raise PaymentGatewayError(PaymentGatewayErrorCode.UNKNOWN,
                                       "Cobrança consultada diverge da obrigação conhecida.")
         return ChargeResult(gateway_charge_id=body['id'], status=map_asaas_status(body['status']),
@@ -316,6 +326,8 @@ class AsaasGateway:
             deleted=body.get('deleted') if isinstance(body.get('deleted'), bool) else None,
             refund_observations=parse_refund_observations(body.get('refunds')),
             refunds_present=body.get('refunds') not in (None, []),
+            billing_type=body.get('billingType') if isinstance(body.get('billingType'), str) else None,
+            chargeback_status=parse_chargeback_status(body.get('chargeback')),
             invoice_url=safe_asaas_invoice_url(body.get('invoiceUrl'), self.mode))
 
     def void_charge(self, gateway_charge_id: str, command: ChargeCommand) -> ChargeResult:
@@ -333,6 +345,29 @@ class AsaasGateway:
         body = response.json()
         if body.get('id') != gateway_charge_id or body.get('deleted') is not True:
             raise PaymentGatewayError(PaymentGatewayErrorCode.UNKNOWN, "Retirada externa não confirmada.")
+        return self.inspect_charge(gateway_charge_id, command)
+
+    def refund_charge(self, gateway_charge_id: str, command: ChargeCommand, amount: Decimal) -> ChargeResult:
+        """One governed attempt; caller commits the case/invoice dispatch fence first."""
+        from urllib.parse import quote
+        require_idempotency(command)
+        if self.config.refund_dispatch_enabled is not True:
+            raise PaymentGatewayError(PaymentGatewayErrorCode.AUTH_EXPIRED, "Execução de estorno não habilitada.")
+        if not isinstance(amount, Decimal) or parse_observed_amount(amount) != amount or amount <= 0:
+            raise PaymentGatewayError(PaymentGatewayErrorCode.VALIDATION_REJECTED, "Valor de estorno inválido.")
+        current = self.inspect_charge(gateway_charge_id, command)
+        snapshot = refund_snapshot(current, command)
+        if (current.billing_type not in {'PIX', 'CREDIT_CARD'} or current.source_status not in {'CONFIRMED', 'RECEIVED'}
+                or snapshot['state'] != 'READY'
+                or amount > snapshot['remaining']):
+            raise PaymentGatewayError(PaymentGatewayErrorCode.VALIDATION_REJECTED,
+                                      "Método ou saldo de devolução exige conferência.")
+        response = self._client.post(f"/payments/{quote(gateway_charge_id, safe='')}/refund",
+            json={'value': float(amount), 'description': 'Garantia comercial CampaIA'})
+        _raise_for_response(response)
+        body = response.json()
+        if not isinstance(body, dict) or body.get('id') != gateway_charge_id:
+            raise PaymentGatewayError(PaymentGatewayErrorCode.UNKNOWN, "Resposta de estorno não confirmada.")
         return self.inspect_charge(gateway_charge_id, command)
 
     def get_charge_status(self, gateway_charge_id: str) -> GatewayChargeStatus:

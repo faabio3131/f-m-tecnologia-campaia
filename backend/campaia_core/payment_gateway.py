@@ -98,6 +98,8 @@ class ChargeResult:
     deleted: bool | None = None
     refund_observations: tuple[tuple[str, Decimal | None], ...] | None = None
     refunds_present: bool = False
+    billing_type: str | None = None
+    chargeback_status: str | None = None
 
 
 def parse_observed_amount(value) -> Decimal | None:
@@ -124,6 +126,46 @@ def parse_refund_observations(value) -> tuple[tuple[str, Decimal | None], ...] |
         amount = parse_observed_amount(item.get('value'))
         observations.append((item['status'], amount if amount is not None and amount > 0 else None))
     return tuple(observations)
+
+
+def parse_chargeback_status(value) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, dict) and isinstance(value.get('status'), str) and value['status'].strip():
+        return value['status']
+    return 'UNKNOWN'
+
+
+def refund_snapshot(result: ChargeResult, command: ChargeCommand) -> dict:
+    """Provider evidence only; never count pending/cancelled as returned money."""
+    review = {'state': 'REVIEW_REQUIRED', 'completed': None, 'remaining': None}
+    if result.observed_amount != command.amount or result.chargeback_status is not None:
+        return review
+    entries = result.refund_observations
+    if entries is None:
+        if result.refunds_present:
+            return review
+        entries = ()
+    if len(entries) > 1000:
+        return review
+    for status, value in entries:
+        if (status not in {'DONE', 'PENDING', 'CANCELLED'} or not isinstance(value, Decimal)
+                or not value.is_finite() or value <= 0 or parse_observed_amount(value) != value):
+            return review
+    completed = sum((value for status, value in entries if status == 'DONE'), Decimal('0.00'))
+    pending = sum((value for status, value in entries if status == 'PENDING'), Decimal('0.00'))
+    if completed + pending > command.amount:
+        return review
+    remaining = command.amount - completed
+    if remaining == 0:
+        state = 'FULL_DONE'
+    elif pending:
+        state = 'PROVIDER_PENDING'
+    elif result.status is GatewayChargeStatus.CONFIRMED:
+        state = 'READY'
+    else:
+        state = 'REVIEW_REQUIRED'
+    return {'state': state, 'completed': completed, 'remaining': remaining}
 
 
 def require_idempotency(command: ChargeCommand) -> None:
@@ -176,12 +218,15 @@ class PaymentGatewayConnector(Protocol):
     def recover_charge(self, command: ChargeCommand) -> ChargeResult | None: ...
     def inspect_charge(self, gateway_charge_id: str, command: ChargeCommand) -> ChargeResult: ...
     def void_charge(self, gateway_charge_id: str, command: ChargeCommand) -> ChargeResult: ...
+    def refund_charge(self, gateway_charge_id: str, command: ChargeCommand, amount: Decimal) -> ChargeResult: ...
     def get_charge_status(self, gateway_charge_id: str) -> GatewayChargeStatus: ...
 
 
 __all__ = [
     "parse_observed_amount",
     "parse_refund_observations",
+    "refund_snapshot",
+    "parse_chargeback_status",
     "ChargeCommand",
     "ChargeResult",
     "GatewayChargeStatus",

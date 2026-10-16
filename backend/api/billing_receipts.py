@@ -52,7 +52,7 @@ def has_reversal_signal(event):
     return (event.event_type.startswith('PAYMENT_REFUND') or 'CHARGEBACK' in event.event_type
         or event.event_type in {'PAYMENT_PARTIALLY_REFUNDED', 'PAYMENT_RECEIVED_IN_CASH_UNDONE'}
         or 'REFUND' in event.asaas_status or 'CHARGEBACK' in event.asaas_status
-        or event.refunds_present or bool(event.refund_observations))
+        or event.refunds_present or bool(event.refund_observations) or event.chargeback_status is not None)
 
 
 def observe_refunds(state, charge, event, *, at):
@@ -99,6 +99,7 @@ def observe_payment(state, charge, event, *, at, gateway_status, source="WEBHOOK
         'expected_amount': charge.amount, 'observed_amount': event.observed_amount,
         'observed_at': at, 'decision': decision, 'source': source,
         'refund_observations': event.refund_observations,
+        'chargeback_status': event.chargeback_status,
         'refund_state': charge.gateway_refund_state if reversal else None,
         'refund_completed_amount': charge.gateway_refund_amount if reversal else None}
     state.idempotency.execute(charge.tenant_id, 'billing-receipt:' + event.event_id, lambda: observation)

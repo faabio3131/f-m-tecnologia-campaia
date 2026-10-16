@@ -2109,7 +2109,7 @@ components:
       type: object
       required: [state, fingerprint, first_paid_at, deadline, paid_amount, currency, items, request_id, requested_at]
       properties:
-        state: { type: string, enum: [UNAVAILABLE, MANUAL_REVIEW, ELIGIBLE, EXPIRED, REQUESTED] }
+        state: { type: string, enum: [UNAVAILABLE, MANUAL_REVIEW, ELIGIBLE, EXPIRED, REQUESTED, PROCESSING] }
         fingerprint: { type: [string, 'null'] }
         first_paid_at: { type: [string, 'null'], format: date-time }
         deadline: { type: [string, 'null'], format: date-time }
@@ -2130,6 +2130,20 @@ components:
               mode: { type: [string, 'null'] }
         request_id: { type: [string, 'null'] }
         requested_at: { type: [string, 'null'], format: date-time }
+        processing_started_at: { type: [string, 'null'], format: date-time }
+        processing_review_required: { type: boolean }
+        refund_progress:
+          type: array
+          items:
+            type: object
+            required: [billing_id, gateway_charge_id, paid_amount, completed_amount, state, mode]
+            properties:
+              billing_id: { type: string }
+              gateway_charge_id: { type: string }
+              paid_amount: { type: string }
+              completed_amount: { type: [string, 'null'] }
+              state: { type: string }
+              mode: { type: [string, 'null'] }
 
     BillingCheckout:
       type: object

@@ -7,6 +7,7 @@ import json
 from campaia_core.subscription import cancel_subscription
 from .billing_facts import FIRST_PAID_KEY, fact_key
 from .billing_receipts import tenant_charges
+from .billing_refund_policy import processing_key, refund_progress
 from .billing_closure import record_closed_lifecycle
 from .errors import ApiError
 
@@ -16,7 +17,17 @@ REQUEST_KEY = 'billing-guarantee-request'
 def guarantee_quote(state, tenant, *, at):
     pending = state.idempotency.get(tenant, REQUEST_KEY)
     if pending is not None:
-        return pending.result
+        result = {**pending.result}
+        processing = state.idempotency.get(tenant, processing_key(result['request_id']))
+        if processing is not None:
+            result['state'] = 'PROCESSING'
+            result['processing_started_at'] = processing.result['started_at'].isoformat()
+            try:
+                result['refund_progress'] = refund_progress(state, tenant, pending.result, at=at)
+            except ApiError:
+                result['processing_review_required'] = True
+                result['refund_progress'] = []
+        return result
     result = {'state': 'UNAVAILABLE', 'fingerprint': None, 'first_paid_at': None,
         'deadline': None, 'paid_amount': None, 'currency': 'BRL', 'items': [],
         'request_id': None, 'requested_at': None}

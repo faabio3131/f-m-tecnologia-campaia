@@ -870,7 +870,7 @@ async def reconcile_billing_payment(request: Request) -> JSONResponse:
     event_type = "PAYMENT_REFUND_RECONCILIATION" if ("REFUND" in raw_status or "CHARGEBACK" in raw_status) else "PAYMENT_RECONCILIATION"
     event = AsaasPaymentEvent('reconcile:' + sha256((fixture.tenant_id + ':' + key).encode()).hexdigest(),
         event_type, gateway_id, raw_status, inspected.observed_amount,
-        inspected.refund_observations, inspected.refunds_present)
+        inspected.refund_observations, inspected.refunds_present, inspected.chargeback_status)
     observed_at = datetime.now(timezone.utc)
     def _commit():
         fresh = owned_charge()
@@ -903,7 +903,7 @@ def _apply_verified_payment_event(state, charge, event, *, observed_at, source="
     if event.event_type in {
         "PAYMENT_CREDIT_CARD_CAPTURE_REFUSED",
         "PAYMENT_REPROVED_BY_RISK_ANALYSIS",
-    }:
+    } and not has_reversal_signal(event):
         state.audit.append(
             tenant_id=charge.tenant_id,
             actor="asaas",

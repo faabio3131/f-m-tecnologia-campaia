@@ -208,7 +208,7 @@ class PostgresRuntimeTests(unittest.TestCase):
                 "trial_credits": 30, "trial_max_users": 1, "trial_max_active_campaigns": 1}
             config.write_text(json.dumps(plans))
             with patch.dict(os.environ, {"CAMPAIA_PLAN_CATALOG_PATH": str(config),
-                                         "ASAAS_WEBHOOK_TOKEN": "pg-webhook-proof"}):
+                                         "ASAAS_WEBHOOK_TOKEN": "pg-webhook-proof", "ASAAS_API_KEY": "", "GEMINI_API_KEY": ""}):
                 clients = [TestClient(create_app(database_url=DSN, env="test")) for _ in range(2)]
                 setup = clients[0].put("/billing/subscription",
                     headers={**with_step_up(OWNER), **unique_idem()}, json={
@@ -368,6 +368,34 @@ class PostgresRuntimeTests(unittest.TestCase):
                 self.assertEqual(clients[1].get('/billing/guarantee', headers=OWNER).json()['state'], 'REQUESTED')
                 self.assertEqual(sum(e.action == 'BILLING_GUARANTEE_REQUESTED' for e in
                     clients[1].app.state.campaia.audit.list_for_tenant('demo-tenant')), 1)
+                from api.billing_refund_worker import process_guarantee_refunds
+                from api.billing_refund_policy import refund_intent_key
+                for client in clients:
+                    client.app.state.campaia.billing_gateway.confirm(charge.json()['gateway_charge_id'])
+                    client.app.state.campaia.billing_gateway.confirm(final_id)
+                source_gateway = clients[0].app.state.campaia.billing_gateway
+                original_refund = source_gateway.refund_charge
+                def refund_proves_commit(gateway_id, command, amount):
+                    self.assertFalse(clients[0].app.state.campaia.db.in_transaction)
+                    intent = clients[1].app.state.campaia.idempotency.get('demo-tenant',
+                        refund_intent_key(cases[0].json()['request_id'], command.billing_id))
+                    self.assertIsNotNone(intent)
+                    self.assertEqual(intent.result['amount'], amount)
+                    return original_refund(gateway_id, command, amount)
+                with patch.object(source_gateway, 'refund_charge', side_effect=refund_proves_commit) as sent:
+                    pending = process_guarantee_refunds(clients[0].app.state.campaia, 'demo-tenant', execute=True)
+                self.assertEqual(sent.call_count, 2)
+                self.assertTrue(all(item['state'] == 'PROVIDER_PENDING' for item in pending['items']), pending)
+                for gateway_id in (charge.json()['gateway_charge_id'], final_id):
+                    clients[1].app.state.campaia.billing_gateway.complete_refund(gateway_id, tenant_id='demo-tenant')
+                with patch.object(clients[1].app.state.campaia.billing_gateway, 'refund_charge', side_effect=AssertionError('No second refund POST')):
+                    done = process_guarantee_refunds(clients[1].app.state.campaia, 'demo-tenant', execute=True)
+                self.assertTrue(all(item['state'] == 'REFUND_DONE_ADJUSTMENT_PENDING' for item in done['items']), done)
+                case_after = clients[0].get('/billing/guarantee', headers=OWNER).json()
+                self.assertEqual(case_after['state'], 'PROCESSING')
+                self.assertEqual(len(case_after['refund_progress']), 2)
+                self.assertEqual(sum(e.kind == 'OPEN' for e in clients[0].app.state.campaia.credit_ledger.entries('demo-tenant')), 2)
+
 
 
     def test_unpaid_renewal_withdrawal_fence_recovers_across_connections(self):
@@ -386,7 +414,7 @@ class PostgresRuntimeTests(unittest.TestCase):
             plans[0]['credit_policy'] = {'version': 'pg-void-v1', 'action_weights': {'strategy': 5},
                 'trial_credits': 30, 'trial_max_users': 1, 'trial_max_active_campaigns': 1}
             config.write_text(json.dumps(plans))
-            with patch.dict(os.environ, {'CAMPAIA_PLAN_CATALOG_PATH': str(config), 'ASAAS_WEBHOOK_TOKEN': 'pg-void-proof'}):
+            with patch.dict(os.environ, {'CAMPAIA_PLAN_CATALOG_PATH': str(config), 'ASAAS_WEBHOOK_TOKEN': 'pg-void-proof', 'ASAAS_API_KEY': '', 'GEMINI_API_KEY': ''}):
                 clients = [TestClient(create_app(database_url=DSN, env='test')) for _ in range(2)]
                 a, b = clients
                 def post(client, path, body=None):

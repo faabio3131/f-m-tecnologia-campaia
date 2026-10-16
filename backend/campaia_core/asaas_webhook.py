@@ -17,7 +17,7 @@ from __future__ import annotations
 import hmac
 from dataclasses import dataclass, field
 from decimal import Decimal
-from .payment_gateway import parse_observed_amount, parse_refund_observations
+from .payment_gateway import parse_observed_amount, parse_refund_observations, parse_chargeback_status
 from typing import Any, Callable
 
 from .webhooks import InMemorySeenEventStore, RejectionReason, SeenEventStoreLike, WebhookVerdict
@@ -87,6 +87,7 @@ class AsaasPaymentEvent:
     observed_amount: Decimal | None = None
     refund_observations: tuple[tuple[str, Decimal | None], ...] | None = None
     refunds_present: bool = False
+    chargeback_status: str | None = None
 
 
 def parse_asaas_payment_event(payload: dict[str, Any]) -> AsaasPaymentEvent:
@@ -116,6 +117,7 @@ def parse_asaas_payment_event(payload: dict[str, Any]) -> AsaasPaymentEvent:
         observed_amount=parse_observed_amount(payment.get('value')),
         refund_observations=parse_refund_observations(payment.get('refunds')),
         refunds_present=payment.get('refunds') not in (None, []),
+        chargeback_status=parse_chargeback_status(payment.get('chargeback')),
     )
 
 

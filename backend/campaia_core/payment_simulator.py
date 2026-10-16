@@ -25,6 +25,8 @@ from .payment_gateway import (
     PaymentGatewayError,
     PaymentGatewayErrorCode,
     require_idempotency,
+    parse_observed_amount,
+    refund_snapshot,
 )
 
 
@@ -46,6 +48,8 @@ class PaymentGatewaySimulator:
     idempotency: IdempotencyStoreLike = field(default_factory=IdempotencyStore)
     _counter: int = 0
     minimum_charge_amount: Decimal | None = Decimal('0.01')
+    refund_dispatch_enabled: bool = True
+    billing_type: str = 'PIX'
 
     def resolve_secret(self, account_handle: str) -> SecretRef:
         return SecretRef(handle=f"vault://{self.provider}/{account_handle}")
@@ -93,15 +97,48 @@ class PaymentGatewaySimulator:
         stored = self.idempotency.get(command.tenant_id, command.idempotency_key)
         if stored is None or stored.result.gateway_charge_id != gateway_charge_id:
             raise PaymentGatewayError(PaymentGatewayErrorCode.VALIDATION_REJECTED, "Cobrança simulada desconhecida.")
+        refund = self.idempotency.get(command.tenant_id, 'sim-refund:' + gateway_charge_id)
+        if refund is not None:
+            completed = self.idempotency.get(command.tenant_id, 'sim-refund-done:' + gateway_charge_id) is not None
+            observations = refund.result['before'] + (('DONE' if completed else 'PENDING', refund.result['amount']),)
+            full = sum((value for status, value in observations if status == 'DONE'), Decimal('0.00')) == command.amount
+            return replace(stored.result, status=(GatewayChargeStatus.FAILED if full else
+                GatewayChargeStatus.CONFIRMED if completed else GatewayChargeStatus.PENDING),
+                source_status='REFUNDED' if full else 'RECEIVED' if completed else 'REFUND_IN_PROGRESS',
+                refund_observations=observations, refunds_present=True, billing_type=self.billing_type)
         return replace(stored.result, status=self.get_charge_status(gateway_charge_id),
+                       billing_type=self.billing_type,
                        deleted=self.idempotency.get(command.tenant_id, 'sim-void:' + gateway_charge_id) is not None)
 
     def void_charge(self, gateway_charge_id: str, command: ChargeCommand) -> ChargeResult:
         current = self.inspect_charge(gateway_charge_id, command)
-        if current.status not in {GatewayChargeStatus.PENDING, GatewayChargeStatus.OVERDUE}:
+        if (current.status not in {GatewayChargeStatus.PENDING, GatewayChargeStatus.OVERDUE}
+                or current.refunds_present or current.chargeback_status is not None):
             raise PaymentGatewayError(PaymentGatewayErrorCode.VALIDATION_REJECTED, "Cobrança simulada paga não admite retirada.")
         self.idempotency.execute(command.tenant_id, 'sim-void:' + gateway_charge_id, lambda: {'deleted': True})
         return self.inspect_charge(gateway_charge_id, command)
+
+    def refund_charge(self, gateway_charge_id: str, command: ChargeCommand, amount: Decimal) -> ChargeResult:
+        current = self.inspect_charge(gateway_charge_id, command)
+        existing = self.idempotency.get(command.tenant_id, 'sim-refund:' + gateway_charge_id)
+        if existing is not None:
+            if existing.result['amount'] != amount:
+                raise PaymentGatewayError(PaymentGatewayErrorCode.VALIDATION_REJECTED, "Outro estorno simulado já registrado.")
+            return current
+        snapshot = refund_snapshot(current, command)
+        if (self.refund_dispatch_enabled is not True or self.billing_type not in {'PIX', 'CREDIT_CARD'}
+                or not isinstance(amount, Decimal) or parse_observed_amount(amount) != amount or amount <= 0
+                or snapshot['state'] != 'READY' or amount > snapshot['remaining']):
+            raise PaymentGatewayError(PaymentGatewayErrorCode.VALIDATION_REJECTED, "Estorno simulado indisponível.")
+        self.idempotency.execute(command.tenant_id, 'sim-refund:' + gateway_charge_id,
+            lambda: {'amount': amount, 'before': current.refund_observations or ()})
+        return self.inspect_charge(gateway_charge_id, command)
+
+    def complete_refund(self, gateway_charge_id: str, *, tenant_id: str) -> None:
+        """Fixture control: a request alone never becomes a completed refund."""
+        if self.idempotency.get(tenant_id, 'sim-refund:' + gateway_charge_id) is None:
+            raise PaymentGatewayError(PaymentGatewayErrorCode.UNKNOWN, "Não há pedido de estorno simulado.")
+        self.idempotency.execute(tenant_id, 'sim-refund-done:' + gateway_charge_id, lambda: {'done': True})
 
     def get_charge_status(self, gateway_charge_id: str) -> GatewayChargeStatus:
         return self.scripted_status.get(gateway_charge_id, GatewayChargeStatus.PENDING)

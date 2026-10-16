@@ -4,10 +4,10 @@ This module deliberately accepts only an explicit CampaIA *own billing* fact tha
 has already been settled by an authoritative billing/payment domain. Campaign
 budget, media spend and ad-platform transactions are not accepted as revenue.
 
-CampaIA currently has no authoritative own-billing/payment domain wired to this
-boundary, so this builder is a safe adapter seam rather than a production event
-source. FM Fiscal remains authoritative for fiscal binding, jurisdiction,
-provider, tax rules, readiness and issuance.
+The own-billing engine now constructs settled facts and this positive handoff.
+Transport, fiscal binding, jurisdiction, provider, readiness and issuance remain
+FM Fiscal responsibilities; construction alone does not issue a document.
+Refund observations never become negative revenue facts or credit notes here.
 """
 
 from __future__ import annotations
