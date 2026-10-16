@@ -1047,3 +1047,10 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 
 ## G7 — correção do teste de guarda de provedor (16/10/2026)
 - CI Backend do HEAD `975c6e9` falhou exclusivamente no teste `test_disabled_provider_refuses_before_cost_reservation_or_gcs`, porque o fixture `SimpleNamespace` anterior não incluía o novo campo obrigatório no fluxo interno `image_format`. A correção atual adiciona `image_format="ORIGINAL"` ao fixture, sem alterar a rota ou afrouxar o bloqueio do provedor desativado. Requer reteste do novo HEAD; nunca inferir sucesso antes da CI.
+
+
+## WP-R04-04B — revisões imutáveis e previews por canal (16/10/2026)
+- Implementado contrato de revisão opcional `source_creative_id` na geração paga: nova identidade criativa/idempotente e nova imagem, original preservada; só aceita origem STORED com tenant/unidade/campanha/versão correspondentes. Aprovação ou revogação existente bloqueia edição direta da origem. Linhagem gravada no manifesto de registro F3 e exposta na API de detalhe. Não altera modelo de cobrança: nova geração = nova operação de crédito; custo F3 permanece distinto.
+- Prévia de imagem retorna metadados para Google Ads, Meta/Facebook/Instagram e WhatsApp explicitamente `DRAFT_ONLY` e `media_ready=false`; dica de geometria não é aceitação de criativo por canal, não autoriza publicação. Prévia visual renderizada e certificação de upload real continuam TARGET/PRODUCTION_GATE.
+- Testes adicionados: origem preservada/linhagem, origem indevida negada e previews por canal sem elevação de autorização. Todos dependem do resultado de CI deste HEAD; não certificar antes da execução.
+- Pendências reais: edição binária/transformação de pixels não implementada (a revisão atual é nova geração baseada em prompt), policy específica de cada canal, custos oficiais, credenciais e homologação de publicação, política de retenção HUMAN_DECISION; PR #73 ainda Draft sem merge. Não confundir estes previews informativos com visualização real da peça publicada.
