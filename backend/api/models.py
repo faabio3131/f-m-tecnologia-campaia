@@ -413,6 +413,7 @@ class PublishRequest(ApiModel):
     policy_decision_id: str
     approval_id: str
     external_account_id: str | None = None
+    selected_creative_id: str | None = None
 
 
 class BudgetPatchRequest(ApiModel):
