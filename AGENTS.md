@@ -934,3 +934,9 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - Confirmados internamente na CI: POST de geração Gemini governada, contrato de preço por política F5 configurável, orçamento de IA F3, PNG privado, leitura autenticada, replay sem reenvio, cross-tenant, recuperação GCS incerta e liquidação F5 em simulador de storage/provedor.
 - `PARTIAL`: faltam gates internos F7/G7 posteriores (formatos por canal, política de imagem/preview, upload/revisão e lifecycle/delete completo, compensação de custos desconhecidos e outros negativos) e homologação externa final. Não executar merge/deploy/produção/migrations reais sem autorização expressa.
 - Nova edição documental exige verificação de CI no HEAD resultante antes de elevar qualquer status.
+
+
+## WP-R04-04B — paginação privada do inventário (16/10/2026)
+- Incremento interno da PR #73: paginação determinística em lotes de 50 por UUID canônico, `next_cursor` e `has_more`, com cursor validado exclusivamente no conjunto já filtrado por tenant, unidade e campanha. Cursor estranho não acessa itens alheios e falha fechado.
+- Testes de três páginas sem duplicação e rejeição de cursor inválido/fora de escopo. Ainda requer CI verde no HEAD exato; não marcar DONE_VERIFIED antecipadamente.
+- Permanece PARTIAL: revisão/policy de imagem e formatos por canal, lifecycle/delete, F3 custos incertos e matriz adicional de negativos. Testes externos seguem EXTERNAL_INFRASTRUCTURE/EXTERNAL_CREDENTIAL; nenhum merge/deploy/migration aplicada.
