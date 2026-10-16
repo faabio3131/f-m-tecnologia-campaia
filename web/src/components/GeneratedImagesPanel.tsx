@@ -85,7 +85,8 @@ export function GeneratedImagesPanel({ campaignId, planVersion }: { campaignId: 
         setPending(null);
         setError(cause.message);
       } else {
-        setError("Resultado incerto. A chave original foi preservada; não iniciaremos outra geração.");
+        setNotice("Resultado incerto. A chave original foi preservada; consulte o inventário e reconcilie sem gerar novamente.");
+        try { await refresh(); } catch { if (alive.current) setError("Histórico indisponível; mantenha a solicitação original."); }
       }
     } finally {
       inflight.current = false;
