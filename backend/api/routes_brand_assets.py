@@ -138,6 +138,7 @@ async def read_brand_asset(request: Request):
         raise ApiError("NOT_FOUND", "Arquivo indisponível.", status_code=404)
     return Response(raw, media_type="image/png", headers={
         "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
+        "Cross-Origin-Resource-Policy": "same-origin",
         "Content-Security-Policy": "default-src 'none'; sandbox",
         "Content-Disposition": f'inline; filename="{record["asset_id"]}.png"',
     })

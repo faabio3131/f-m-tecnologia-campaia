@@ -70,6 +70,7 @@ class BrandAssetTests(BillingCreditHarness, unittest.TestCase):
         self.assertEqual(content.status_code, 200)
         self.assertEqual(content.headers["Cache-Control"], "private, no-store")
         self.assertEqual(content.headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(content.headers["Cross-Origin-Resource-Policy"], "same-origin")
         self.assertEqual(content.headers["Content-Type"], "image/png")
         self.assertEqual(Image.open(io.BytesIO(content.content)).size, (3, 2))
         removed = self.remove(item["id"])

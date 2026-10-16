@@ -3033,6 +3033,7 @@ export interface operations {
     uploadBrandAsset: {
         parameters: {
             query: {
+                /** @enum {string} */
                 kind: "LOGO" | "REFERENCE";
             };
             header: {
