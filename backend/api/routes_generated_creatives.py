@@ -43,6 +43,7 @@ def _public(row):
         "height": row["manifest"]["height"],
         "content_type": "image/png",
         "revision": row["revision"],
+        "source_creative_id": row.get("source_creative_id"),
         "available": row["state"] == "STORED",
         "content_url": ("/api/campaia/campaigns/" + identity["campaign_id"] +
                         "/images/" + identity["creative_id"] + "/content")
@@ -134,6 +135,23 @@ def _preview_policy(row, campaign, review=None):
         "storage_verified": stored,
         "format_hints": format_hints,
         "channel_media_validated": False,
+        "channel_previews": {
+            "GOOGLE_ADS": {
+                "kind": "DRAFT_ONLY", "asset_format_hint": format_hints,
+                "media_ready": False,
+                "reason": "A integração e os requisitos reais da conta Google Ads não foram homologados.",
+            },
+            "META_FACEBOOK_INSTAGRAM": {
+                "kind": "DRAFT_ONLY", "asset_format_hint": format_hints,
+                "media_ready": False,
+                "reason": "Posicionamento, mídia e requisitos reais da conta Meta não foram homologados.",
+            },
+            "WHATSAPP": {
+                "kind": "DRAFT_ONLY", "asset_format_hint": format_hints,
+                "media_ready": False,
+                "reason": "A entrega de mídia via WhatsApp Business não foi homologada.",
+            },
+        },
         "human_review": (review.get("decision", "NOT_REVIEWED") if review else "NOT_REVIEWED"),
         "publication_allowed": False,
         "blocking_reasons": (
