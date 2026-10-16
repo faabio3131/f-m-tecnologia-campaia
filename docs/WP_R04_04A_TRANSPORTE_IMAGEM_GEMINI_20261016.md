@@ -1,7 +1,7 @@
 # WP-R04-04A — Transporte interno de imagem Gemini
 
 CURRENT: main@957d99a7804f6a6d3e2b6379cbf58fbd280976fd, PR #71 e pós-merge verdes.
-Status: PARTIAL / em validação. Não é ativação nem conclusão de G7.
+Status: PARTIAL / CI de PR verde no HEAD 2ef4e0a7208331c3ecc708fc0dcc93a3dd9f0d68. Não é ativação nem conclusão de G7.
 
 ## Fonte primária consultada em 16/10/2026
 - https://ai.google.dev/gemini-api/docs/image-generation
@@ -40,7 +40,11 @@ do claim F3, não uma capacidade de idempotência externa inventada para o Googl
 MockTransport, sem rede/chave real: forma da requisição, configuração OFF, custos, schema,
 PII/credenciais, PNG normalizado, bloqueios, uso ausente, timeout, headers, tamanho, URI,
 múltiplas imagens e integração com AIGateway. Primeira CI completa verde; reforçada a trava
-para modelo fora do perfil antes da rede. CI final no HEAD e pós-merge são exigidas.
+para modelo fora do perfil antes da rede. CI completa no HEAD 2ef4e0a7208331c3ecc708fc0dcc93a3dd9f0d68:
+- Backend https://github.com/faabio3131/f-m-tecnologia-campaia/actions/runs/38907588003 — sucesso, incluindo PostgreSQL runtime integration e unit/API.
+- Frontend https://github.com/faabio3131/f-m-tecnologia-campaia/actions/runs/38907588134 — sucesso, incluindo sessão E2E cross-tenant, contrato/lint/types/build/smoke.
+- Plataforma https://github.com/faabio3131/f-m-tecnologia-campaia/actions/runs/38907587811 — sucesso, incluindo container/boot, secret scan/SAST, Terraform.
+Esses são resultados GitHub Actions, não testes de geração real de imagens. Após qualquer commit adicional, revalidar o HEAD atualizado. CI pós-merge continua obrigatória.
 
 ## Próximos deltas
 Persistência/metadata de criativos por campanha, quota e armazenamento privado, fence de
