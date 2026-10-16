@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import Image from "next/image";
 import { api, ApiClientError } from "@/lib/api/client";
 import { Button } from "./Button";
 import { Card } from "./Card";
@@ -11,7 +12,7 @@ import { Spinner } from "./Spinner";
 type ImageItem = {
   id: string; campaign_id: string; campaign_version: number;
   state: string; width: number; height: number; revision: number;
-  content_type: string; available: boolean;
+  content_type: string; available: boolean; content_url: string | null;
 };
 type ImagePage = { items: ImageItem[]; has_more: boolean; generation_enabled: boolean };
 type ImageQuote = { mode: string; action: string; cycle_id: string | null; policy_version: string | null;
@@ -119,6 +120,9 @@ export function GeneratedImagesPanel({ campaignId, planVersion }: { campaignId: 
     {page && page.items.length === 0 ? <p>Nenhum criativo registrado nesta campanha.</p> : null}
     {page?.items.map((item) => <div key={item.id}>
       <p>Criativo {item.id} · versão {item.campaign_version} · {item.width} × {item.height} · {item.state}</p>
+      {item.available && item.content_url ? <Image unoptimized src={item.content_url}
+        alt={"Criativo " + item.id} width={item.width} height={item.height}
+        style={{ maxWidth: "min(100%, 320px)", height: "auto" }} /> : null}
       {!item.available ? <p>Entrega ainda não confirmada.</p> : null}
     </div>)}
     {page?.has_more ? <p>Existem mais registros; consulte os históricos da campanha.</p> : null}
