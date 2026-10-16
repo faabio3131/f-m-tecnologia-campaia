@@ -940,3 +940,9 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - Incremento interno da PR #73: paginação determinística em lotes de 50 por UUID canônico, `next_cursor` e `has_more`, com cursor validado exclusivamente no conjunto já filtrado por tenant, unidade e campanha. Cursor estranho não acessa itens alheios e falha fechado.
 - Testes de três páginas sem duplicação e rejeição de cursor inválido/fora de escopo. Ainda requer CI verde no HEAD exato; não marcar DONE_VERIFIED antecipadamente.
 - Permanece PARTIAL: revisão/policy de imagem e formatos por canal, lifecycle/delete, F3 custos incertos e matriz adicional de negativos. Testes externos seguem EXTERNAL_INFRASTRUCTURE/EXTERNAL_CREDENTIAL; nenhum merge/deploy/migration aplicada.
+
+
+## WP-R04-04B — prévia de política fail-closed (16/10/2026)
+- Adicionado GET autenticado `/campaigns/{campaignId}/images/{creativeId}/preview`: retorna estado de armazenamento, compatibilidade com versão atual da campanha e bloqueios explícitos para revisão humana. O endpoint é exclusivamente de leitura, não aprova imagem nem autoriza publicação.
+- A prévia exige geração GCS confirmada e mesma versão da campanha; `publication_allowed=false` e `human_review=NOT_REVIEWED` até existir fluxo governado real de política/aprovação. Testes negativos cobrem imagens pendentes, falhas, mudança de versão e stored sem aprovação.
+- Novo HEAD exige CI. WP permanece PARTIAL; isto não fecha policy engine de criativos nem fluxo de aprovação de arte. Sem merge, deploy ou migrações reais. Externos mantidos pendentes para fase final.
