@@ -74,6 +74,42 @@ class ImageApiSimulationTests(BillingCreditHarness, unittest.TestCase):
         self.setup_subscription(trial=True)
         self.base = "/campaigns/" + self.campaign + "/images"
 
+    def test_independent_review_revocation_is_terminal_and_idempotent(self):
+        from tests_api.test_helpers import APPROVER, with_step_up
+        quote = self.client.get(self.base + "/quote", headers=OWNER).json()
+        version = self.state.campaigns.get("demo-tenant", self.campaign).plan_version
+        body = {"expected_plan_version": version, "prompt": "Criativo teste de revogação governada",
+                "credit_confirmation": {field: quote[field] for field in
+                    ("cycle_id", "policy_version", "credits", "extra_amount")}}
+        created = self.client.post(self.base, headers={**OWNER, **unique_idem()}, json=body)
+        self.assertEqual(created.status_code, 201, created.text)
+        asset_id = created.json()["id"]
+        row = self.state.db.table("creative_assets").get_for_tenant(asset_id, "demo-tenant")
+        binding = {"expected_sha256": row["manifest"]["sha256"],
+                   "expected_generation": row["storage_generation"]}
+        route = self.base + "/" + asset_id + "/review"
+        denial = self.client.post(route, headers={**with_step_up(OWNER), **unique_idem()},
+                                  json={**binding, "decision": "APPROVE"})
+        self.assertNotIn(denial.status_code, (200, 201), denial.text)
+        approved = self.client.post(route, headers={**with_step_up(APPROVER), **unique_idem()},
+                                    json={**binding, "decision": "APPROVE"})
+        self.assertEqual(approved.status_code, 200, approved.text)
+        revoke_headers = {**with_step_up(APPROVER), **unique_idem()}
+        reason = {**binding, "reason": "Cancelamento humano comprovado"}
+        revoked = self.client.post(route + "/revoke", headers=revoke_headers, json=reason)
+        self.assertEqual(revoked.status_code, 200, revoked.text)
+        self.assertEqual(revoked.json()["decision"], "REVOKED")
+        replay = self.client.post(route + "/revoke", headers=revoke_headers, json=reason)
+        self.assertEqual(replay.status_code, 200, replay.text)
+        self.assertTrue(replay.json()["replayed"])
+        forbidden = self.client.post(route, headers={**with_step_up(APPROVER), **unique_idem()},
+                                     json={**binding, "decision": "APPROVE"})
+        self.assertEqual(forbidden.status_code, 409, forbidden.text)
+        preview = self.client.get(self.base + "/" + asset_id + "/preview", headers=OWNER)
+        self.assertEqual(preview.status_code, 200, preview.text)
+        self.assertEqual(preview.json()["policy"]["human_review"], "REVOKED")
+        self.assertFalse(preview.json()["policy"]["publication_allowed"])
+
     def test_unreviewed_generated_image_blocks_campaign_publication(self):
         quote = self.client.get(self.base + "/quote", headers=OWNER).json()
         version = self.state.campaigns.get("demo-tenant", self.campaign).plan_version
