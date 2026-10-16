@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 16/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado na leitura de 16/10/2026:** `main@957d99a7804f6a6d3e2b6379cbf58fbd280976fd` (revalidar no início de cada WP)
+**CURRENT confirmado em 16/10/2026:** `main@2458cb3da177537cc88b68b2cc156ce5e6bf3800`; WP-R04-04B na PR #73 Draft (revalidar antes de qualquer novo WP)
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidências:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`; PRs #64–#72 e documentos WP-R03/WP-R04 associados. PR #72 integrada em main@2458cb3; pós-merge Backend #328, Frontend #266 e F4 #162 verdes (evidência GitHub Actions em 16/10/2026).
@@ -857,3 +857,12 @@ Antes de declarar comercial:
 - primeiro tenant externo controlado.
 
 Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMERCIALMENTE DISPONIVEL`.
+
+
+## Adendo operacional WP-R04-04B — 16/10/2026
+
+- PR #73, branch `feat/wp-r04-04b-creative-private-foundation`, sem merge, sem deploy e sem migration aplicada em ambiente real.
+- CI DONE_VERIFIED no HEAD `1dc5baaaa4fcf35d5802b504e04f4b77ef0478f6`: Backend #351, Frontend #289, F4 #185.
+- Adicionado posteriormente manifesto com MD5 canônico + recuperação `reconcile_after_restart` por observação GCS, sem segundo POST; testes SQLite de restart e objeto ausente. **Essas alterações exigem nova CI no HEAD exato.**
+- Continuam TARGET: contrato e2e API/Web de criativos, atomicidade do ledger 15 créditos, verificação externa GCS/ADC e recuperação/delete em todos os cenários de falha. G7 permanece PARTIAL; não ativar comercialmente.
+- Evidência técnica em `docs/WP_R04_04B_PRIVATE_CREATIVES_FOUNDATION_20261016.md`.
