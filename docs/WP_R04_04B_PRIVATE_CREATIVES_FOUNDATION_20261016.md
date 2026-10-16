@@ -27,3 +27,10 @@ Status: PARTIAL. No production execution or G7 certification.
 
 ## Gate
 Run Backend, Frontend, F4 CI on exact PR head. Do not merge until evidence and director's express authorization. This isolated slice is PARTIAL; do not mark WP-R04-04B or G7 DONE_VERIFIED.
+
+## Continuação desta PR (16/10/2026)
+- Definido contrato puro CreativeStateTransition com arestas permitidas e revision CAS para aplicação futura sob row lock F3.
+- Proibidas transições que saltem geração/storage, rearmem entrega/deleção ou convertam falhas em sucesso.
+- Testes de transições válidas, inválidas e revisão fora de faixa.
+- **Ainda não existe repository PostgreSQL nem efeito GCS de criativos.** O contrato não é persistência transacional, nem deve ser apresentado como tal. Próximo incremento requer integração com padrões reais de migration/transactions já presentes no repositório e testes PostgreSQL dedicados.
+- Sem merge, migration aplicada, deploy, credenciais ou cobrança real.
