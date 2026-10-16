@@ -218,3 +218,48 @@ async def generate_campaign_image(request):
     result = await run_in_threadpool(run)
     return JSONResponse(result, status_code=201,
                         headers={"Cache-Control": "private, no-store"})
+
+
+async def reconcile_campaign_image(request):
+    """Recover an unknown GCS upload and matching reserved F5 credits without redispatch."""
+    from uuid import UUID
+    from campaia_core.asset_storage import AssetStorageError
+    from campaia_core.creative_assets import CreativeIdentity, CreativeState
+    from campaia_core.gcs_asset_storage import configured_asset_storage
+    from .creative_private_storage import CreativePrivateStorage
+    from .creative_image_settlement import settle_stored_creative
+    from .deps import require_idempotency_key
+    from starlette.concurrency import run_in_threadpool
+
+    fixture, state, campaign, repository = _scope(request, Permission.CAMPAIGN_EDIT)
+    require_idempotency_key(request)
+    try:
+        creative_id = str(UUID(request.path_params["creativeId"]))
+    except (TypeError, ValueError):
+        raise ApiError("NOT_FOUND", "Criativo indisponível.", status_code=404) from None
+    row = repository.table.get_for_tenant(creative_id, fixture.tenant_id)
+    if (row is None or row["identity"]["campaign_id"] != campaign.campaign_id
+            or row["identity"]["business_unit_id"] != campaign.business_unit_id
+            or row["state"] == CreativeState.DELETED.value):
+        raise ApiError("NOT_FOUND", "Criativo indisponível.", status_code=404)
+    operation_id = row.get("credit_operation_id")
+    if not operation_id:
+        raise ApiError("CREDIT_RECONCILIATION_UNAVAILABLE",
+                       "Registro não possui reserva comercial verificável.", status_code=409)
+    storage = configured_asset_storage()
+    if storage.mode != "PROVIDER":
+        raise ApiError("ASSET_STORAGE_DISABLED", "Armazenamento não configurado.", status_code=503)
+    identity = CreativeIdentity(**row["identity"])
+
+    def reconcile():
+        checked = CreativePrivateStorage(repository, storage).reconcile_after_restart(identity)
+        if checked["state"] == CreativeState.STORED.value:
+            # Same canonical F5 reference used by execute_metered; repeated GET/POST
+            # reconciliation cannot consume new credits or redispatch AI.
+            settle_stored_creative(state, identity=identity, operation_id=operation_id,
+                delivery_key=operation_id, actor_id=fixture.user_id)
+        return _public(checked)
+
+    result = await run_in_threadpool(reconcile)
+    return JSONResponse(result, status_code=200 if result["available"] else 202,
+                        headers={"Cache-Control": "private, no-store"})
