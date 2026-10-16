@@ -75,8 +75,23 @@ async def list_generated_creatives(request):
             and row["identity"]["business_unit_id"] == campaign.business_unit_id
             and row["state"] != "DELETED"]
     rows.sort(key=lambda row: row["identity"]["creative_id"])
-    return JSONResponse({"items": [_public(row) for row in rows[:50]],
+    cursor = request.query_params.get("cursor")
+    if cursor is not None:
+        from uuid import UUID
+        try:
+            if str(UUID(cursor)) != cursor:
+                raise ValueError("non-canonical cursor")
+        except (TypeError, ValueError):
+            raise ApiError("VALIDATION_FAILED", "Cursor inválido.", status_code=422) from None
+        # Never accept a cursor referring to a different tenant, unit or campaign.
+        if not any(row["identity"]["creative_id"] == cursor for row in rows):
+            raise ApiError("NOT_FOUND", "Cursor indisponível.", status_code=404)
+        rows = [row for row in rows if row["identity"]["creative_id"] > cursor]
+    selected = rows[:50]
+    return JSONResponse({"items": [_public(row) for row in selected],
                          "has_more": len(rows) > 50,
+                         "next_cursor": selected[-1]["identity"]["creative_id"]
+                             if len(rows) > 50 else None,
                          "generation_enabled": _generation_available(state, fixture.tenant_id)},
                         headers={"Cache-Control": "private, no-store"})
 
