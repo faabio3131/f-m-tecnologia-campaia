@@ -49,6 +49,7 @@ from .repositories import ExternalResourceState
 from .unmetered_execution import execute_unmetered
 from .metered_execution import commercial_subscription, execute_metered, quote_action
 from .commercial_limits import enforce_campaign_capacity
+from .creative_proposals import current_proposal_text
 from .campaign_brand import (freeze_selected_brand, brand_agent_context, brand_guidance,
     brand_assets_ready, require_brand_assets)
 
@@ -361,6 +362,7 @@ async def validate_campaign(request: Request) -> JSONResponse:
             )
             for ch in record.planned_channels
         }
+        proposal_text, sensitive_proposal = current_proposal_text(state, record)
         engine = PolicyEngine()
         req = PolicyRequest(
             tenant_id=fixture.tenant_id,
@@ -374,7 +376,8 @@ async def validate_campaign(request: Request) -> JSONResponse:
             brand_restrictions=tuple(),
             brand_guidance=brand_guidance(record),
             brand_assets_ready=brand_assets_ready(state, record),
-            plan_text=str(record.plan.get("output", "")) if record.plan else "",
+            plan_text=(str(record.plan.get("output", "")) if record.plan else "") + proposal_text,
+            sensitive_audience=sensitive_proposal,
         )
         decision = engine.evaluate(req, now=datetime.now(timezone.utc))
         record.last_policy_decision = decision
@@ -443,7 +446,9 @@ async def publish_campaign(request: Request) -> JSONResponse:
             raise ApiError("APPROVAL_REQUIRED", "approval_id not found for this campaign.")
         if approval.status != "APPROVED":
             raise ApiError("APPROVAL_REQUIRED", "Approval has not been granted.")
-        if approval.requires_dual_approval:
+        if approval.kind != "PUBLISH" or approval.plan_version != record.plan_version:
+            raise ApiError("APPROVAL_REQUIRED", "A aprovação não autoriza publicar esta versão. Solicite uma nova revisão.")
+        if approval.requires_dual_approval or decision.requires_dual_approval:
             from campaia_core.permissions import dual_approval_complete
 
             if not dual_approval_complete(frozenset(approval.decided_by)):

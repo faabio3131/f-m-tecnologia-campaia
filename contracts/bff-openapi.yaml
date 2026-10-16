@@ -2299,6 +2299,72 @@ paths:
                     items: { $ref: '#/components/schemas/AuditEvent' }
                   next_cursor: { type: [string, 'null'] }
 
+  /campaigns/{campaignId}/proposals/{proposalKind}:
+    parameters:
+      - $ref: '#/components/parameters/CampaignId'
+      - name: proposalKind
+        in: path
+        required: true
+        schema: { type: string, enum: [copy, audience] }
+    get:
+      operationId: listCreativeProposals
+      security: [cookieAuth: []]
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Propostas privadas e capacidade efetiva
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreativeProposalPage' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: generateCreativeProposal
+      security: [cookieAuth: []]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/CopyProposalInput'
+                - $ref: '#/components/schemas/AudienceProposalInput'
+      responses:
+        '201':
+          description: Proposta entregue e consumo confirmado atomicamente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreativeProposal' }
+        '409': { $ref: '#/components/responses/InvalidState' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503':
+          description: Capacidade indisponivel ou operacao incerta sem redispatch
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /campaigns/{campaignId}/proposals/{proposalKind}/quote:
+    get:
+      operationId: quoteCreativeProposal
+      security: [cookieAuth: []]
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - name: proposalKind
+          in: path
+          required: true
+          schema: { type: string, enum: [copy, audience] }
+      responses:
+        '200':
+          description: Cotacao antes da confirmacao humana
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreativeProposalQuote' }
+        '409': { $ref: '#/components/responses/InvalidState' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2555,6 +2621,102 @@ components:
         policy_version: { type: string }
         credits: { type: integer, minimum: 1 }
         extra_amount: { type: string }
+
+    CopyProposalInput:
+      type: object
+      additionalProperties: false
+      required: [expected_plan_version, channel]
+      properties:
+        expected_plan_version: { type: integer, minimum: 1 }
+        channel: { type: string, enum: [GOOGLE_ADS, META_ADS, META_FACEBOOK, META_INSTAGRAM, WHATSAPP] }
+        offer: { type: string, maxLength: 2000 }
+        tone: { type: string, maxLength: 200 }
+        variants: { type: integer, minimum: 1, maximum: 5 }
+        credit_confirmation: { $ref: '#/components/schemas/CreditConfirmation' }
+    AudienceProposalInput:
+      type: object
+      additionalProperties: false
+      required: [expected_plan_version, channel]
+      properties:
+        expected_plan_version: { type: integer, minimum: 1 }
+        channel: { type: string, enum: [GOOGLE_ADS, META_ADS, META_FACEBOOK, META_INSTAGRAM, WHATSAPP] }
+        audience: { type: string, maxLength: 2000 }
+        region: { type: string, maxLength: 120 }
+        exclusions:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 1, maxLength: 500 }
+        sensitive_declared: { type: boolean }
+        credit_confirmation: { $ref: '#/components/schemas/CreditConfirmation' }
+    CopyProposalOutput:
+      type: object
+      additionalProperties: false
+      required: [variacoes]
+      properties:
+        variacoes:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { type: string, minLength: 1, maxLength: 2000 }
+    AudienceProposalOutput:
+      type: object
+      additionalProperties: false
+      required: [segmentos, exclusoes, sensivel]
+      properties:
+        segmentos:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { type: string, minLength: 1, maxLength: 500 }
+        exclusoes:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 1, maxLength: 500 }
+        sensivel: { type: boolean }
+    CreativeProposal:
+      type: object
+      required: [id, campaign_id, kind, version, plan_version, current, output, request_summary, provider, model, prompt_version, created_at]
+      properties:
+        id: { type: string }
+        campaign_id: { type: string }
+        kind: { type: string, enum: [copy, audience] }
+        version: { type: integer }
+        plan_version: { type: integer }
+        current: { type: boolean }
+        output:
+          oneOf:
+            - $ref: '#/components/schemas/CopyProposalOutput'
+            - $ref: '#/components/schemas/AudienceProposalOutput'
+        request_summary: { type: object, additionalProperties: true }
+        provider: { type: string }
+        model: { type: string }
+        prompt_version: { type: string }
+        created_at: { type: string, format: date-time }
+    CreativeProposalPage:
+      type: object
+      required: [items, next_cursor, capability]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CreativeProposal' }
+        next_cursor: { type: [string, 'null'] }
+        capability:
+          type: object
+          required: [enabled, mode, max_variants, billing_required, can_generate]
+          properties:
+            enabled: { type: boolean }
+            mode: { type: string, enum: [SIMULATED, PROVIDER] }
+            max_variants: { type: [integer, 'null'] }
+            billing_required: { type: boolean }
+            can_generate: { type: boolean }
+    CreativeProposalQuote:
+      allOf:
+        - $ref: '#/components/schemas/StrategyCreditQuote'
+        - type: object
+          required: [kind, max_variants]
+          properties:
+            kind: { type: string, enum: [copy, audience] }
+            max_variants: { type: [integer, 'null'] }
 
     StrategyCreditQuote:
       type: object

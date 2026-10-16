@@ -872,6 +872,118 @@ class PostgresRuntimeTests(unittest.TestCase):
             self.assertEqual(result.json()["code"], "BRAND_VERSION_CHANGED")
             self.assertEqual(a.app.state.campaia.campaigns.list_for_tenant("demo-tenant"), [])
 
+
+    def _creative_clients(self):
+        import json
+        from pathlib import Path
+        import tempfile
+        from unittest.mock import patch
+        from starlette.testclient import TestClient
+        from tests_support.creative_ai import install_test_creative_provider
+        from tests_api.test_creative_proposals import BRIEF
+        from tests_api.test_helpers import OWNER, with_step_up, unique_idem
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        config = Path(directory.name) / "catalog.json"
+        plans = json.loads((Path(__file__).parents[1] / "config/plans.example.json").read_text())
+        plans[0]["credit_policy"] = {"version": "pg-creative-v1",
+            "action_weights": {"strategy": 5, "copy": 3, "audience": 2},
+            "trial_credits": 30, "trial_max_users": 1, "trial_max_active_campaigns": 1}
+        config.write_text(json.dumps(plans))
+        environment = patch.dict(os.environ, {"CAMPAIA_PLAN_CATALOG_PATH": str(config),
+                                              "ASAAS_API_KEY": "", "GEMINI_API_KEY": ""})
+        environment.start()
+        self.addCleanup(environment.stop)
+        clients = [TestClient(create_app(database_url=DSN, env="test")) for _ in range(2)]
+        for client in clients:
+            self.addCleanup(client.app.state.campaia.db.close)
+            install_test_creative_provider(client.app.state.campaia)
+        created = clients[0].post("/briefs", headers={**OWNER, **unique_idem()}, json=BRIEF)
+        self.assertEqual(created.status_code, 202, created.text)
+        campaign = created.json()["id"]
+        result = clients[0].post("/campaigns/" + campaign + "/plan/regenerate",
+                                headers={**OWNER, **unique_idem()}, json={})
+        self.assertEqual(result.status_code, 202, result.text)
+        trial = clients[0].put("/billing/subscription",
+            headers={**with_step_up(OWNER), **unique_idem()}, json={
+                "plan_id": plans[0]["plan_id"], "customer_document": "11144477735", "start_trial": True})
+        self.assertEqual(trial.status_code, 200, trial.text)
+        return clients, campaign
+
+    def test_creative_delivery_settlement_rollback_restart_and_immutable_isolation(self):
+        from unittest.mock import patch
+        from api.errors import ApiError
+        from campaia_core.errors import TenantIsolationViolation
+        from tests_api.test_helpers import OWNER, OTHER_OWNER, unique_idem
+        clients, campaign = self._creative_clients()
+        a, b = clients
+        endpoint = "/campaigns/" + campaign + "/proposals/copy"
+        quote = a.get(endpoint + "/quote", headers=OWNER).json()
+        body = {"expected_plan_version": 1, "channel": "GOOGLE_ADS", "offer": "Oferta",
+            "tone": "claro", "variants": 5, "credit_confirmation": {
+                key: quote[key] for key in ("cycle_id", "policy_version", "credits", "extra_amount")}}
+        repository = a.app.state.campaia.creative_proposals
+        original_append = repository.append
+        def rollback_after_row(*args, **kwargs):
+            original_append(*args, **kwargs)
+            raise ApiError("TEST_ROLLBACK", "Falha conhecida de teste.", status_code=422)
+        with patch.object(repository, "append", side_effect=rollback_after_row):
+            failed = a.post(endpoint, headers={**OWNER, **unique_idem()}, json=body)
+        self.assertEqual(failed.status_code, 422, failed.text)
+        self.assertEqual(b.get(endpoint, headers=OWNER).json()["items"], [])
+        self.assertEqual(b.get("/campaigns/" + campaign + "/plan", headers=OWNER).json()["plan_version"], 1)
+        self.assertEqual(b.get("/billing/usage", headers=OWNER).json()["balance"]["included_available"], 30)
+        headers = {**OWNER, **unique_idem()}
+        delivered = a.post(endpoint, headers=headers, json=body)
+        self.assertEqual(delivered.status_code, 201, delivered.text)
+        replay = b.post(endpoint, headers=headers, json=body)
+        self.assertEqual(replay.json(), delivered.json())
+        self.assertEqual(b.app.state.campaia.ai_provider.calls, 0)
+        self.assertEqual(b.get("/billing/usage", headers=OWNER).json()["balance"]["included_available"], 27)
+        self.assertEqual(len(b.get(endpoint, headers=OWNER).json()["items"]), 1)
+        self.assertEqual(b.get(endpoint, headers=OTHER_OWNER).status_code, 404)
+        table = b.app.state.campaia.db.table("creative_proposals")
+        identity = delivered.json()["id"]
+        self.assertIsNone(table.get_for_tenant(identity, "other-tenant"))
+        with self.assertRaises(TenantIsolationViolation):
+            table.put(identity, "other-tenant", {"tenant_id": "other-tenant"})
+        for statement in (
+            "UPDATE campaia_runtime.creative_proposals SET data = data WHERE id = %s",
+            "DELETE FROM campaia_runtime.creative_proposals WHERE id = %s",
+        ):
+            with self.assertRaises(psycopg.errors.RaiseException):
+                with psycopg.connect(DSN) as connection:
+                    connection.execute(statement, (identity,))
+
+    def test_two_creative_workers_cannot_deliver_two_batches_for_one_plan_version(self):
+        from unittest.mock import patch
+        from tests_api.test_helpers import OWNER, unique_idem
+        clients, campaign = self._creative_clients()
+        endpoint = "/campaigns/" + campaign + "/proposals/copy"
+        quote = clients[0].get(endpoint + "/quote", headers=OWNER).json()
+        body = {"expected_plan_version": 1, "channel": "GOOGLE_ADS", "offer": "Oferta",
+            "tone": "claro", "variants": 5, "credit_confirmation": {
+                key: quote[key] for key in ("cycle_id", "policy_version", "credits", "extra_amount")}}
+        gate = threading.Barrier(2)
+        def blocked(original):
+            def run(*args, **kwargs):
+                gate.wait(timeout=10)
+                return original(*args, **kwargs)
+            return run
+        runners = [client.app.state.campaia.agent_runner for client in clients]
+        with patch.object(runners[0], "run", side_effect=blocked(runners[0].run)), \
+             patch.object(runners[1], "run", side_effect=blocked(runners[1].run)):
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [pool.submit(client.post, endpoint, headers={**OWNER, **unique_idem()}, json=body)
+                           for client in clients]
+                results = [future.result(timeout=20) for future in futures]
+        self.assertEqual(sorted(result.status_code for result in results), [201, 409],
+                         [result.text for result in results])
+        self.assertEqual(len(clients[1].get(endpoint, headers=OWNER).json()["items"]), 1)
+        usage = clients[1].get("/billing/usage", headers=OWNER).json()["balance"]
+        self.assertEqual(usage["included_available"], 27)
+        self.assertEqual(usage["reserved_credits"], 0)
+
     def test_00_migration_up_down_up_is_reversible_and_covers_current_stores(self) -> None:
         self.assertEqual(
             set(self.runner.applied_versions()),
@@ -884,6 +996,7 @@ class PostgresRuntimeTests(unittest.TestCase):
                 "006_billing_notices",
                 "007_ai_cost_evidence",
                 "008_brand_assets",
+                "009_creative_proposals",
             },
         )
         self.assertTrue(RUNTIME_TABLES.issubset(self._runtime_tables()))
@@ -891,6 +1004,7 @@ class PostgresRuntimeTests(unittest.TestCase):
         self.assertEqual(
             self.runner.rollback_all(),
             [
+                "009_creative_proposals",
                 "008_brand_assets",
                 "007_ai_cost_evidence",
                 "006_billing_notices",

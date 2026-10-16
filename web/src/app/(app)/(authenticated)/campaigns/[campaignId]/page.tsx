@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { CreativeProposalsPanel } from "@/components/CreativeProposalsPanel";
 import { CampaignBrandSnapshot } from "@/components/CampaignBrandSnapshot";
 import { useAuth } from "@/providers/AuthProvider";
 import { StrategyGenerateButton } from "@/components/StrategyGenerateButton";
@@ -57,6 +58,12 @@ function CampaignDetailContent({ campaignId }: { campaignId: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showProposals, setShowProposals] = useState(false);
+
+  async function contentDelivered() {
+    setDecision(null); setApproval(null);
+    await loadCampaignAndPlan();
+  }
 
   async function loadCampaignAndPlan() {
     try {
@@ -180,8 +187,15 @@ function CampaignDetailContent({ campaignId }: { campaignId: string }) {
           <p className={styles.muted}>Nenhuma estratégia gerada ainda.</p>
         )}
         <StrategyGenerateButton key={campaignId} campaignId={campaignId} hasPlan={Boolean(plan?.plan)}
-          busy={busy} onBusy={setBusy} onError={setActionError} onGenerated={loadCampaignAndPlan} />
+          busy={busy} onBusy={setBusy} onError={setActionError} onGenerated={contentDelivered} />
       </Card>
+
+      <Button variant="secondary" disabled={busy} onClick={() => setShowProposals(true)}>Abrir textos e públicos</Button>
+      {showProposals ? <CreativeProposalsPanel campaignId={campaignId} planVersion={plan?.plan_version ?? 0}
+        channels={campaign.channels ?? []}
+        product={typeof campaign.brief?.product === "string" ? campaign.brief.product : ""}
+        audience={typeof campaign.brief?.audience === "string" ? campaign.brief.audience : ""}
+        busy={busy} onBusy={setBusy} onDelivered={contentDelivered} /> : null}
 
       <Card>
         <h2 className={styles.sectionTitle}>Validação (Policy Engine)</h2>

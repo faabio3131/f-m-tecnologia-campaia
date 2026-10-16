@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .routes_campaigns import _get_campaign_or_404
+
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -34,26 +36,37 @@ def _authorize(request: Request, permission: Permission):
 
 
 async def list_approvals(request: Request) -> JSONResponse:
-    fixture, state, _principal = _authorize(request, Permission.CAMPAIGN_VIEW)
-    approvals = state.approvals.list_for_tenant(fixture.tenant_id)
+    fixture, state, principal = _authorize(request, Permission.CAMPAIGN_VIEW)
+    approvals = []
+    for approval in state.approvals.list_for_tenant(fixture.tenant_id):
+        campaign = state.campaigns.get(fixture.tenant_id, approval.campaign_id)
+        if campaign is None:
+            continue
+        if (principal.business_unit_ids is not None and campaign.business_unit_id is not None
+                and campaign.business_unit_id not in principal.business_unit_ids):
+            continue
+        approvals.append(approval)
     return list_response([serialize_approval(a) for a in approvals])
 
 
 async def create_approval(request: Request) -> JSONResponse:
     """Create one PENDING ApprovalRequest with exact idempotent replay."""
-    fixture, state, _principal = _authorize(request, Permission.CAMPAIGN_CREATE)
+    fixture, state, principal = _authorize(request, Permission.CAMPAIGN_CREATE)
     idem_key = require_idempotency_key(request)
     body = await parse_body(request, ApprovalCreateRequest)
     key = f"http:create_approval:{idem_key}"
+    _get_campaign_or_404(state, fixture.tenant_id, body.campaign_id, principal=principal)
 
     existing = state.idempotency.get(fixture.tenant_id, key)
     if existing is not None:
+        if existing.result.get("campaign_id") != body.campaign_id:
+            raise ApiError("IDEMPOTENCY_CONFLICT", "A chave identifica outra aprovação.", status_code=409)
         return JSONResponse(existing.result, status_code=201)
 
     def _do_create():
-        campaign = state.campaigns.get(fixture.tenant_id, body.campaign_id)
-        if campaign is None:
-            raise ApiError("NOT_FOUND", "campaign_id not found.")
+        campaign = _get_campaign_or_404(state, fixture.tenant_id, body.campaign_id, principal=principal)
+        policy_requires_dual = bool(body.kind == "PUBLISH" and campaign.last_policy_decision
+                                   and campaign.last_policy_decision.requires_dual_approval)
 
         approval = state.approvals.create(
             fixture.tenant_id,
@@ -61,7 +74,7 @@ async def create_approval(request: Request) -> JSONResponse:
             kind=body.kind,
             requested_by=fixture.user_id,
             amount=body.amount,
-            requires_dual_approval=body.requires_dual_approval,
+            requires_dual_approval=body.requires_dual_approval or policy_requires_dual,
             plan_version=campaign.plan_version,
         )
         state.audit.append(
@@ -85,9 +98,15 @@ async def decide_approval(request: Request) -> JSONResponse:
     approval_id = request.path_params["approvalId"]
     body = await parse_body(request, ApprovalDecisionRequest)
     key = f"http:decide_approval:{idem_key}"
+    scoped = state.approvals.get(fixture.tenant_id, approval_id)
+    if scoped is None:
+        raise ApiError("NOT_FOUND", "Approval not found.")
+    _get_campaign_or_404(state, fixture.tenant_id, scoped.campaign_id, principal=principal)
 
     existing = state.idempotency.get(fixture.tenant_id, key)
     if existing is not None:
+        if existing.result.get("id") != approval_id:
+            raise ApiError("IDEMPOTENCY_CONFLICT", "A chave identifica outra decisão.", status_code=409)
         return JSONResponse(existing.result)
 
     if body.decision not in ("APPROVE", "REJECT", "REQUEST_CHANGES"):
@@ -98,9 +117,13 @@ async def decide_approval(request: Request) -> JSONResponse:
         if approval is None:
             raise ApiError("NOT_FOUND", "Approval not found.")
 
+        campaign = _get_campaign_or_404(state, fixture.tenant_id, approval.campaign_id, principal=principal)
+        if body.decision == "APPROVE" and approval.plan_version != campaign.plan_version:
+            raise ApiError("APPROVAL_STALE", "A campanha mudou. Solicite uma nova aprovação.", status_code=409)
+
         resource = Resource(
             tenant_id=fixture.tenant_id,
-            business_unit_id=fixture.business_unit_id,
+            business_unit_id=campaign.business_unit_id,
             resource_id=approval.campaign_id,
             created_by=approval.requested_by,
         )

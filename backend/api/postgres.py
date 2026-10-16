@@ -48,6 +48,7 @@ RUNTIME_TABLES = frozenset(
         "ai_cost_journal",
         "ai_cost_caps",
         "brand_assets",
+        "creative_proposals",
         "credit_journal",
     }
 )

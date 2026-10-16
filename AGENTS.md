@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@c1a1271866d8b6bd40858f840e691b86f43e310b`
+**CURRENT confirmado:** `main@89a1063e056b230c3223aad272338da4fa7a0921`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -404,7 +404,7 @@ upload/delete, normalização isolada e metadata persistente. Migração 008 som
 fonte/CI; default desabilitado. E2E usa armazenamento SIMULATOR explícito, não prova GCS
 real. Ver `docs/WP_R03_02C_ASSETS_PRIVADOS_API_WEB_20261016.md`.
 
-WP-R03-03 em validação: seleção explícita de Brand Kit/versão/assets no briefing,
+WP-R03-03 / PR #68 integrada, CI da PR e pós-merge verdes: seleção explícita de Brand Kit/versão/assets no briefing,
 snapshot persistente e contexto da estratégia, revisão humana para orientação em texto
 e bloqueio de arquivo removido. Ver `docs/WP_R03_03_MARCA_SELECIONADA_PIPELINE_20261016.md`.
 Sem seleção automática, visão multimodal ou uso visual fictício do logo.
@@ -414,7 +414,7 @@ Sem seleção automática, visão multimodal ou uso visual fictício do logo.
 - confirmar metadata e acesso privado no GCS real (fluxo fonte/CI já integrado);
 - confirmar isolamento dos objetos no GCS real (API/CI já cobertos);
 - confirmar lifecycle/delete real e política jurídica de retenção;
-- concluir validação da seleção/snapshot/contexto e fechar aplicação visual nos criativos F7.
+- fechar aplicação visual nos criativos F7 (seleção/snapshot/contexto textual integrados na PR #68).
 
 **Não reprovisionar Cloud Storage sem drift comprovado.**
 
@@ -426,8 +426,14 @@ Sem seleção automática, visão multimodal ou uso visual fictício do logo.
 ### Já existe
 AIGateway, Gemini real, agentes copy/audience/policy/performance/strategist, Policy Engine e approvals.
 
+WP-R04-01 em validação: propostas textuais de copy/audience com versão, histórico privado,
+quote/confirmação comercial, entrega atômica e invalidação das aprovações anteriores.
+Migração 009 somente em fonte/CI. Propostas não certificam qualidade, targeting real,
+imagem, preview de plataforma nem publicação real. Ver
+`docs/WP_R04_01_PROPOSTAS_COPY_AUDIENCE_20261016.md`.
+
 ### Falta
-- ligar copy/audience/policy/performance ao fluxo API/Web;
+- concluir copy/audience API/Web e ligar policy/performance ao fluxo API/Web;
 - completar creative asset model;
 - geração de imagem real;
 - armazenar criativos no storage do tenant;
