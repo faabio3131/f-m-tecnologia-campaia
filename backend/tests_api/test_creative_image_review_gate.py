@@ -2,6 +2,8 @@
 import unittest
 
 from api.creative_image_review import decision_applies
+from api.routes_generated_creatives import _preview_policy
+from types import SimpleNamespace
 
 
 class CreativeHumanReviewGateTests(unittest.TestCase):
@@ -27,6 +29,16 @@ class CreativeHumanReviewGateTests(unittest.TestCase):
             with self.subTest(field=field):
                 changed = dict(self.review, **{field: value})
                 self.assertFalse(decision_applies(self.row, changed))
+
+    def test_preview_uses_verified_review_and_never_grants_publication(self):
+        campaign = SimpleNamespace(plan_version=2)
+        approved = _preview_policy(self.row, campaign, self.review)
+        self.assertEqual(approved["human_review"], "APPROVE")
+        self.assertFalse(approved["publication_allowed"])
+        self.assertNotIn("HUMAN_REVIEW_REQUIRED", approved["blocking_reasons"])
+        revoked = _preview_policy(self.row, campaign, {"decision": "REVOKED"})
+        self.assertFalse(revoked["publication_allowed"])
+        self.assertIn("HUMAN_REVIEW_REQUIRED", revoked["blocking_reasons"])
 
     def test_missing_review_is_not_approval(self):
         self.assertFalse(decision_applies(self.row, None))
