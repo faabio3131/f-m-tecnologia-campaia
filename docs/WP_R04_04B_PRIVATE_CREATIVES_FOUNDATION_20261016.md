@@ -46,3 +46,10 @@ Run Backend, Frontend, F4 CI on exact PR head. Do not merge until evidence and d
 - `PostgresDatabase` passa a permitir a tabela apenas após migration explícita, sem criação implícita no startup.
 - Adicionado teste real no job PostgreSQL 16 existente: corrida de reserva entre duas instâncias independentes, quota, replay, cross-tenant, recuperação de estado após reabrir conexão e proteção de trigger contra atualização forjada.
 - CI no HEAD final ainda necessária. Estes testes não simulam storage, provider ou cobrança e não autorizam aplicar migration em produção.
+
+## Integração do transporte privado (fatia interna)
+- `CreativeStorageIdentity` adapta identidade do criativo ao `AssetManifest` e `GCSAssetStorage` existentes; nenhum segundo cliente GCS, nenhum bucket público ou alteração de IAM.
+- `CreativePrivateStorage` exige manifesto PNG verificado e transição F3 GENERATING→STORAGE_PENDING comprometida antes de uma única chamada upload_once.
+- Replays executam apenas observação; erro ou ausência de objeto permanece pendente, com quota reservada. Sem débito de crédito comercial e sem chamada a modelo.
+- Testes simulados isolam upload único, UNKNOWN→observe, ausência pós-UNKNOWN, integridade, contexto incompatível e ausência de I/O sob transação. São simuladores, não prova GCS real.
+- Limitações: armazenamento de bytes para reconciliação após reinício completo ainda precisa de fonte durável segura; API/Web de criativos, billing atômico e homologação GCS/ADC continuam TARGET.
