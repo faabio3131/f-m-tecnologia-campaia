@@ -896,6 +896,6 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 
 - Novo `GeneratedImagesPanel` no detalhe da campanha, utilizando `api.get` existente para inventário privado e cotação da franquia; sem token, URL de bucket, caminho de objeto nem segredo no navegador.
 - Teste Vitest verifica leitura de estados, cotação e botão de geração desabilitado enquanto falta a mutação segura.
-- O helper de SETTLE F3/F5 passou no Backend #363, Frontend #301 e F4 #197 no commit `9c5b9296eef06555d5efb66f330930d406045b06`.
+- O helper de SETTLE F3/F5 passou no Backend #364, Frontend #303 e F4 #198 no commit `9c5b9296eef06555d5efb66f330930d406045b06`.
 - **Geração POST/IA/F3 cost guard/SETTLE+storage E2E não estão concluídos.** Esta tela é inventário de criativos e NÃO é a UI de geração funcional. Não avançar status além de PARTIAL sem prova concreta.
 - PR #73 sem merge; após inclusão da Web, executar nova CI no HEAD exato. Homologação GCS externa permanece fora do fechamento funcional interno, como determinado pelo Diretor.
