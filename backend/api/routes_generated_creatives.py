@@ -261,7 +261,7 @@ async def reconcile_campaign_image(request):
         raise ApiError("CREDIT_RECONCILIATION_UNAVAILABLE",
                        "Registro não possui reserva comercial verificável.", status_code=409)
     storage = configured_asset_storage()
-    if storage.mode != "PROVIDER":
+    if not _storage_usable(state, storage):
         raise ApiError("ASSET_STORAGE_DISABLED", "Armazenamento não configurado.", status_code=503)
     identity = CreativeIdentity(**row["identity"])
     if identity.campaign_version != campaign.plan_version:
