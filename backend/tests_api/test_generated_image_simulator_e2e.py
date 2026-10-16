@@ -107,6 +107,22 @@ class ImageApiSimulationTests(BillingCreditHarness, unittest.TestCase):
             delivered.json()["content_url"].removeprefix("/api/campaia"), headers=OTHER_OWNER).status_code, 404)
 
 
+    def test_delete_route_rejects_missing_step_up_and_cross_tenant(self):
+        quote = self.client.get(self.base + "/quote", headers=OWNER).json()
+        version = self.state.campaigns.get("demo-tenant", self.campaign).plan_version
+        body = {"expected_plan_version": version, "prompt": "Arte para controle de exclusão",
+                "credit_confirmation": {field: quote[field] for field in
+                    ("cycle_id", "policy_version", "credits", "extra_amount")}}
+        created = self.client.post(self.base, headers={**OWNER, **unique_idem()}, json=body)
+        self.assertEqual(created.status_code, 201, created.text)
+        route = self.base + "/" + created.json()["id"]
+        foreign = self.client.delete(route, headers={**OTHER_OWNER, **unique_idem()})
+        self.assertIn(foreign.status_code, (403, 404), foreign.text)
+        missing_step_up = self.client.delete(route, headers={**OWNER, **unique_idem()})
+        self.assertNotIn(missing_step_up.status_code, (200, 202), missing_step_up.text)
+        self.assertEqual(self.client.get(route, headers=OWNER).json()["state"], "STORED")
+        self.assertEqual(self.storage.calls.count("DELETE"), 0)
+
     def test_uncertain_gcs_result_recovers_with_one_credit_settlement_and_no_second_post(self):
         from campaia_core.asset_storage import AssetStorageError, AssetStorageErrorCode as Code
         quote = self.client.get(self.base + "/quote", headers=OWNER).json()
