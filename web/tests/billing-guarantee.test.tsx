@@ -78,3 +78,14 @@ it("separa tratamento iniciado, pendencia no provedor e devolucao concluida com 
   expect(screen.queryByRole("button", { name: "Confirmar solicitação de garantia" })).not.toBeInTheDocument();
   expect(fetch.mock.calls.every(([, init]) => init?.method === "GET")).toBe(true);
 });
+
+it("exibe encerramento financeiro sem afirmar emissão fiscal nem permitir repetir a garantia", async () => {
+  const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(response({ ...requested, state: "FINANCIALLY_RESOLVED",
+    financial_resolved_at: "2026-10-16T05:00:00Z", fiscal_adjustment_state: "PENDING_CAPABILITY" }));
+  render(<BillingGuaranteePanel stepUp={proof()} onRequested={vi.fn()} />);
+  await screen.findByText(/Devolução integral conferida e encerramento financeiro registrado/);
+  expect(screen.getByText(/documento fiscal de ajuste continua pendente/)).toBeInTheDocument();
+  expect(screen.getByText(/Uma contratação nova exige novo aceite e pagamento/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Revisar solicitação de garantia" })).not.toBeInTheDocument();
+  expect(fetch).toHaveBeenCalledOnce();
+});

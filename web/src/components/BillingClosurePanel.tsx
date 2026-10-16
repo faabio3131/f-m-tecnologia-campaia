@@ -20,6 +20,7 @@ const MESSAGE: Record<BillingClosure["state"], string> = {
   INVOICE_REQUIRED: "Há excedente autorizado e entregue a quitar. O fechamento não inclui outra mensalidade.",
   INVOICED: "Fatura final registrada no histórico. A quitação depende da confirmação do pagamento.",
   SETTLED: "Excedente final quitado. A reativação ainda exige uma nova contratação paga.",
+  GUARANTEE_CLOSED: "Excedente final pago e devolvido pela garantia. O histórico de consumo foi preservado; este excedente não será cobrado novamente.",
   RECONCILIATION_REQUIRED: "Este consumo já está vinculado a outra obrigação. Concilie antes de qualquer nova cobrança.",
 };
 export function BillingClosurePanel({ stepUp, onClosed }: Props) {

@@ -324,6 +324,7 @@ class SubscriptionCharge:
     gateway_refund_amount: Decimal | None = None
     gateway_refund_state: str | None = None
     gateway_refund_observed_at: datetime | None = None
+    gateway_chargeback_status: str | None = None
 
     @property
     def amount(self) -> Decimal:

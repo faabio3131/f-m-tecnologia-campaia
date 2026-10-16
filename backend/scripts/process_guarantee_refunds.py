@@ -14,6 +14,7 @@ def parser():
     result = argparse.ArgumentParser(description='Conferir/processar pedidos de garantia já aceitos.')
     result.add_argument('--tenant', required=True)
     result.add_argument('--execute', action='store_true', help='Tenta uma devolução governada; exige gateway habilitado.')
+    result.add_argument('--finalize', action='store_true', help='Registra o encerramento financeiro somente após prova integral; exige --execute.')
     result.add_argument('--env', default=os.environ.get('CAMPAIA_ENV', 'staging'))
     return result
 
@@ -22,6 +23,9 @@ def main(argv=None):
     args = parser().parse_args(argv)
     state = None
     try:
+        if args.finalize and not args.execute:
+            print('--finalize exige --execute; nenhuma alteração foi feita.', file=sys.stderr)
+            return 2
         if not os.environ.get('CAMPAIA_DATABASE_URL'):
             print('Configure o runtime persistente existente antes de executar o worker.', file=sys.stderr)
             return 2
@@ -32,8 +36,11 @@ def main(argv=None):
         from api.billing_refund_worker import process_guarantee_refunds
         state = AppState(env=args.env, database_url=os.environ['CAMPAIA_DATABASE_URL'])
         result = process_guarantee_refunds(state, args.tenant, execute=args.execute)
+        if args.finalize:
+            from api.billing_guarantee_resolution import finalize_guarantee
+            result = finalize_guarantee(state, args.tenant, execute=True)
         print(json.dumps(result, ensure_ascii=False))
-        if result['state'] in {'DRY_RUN', 'UNAVAILABLE'}:
+        if result['state'] in {'DRY_RUN', 'UNAVAILABLE', 'FINANCIALLY_RESOLVED'}:
             return 0
         if result['state'] == 'PROCESSING' and all(item['state'] in {
                 'REFUND_DONE_ADJUSTMENT_PENDING', 'PROVIDER_PENDING'} for item in result['items']):

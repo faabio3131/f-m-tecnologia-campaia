@@ -30,6 +30,7 @@ const REFUND: Record<string, string> = {
   PROCESSING: "Há devolução em processamento", NO_COMPLETED_REFUND: "Nenhuma devolução concluída nesta observação",
 };
 const REVIEW: Record<string, string> = {
+  GUARANTEE_REFUNDED: "Devolução conciliada pela garantia; ajuste fiscal em conferência",
   CANCELLATION_CONFLICT: "Pagamento ou restauração após pedido de retirada",
   MATCHED: "Valor conferido", AMOUNT_MISSING: "Valor recebido não informado",
   AMOUNT_MISMATCH: "Valor recebido divergente", TERMS_MISMATCH: "Valor da fatura alterado",
@@ -132,11 +133,12 @@ export function BillingChargeHistoryPanel({ canManage = false, stepUp, onReconci
             { label: "Identificador", value: item.billing_id },
             { label: "Finalidade", value: PURPOSES[item.purpose] ?? item.purpose },
             { label: "Valor", value: new Intl.NumberFormat("pt-BR", { style: "currency", currency: item.currency, maximumFractionDigits: 20 }).format(Number(item.amount)) },
-            { label: "Última situação registrada", value: item.withdrawal_state === "VOID" ? "Retirada confirmada — sem quitação" : item.withdrawal_state === "REQUESTED" ? "Retirada em conferência" : item.payment_reconciliation_state && item.payment_reconciliation_state !== "MATCHED" ? "Recebimento em conferência" : item.gateway_status ? STATUS[item.gateway_status] ?? item.gateway_status : "Sem observação registrada" },
+            { label: "Última situação registrada", value: item.withdrawal_state === "VOID" ? "Retirada confirmada — sem quitação" : item.withdrawal_state === "REQUESTED" ? "Retirada em conferência" : item.payment_reconciliation_state === "GUARANTEE_REFUNDED" ? "Devolução conciliada pela garantia" : item.payment_reconciliation_state && item.payment_reconciliation_state !== "MATCHED" ? "Recebimento em conferência" : item.gateway_status ? STATUS[item.gateway_status] ?? item.gateway_status : "Sem observação registrada" },
             ...(item.payment_reconciliation_state ? [
               { label: "Conferência do recebimento", value: REVIEW[item.payment_reconciliation_state] ?? "Revisão necessária" },
               { label: "Valor informado pelo provedor", value: item.gateway_observed_amount != null ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: item.currency }).format(Number(item.gateway_observed_amount)) : "Não informado" },
             ] : []),
+            ...(item.gateway_chargeback_status ? [{ label: "Contestação", value: "Em conferência com o provedor" }] : []),
             ...(item.gateway_refund_state ? [
               { label: "Estorno", value: REFUND[item.gateway_refund_state] ?? "Conferência necessária" },
               { label: "Devolução concluída registrada", value: item.gateway_refund_amount != null ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: item.currency }).format(Number(item.gateway_refund_amount)) : "Não confirmada" },
@@ -156,7 +158,7 @@ export function BillingChargeHistoryPanel({ canManage = false, stepUp, onReconci
             setWithdrawAccepted(false); setLookupMessage(null);
           }}>Revisar retirada da fatura aberta</Button> : null}
           {withdrawReview?.id === item.gateway_charge_id ? <section aria-label="Confirmar retirada da fatura aberta">
-            <p>A renovação foi encerrada. Esta solicitação retira a fatura ainda aberta, sem apagar o histórico ou devolver valores pagos. O excedente autorizado e entregue continua devido e será tratado no fechamento final.</p>
+            <p>A contratação foi encerrada. Esta solicitação retira a fatura ainda aberta, sem apagar o histórico ou devolver valores pagos. O excedente autorizado e entregue continua devido e será tratado no fechamento final.</p>
             {item.gateway_mode === "SIMULATOR" ? <p>Simulação: nenhuma movimentação de dinheiro real.</p> : null}
             <label><input type="checkbox" checked={withdrawAccepted} disabled={lookupBusy} onChange={event => setWithdrawAccepted(event.target.checked)} /> Conferi a fatura e entendo que o excedente entregue continua devido.</label>
             <Button disabled={lookupBusy || !withdrawAccepted || !stepUp?.ready} onClick={withdraw}>Confirmar retirada da fatura aberta</Button>

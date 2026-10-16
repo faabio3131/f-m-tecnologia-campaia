@@ -9,6 +9,7 @@ from .billing_dispatch import obligation_key
 from .errors import ApiError
 from .billing_receipts import REVIEW_STATES, has_payment_review
 from .billing_void import verified_void
+from .billing_guarantee_resolution import fee_was_adjusted
 
 
 def closure_key(lifecycle):
@@ -22,7 +23,7 @@ def result_key(lifecycle):
 def record_closed_lifecycle(state, sub):
     schedule = sub.paid_cycle_schedule
     if (sub.plan.credit_policy is not None and sub.status is SubscriptionStatus.CANCELED
-            and schedule is not None and schedule.anchor_at is not None):
+            and schedule is not None):
         # Preserve the paid schedule/terms before reactivation replaces their identity.
         state.idempotency.execute(sub.tenant_id, closure_key(schedule.lifecycle_id), lambda: sub)
 
@@ -83,6 +84,10 @@ def closure_quote(state, sub):
             status = 'ABSORBABLE'
         else:
             status = 'INVOICE_REQUIRED'
+    if invoice is not None and invoice.purpose is ChargePurpose.FINAL_USAGE:
+        gateway_id = next(key for key, charge in state.charges.items_for_tenant(sub.tenant_id) if charge.billing_id == invoice.billing_id)
+        if fee_was_adjusted(state, sub.tenant_id, invoice, gateway_id):
+            status = 'GUARANTEE_CLOSED'
     if has_payment_review(state, sub.tenant_id):
         status = 'RECONCILIATION_REQUIRED'
     provider = (frozen.result.commercial_gateway_provider if frozen is not None else state.billing_gateway.provider)
@@ -142,5 +147,5 @@ def require_final_usage_resolved(state, sub, *, actor):
         return  # Trial never had post-paid extras.
     if quote['state'] in {'NO_CHARGE', 'ABSORBABLE', 'ABSORBED'}:
         close_without_invoice(state, sub, actor=actor)
-    elif quote['state'] != 'SETTLED':
+    elif quote['state'] not in {'SETTLED', 'GUARANTEE_CLOSED'}:
         raise ApiError('BILLING_FINAL_USAGE_PENDING', 'Conclua e quite o consumo final antes da nova contratação.', status_code=409)

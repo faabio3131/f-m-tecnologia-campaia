@@ -17,6 +17,7 @@ const MESSAGE: Record<BillingGuarantee["state"], string> = {
   EXPIRED: "A janela da garantia comercial terminou. Direitos legais e revisão de cobranças indevidas permanecem preservados.",
   REQUESTED: "Solicitação registrada. O recebimento do pedido não confirma o estorno ou a devolução.",
   PROCESSING: "Tratamento iniciado. Devoluções e ajustes são conferidos separadamente.",
+  FINANCIALLY_RESOLVED: "Devolução integral conferida e encerramento financeiro registrado.",
 };
 const REFUND_PROGRESS: Record<string, string> = {
   NOT_DISPATCHED: "Aguardando conferência da devolução", PROVIDER_PENDING: "Devolução em processamento no provedor",
@@ -70,15 +71,18 @@ export function BillingGuaranteePanel({ stepUp, onRequested }: Props) {
     <h2>Garantia do primeiro pagamento</h2>
     {loading ? <Spinner label="Consultando garantia" /> : <>
       {quote ? <>
-        <p role={["REQUESTED", "PROCESSING"].includes(quote.state) ? "status" : undefined}>{MESSAGE[quote.state]}</p>
+        <p role={["REQUESTED", "PROCESSING", "FINANCIALLY_RESOLVED"].includes(quote.state) ? "status" : undefined}>{MESSAGE[quote.state]}</p>
         {quote.first_paid_at ? <p>Primeiro pagamento verificado: {date(quote.first_paid_at)}.</p> : null}
         {quote.deadline ? <p>Prazo da garantia comercial: {date(quote.deadline)}.</p> : null}
         {quote.paid_amount !== null ? <p>Pagamentos considerados nesta revisão: {money(quote.paid_amount)}. Este total não confirma um valor já devolvido.</p> : null}
         {quote.items.map(item => <p key={item.billing_id}>Pagamento de {date(item.paid_at)}: {money(item.amount)}.</p>)}
         {quote.items.some(item => item.mode === "SIMULATOR") ? <p>Simulação: nenhuma movimentação de dinheiro real.</p> : null}
-        {["REQUESTED", "PROCESSING"].includes(quote.state) ? <>
+        {["REQUESTED", "PROCESSING", "FINANCIALLY_RESOLVED"].includes(quote.state) ? <>
           <p style={{ overflowWrap: "anywhere" }}>Protocolo: {quote.request_id}. Recebido em {quote.requested_at ? date(quote.requested_at) : "conferência"}.</p>
-          {quote.state === "REQUESTED" ? <p>O tratamento deve ser iniciado em até 2 dias úteis. A disponibilização da devolução depende do meio de pagamento e do provedor.</p>
+          {quote.state === "FINANCIALLY_RESOLVED" ? <>
+            <p>Encerramento financeiro{quote.financial_resolved_at ? ` em ${date(quote.financial_resolved_at)}` : ""}. Uma contratação nova exige novo aceite e pagamento.</p>
+            <p>O documento fiscal de ajuste continua pendente de conferência. Este encerramento não confirma sua emissão.</p>
+          </> : quote.state === "REQUESTED" ? <p>O tratamento deve ser iniciado em até 2 dias úteis. A disponibilização da devolução depende do meio de pagamento e do provedor.</p>
             : <p>Tratamento iniciado{quote.processing_started_at ? ` em ${date(quote.processing_started_at)}` : ""}. A disponibilização da devolução depende do meio de pagamento e do provedor.</p>}
           {quote.processing_review_required ? <p>Há pagamentos ou ajustes que precisam de conferência adicional.</p> : null}
           {quote.refund_progress?.map(item => <section key={item.billing_id} aria-label="Andamento de uma devolução">

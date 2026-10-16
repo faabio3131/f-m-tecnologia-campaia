@@ -73,3 +73,10 @@ describe("Final usage closure", () => {
     expect(screen.queryByRole("button", { name: "Revisar fechamento final" })).not.toBeInTheDocument();
   });
 });
+
+it("preserva consumo encerrado pela garantia sem oferecer outra fatura", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(response({ ...quote, state: "GUARANTEE_CLOSED" }));
+  render(<BillingClosurePanel stepUp={proof()} onClosed={vi.fn()} />);
+  await screen.findByText(/este excedente não será cobrado novamente/);
+  expect(screen.queryByRole("button", { name: "Revisar fechamento final" })).not.toBeInTheDocument();
+});

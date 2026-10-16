@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@f989b6a6c3413a21faaf1f41cfd19bd6b0757234`
+**CURRENT confirmado:** `main@71a59c35e587b7fc22bf4a5881fa627c72f7df30`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -353,8 +353,16 @@ sem nova mensalidade, residual e reserva durante encerramento. Ver
 de valor/status, reversões e consulta somente leitura pelo histórico. Ver
 `docs/WP_R02_11_CONFERENCIA_RECEBIMENTOS_20261015.md`. WP-R02-12 / PR #56 integrada, CI da PR e pós-merge verdes: retirada
 comprovada de renovação aberta após encerramento, sem repetir DELETE incerto ou duplicar
-excedente final. Ver `docs/WP_R02_12_RETIRADA_RENOVACAO_ABERTA_20261015.md`. WP-R02-13 / PR #57 integrada, CI da PR e pós-merge verdes:\nevidência mínima de devoluções pendentes/parciais/integralmente concluídas, sem nova franquia.\nVer `docs/WP_R02_13_OBSERVACOES_ESTORNO_20261015.md`. WP-R02-14 / PR #58 integrada, CI da PR e pós-merge verdes: fato pago/primeira\ncontratação imutáveis e pedido de garantia com encerramento explícito, sem refund fictício.\nVer `docs/WP_R02_14_PEDIDO_GARANTIA_20261016.md`. WP-R02-15 em validação: worker privado de\ndevolução por invoice, com dry-run/default desligado, fence antes do efeito e recuperação\nsomente por GET. Ver `docs/WP_R02_15_WORKER_DEVOLUCAO_GARANTIA_20261016.md`. Antes da ativação V1,
-resolver refunds/chargebacks, garantia e conflitos; depois scheduler/dunning único. Catálogo real continua
+excedente final. Ver `docs/WP_R02_12_RETIRADA_RENOVACAO_ABERTA_20261015.md`. WP-R02-13 / PR #57 integrada, CI da PR e pós-merge verdes:
+evidência mínima de devoluções pendentes/parciais/integralmente concluídas, sem nova franquia.
+Ver `docs/WP_R02_13_OBSERVACOES_ESTORNO_20261015.md`. WP-R02-14 / PR #58 integrada, CI da PR e pós-merge verdes: fato pago/primeira
+contratação imutáveis e pedido de garantia com encerramento explícito, sem refund fictício.
+Ver `docs/WP_R02_14_PEDIDO_GARANTIA_20261016.md`. WP-R02-15 / PR #59 integrada, CI da PR e pós-merge verdes: worker privado de
+devolução por invoice, com dry-run/default desligado, fence antes do efeito e recuperação
+somente por GET. Ver `docs/WP_R02_15_WORKER_DEVOLUCAO_GARANTIA_20261016.md`. WP-R02-16 em validação: encerramento financeiro da garantia com prova integral,
+manifesto das obrigações cobertas, preservação do excedente pago/devolvido e fiscal pendente.
+Ver `docs/WP_R02_16_ENCERRAMENTO_FINANCEIRO_GARANTIA_20261016.md`.
+Antes da ativação V1, fechar conflitos remanescentes e fiscal; depois scheduler/dunning único. Catálogo real continua
 desabilitado; não certificar G5 com simulador ou apenas CI.
 
 **Gate G5:** pagamento real ativa entitlement sem intervenção de desenvolvedor.

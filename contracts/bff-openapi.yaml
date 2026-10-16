@@ -1954,6 +1954,7 @@ components:
         plan_id: { type: [string, 'null'] }
         gateway_observed_amount: { type: [string, 'null'] }
         payment_reconciliation_state: { type: [string, 'null'] }
+        gateway_chargeback_status: { type: [string, 'null'] }
         gateway_refund_amount: { type: [string, 'null'] }
         gateway_refund_state: { type: [string, 'null'] }
         gateway_refund_observed_at: { type: [string, 'null'], format: date-time }
@@ -2095,7 +2096,7 @@ components:
       type: object
       required: [state, fingerprint, amount, minimum, lifecycle_id, cycle_id, invoice, provider, mode]
       properties:
-        state: { type: string, enum: [UNAVAILABLE, PENDING_USAGE, NO_CHARGE, MINIMUM_UNAVAILABLE, ABSORBABLE, ABSORBED, INVOICE_REQUIRED, INVOICED, SETTLED, RECONCILIATION_REQUIRED] }
+        state: { type: string, enum: [UNAVAILABLE, PENDING_USAGE, NO_CHARGE, MINIMUM_UNAVAILABLE, ABSORBABLE, ABSORBED, INVOICE_REQUIRED, INVOICED, SETTLED, GUARANTEE_CLOSED, RECONCILIATION_REQUIRED] }
         fingerprint: { type: [string, 'null'] }
         amount: { type: [string, 'null'] }
         minimum: { type: [string, 'null'] }
@@ -2109,7 +2110,7 @@ components:
       type: object
       required: [state, fingerprint, first_paid_at, deadline, paid_amount, currency, items, request_id, requested_at]
       properties:
-        state: { type: string, enum: [UNAVAILABLE, MANUAL_REVIEW, ELIGIBLE, EXPIRED, REQUESTED, PROCESSING] }
+        state: { type: string, enum: [UNAVAILABLE, MANUAL_REVIEW, ELIGIBLE, EXPIRED, REQUESTED, PROCESSING, FINANCIALLY_RESOLVED] }
         fingerprint: { type: [string, 'null'] }
         first_paid_at: { type: [string, 'null'], format: date-time }
         deadline: { type: [string, 'null'], format: date-time }
@@ -2130,6 +2131,8 @@ components:
               mode: { type: [string, 'null'] }
         request_id: { type: [string, 'null'] }
         requested_at: { type: [string, 'null'], format: date-time }
+        financial_resolved_at: { type: [string, 'null'], format: date-time }
+        fiscal_adjustment_state: { type: [string, 'null'] }
         processing_started_at: { type: [string, 'null'], format: date-time }
         processing_review_required: { type: boolean }
         refund_progress:
