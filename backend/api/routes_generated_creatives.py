@@ -305,7 +305,7 @@ async def read_generated_creative_content(request):
         k: v for k, v in record["manifest"].items() if k != "identity"
     })
     storage = configured_asset_storage()
-    if storage.mode != "PROVIDER":
+    if not _storage_usable(state, storage):
         raise ApiError("ASSET_STORAGE_DISABLED", "Armazenamento privado indisponível.", status_code=503)
     asset = StoredAsset(recovery_storage_manifest(manifest), record["storage_generation"])
     data = await run_in_threadpool(storage.read, asset)
