@@ -133,13 +133,15 @@ async def generate_campaign_image(request):
 
     class ImageInput(BaseModel):
         model_config = ConfigDict(extra="forbid")
-        expected_plan_version: int = Field(ge=1)
+        expected_plan_version: int = Field(ge=1, strict=True)
         prompt: str = Field(min_length=8, max_length=1500)
         credit_confirmation: CreditConfirmation
 
     fixture, state, campaign, repository = _scope(request, Permission.CAMPAIGN_EDIT)
     key = require_idempotency_key(request)
     body = await parse_bounded_body(request, ImageInput)
+    if len(body.prompt.strip()) < 8:
+        raise ApiError("VALIDATION_FAILED", "Descreva a imagem em pelo menos oito caracteres.", status_code=422)
     if body.expected_plan_version != campaign.plan_version or campaign.plan is None:
         raise ApiError("AI_INPUT_CHANGED", "Revise a estratégia vigente.", status_code=409)
     from .campaign_brand import require_brand_assets, brand_agent_context
@@ -262,6 +264,8 @@ async def reconcile_campaign_image(request):
     if storage.mode != "PROVIDER":
         raise ApiError("ASSET_STORAGE_DISABLED", "Armazenamento não configurado.", status_code=503)
     identity = CreativeIdentity(**row["identity"])
+    if identity.campaign_version != campaign.plan_version:
+        raise ApiError("AI_INPUT_CHANGED", "Esta geração pertence a outra versão da estratégia.", status_code=409)
 
     def reconcile():
         checked = CreativePrivateStorage(repository, storage).reconcile_after_restart(identity)
