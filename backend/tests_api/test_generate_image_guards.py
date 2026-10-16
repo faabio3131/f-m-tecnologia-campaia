@@ -20,6 +20,7 @@ class ImageGenerationGuardTests(unittest.IsolatedAsyncioTestCase):
                    return_value=(fixture, state, campaign, Mock())), \
              patch("api.deps.require_idempotency_key", return_value="idem-key-long-enough"), \
              patch("api.bounded_body.parse_bounded_body", new_callable=AsyncMock, return_value=body), \
+             patch("api.campaign_brand.require_brand_assets"), \
              patch("campaia_core.gcs_asset_storage.configured_asset_storage") as storage:
             with self.assertRaises(ApiError) as caught:
                 await generate_campaign_image(SimpleNamespace())
