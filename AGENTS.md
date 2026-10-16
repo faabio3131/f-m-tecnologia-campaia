@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@066ca1bc121d1984337cf4d0194a8a150c22a22e`
+**CURRENT confirmado:** `main@fcf7ac2788886acba6196e066fc94757f56888cf`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -368,7 +368,7 @@ Ver `docs/WP_R02_17_EMISSAO_RECORRENTE_UNICA_20261016.md`.
 WP-R02-18 / PR #62 integrada, CI da PR e pós-merge verdes: avisos de cobrança persistentes no aplicativo, leitura individual,
 isolamento/RBAC e migração 006 somente em fonte/CI. Não afirma envio de e-mail/SMS.
 Ver `docs/WP_R02_18_AVISOS_COBRANCA_IN_APP_20261016.md`.
-WP-R02-19 em validação: tentativas e unidades de custo de IA persistentes, reservas de
+WP-R02-19 / PR #63 integrada, CI da PR e pós-merge verdes: tentativas e unidades de custo de IA persistentes, reservas de
 orçamento/limites configurados por namespace, falhas desconhecidas preservadas e preços
 legados explicitamente não verificados. Ver `docs/WP_R02_19_EVIDENCIA_CUSTOS_IA_20261016.md`.
 Antes da ativação V1, fechar custos reais/tarifas/câmbio/fiscal, ativação controlada dos jobs,
@@ -385,8 +385,13 @@ desabilitado; não certificar G5 com simulador ou apenas CI.
 ### Já existe
 Brand Profile textual, persistência, Web, Cloud Storage na infraestrutura.
 
+WP-R03-01 em validação: edição textual, controle concorrente de versão e histórico imutável,
+com replay seguro na Web. Ver `docs/WP_R03_01_EDICAO_HISTORICO_MARCA_20261016.md`.
+O cadastro/listagem existentes foram preservados. Assets e aplicação explícita ao pipeline
+permanecem próximos deltas, não certificados por esta etapa.
+
 ### Falta
-- edit/update do Brand Kit;
+- concluir validação da edição/histórico do Brand Kit;
 - upload real de logo/assets;
 - metadata e private/signed access;
 - isolamento cross-tenant dos objetos;

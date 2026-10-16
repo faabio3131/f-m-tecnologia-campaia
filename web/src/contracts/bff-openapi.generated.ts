@@ -320,6 +320,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/brand-profiles/{brandProfileId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Consulta Brand Kit do tenant */
+        get: operations["getBrandProfile"];
+        /** Atualiza Brand Kit com controle de versão */
+        put: operations["updateBrandProfile"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/brand-profiles/{brandProfileId}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lista versões preservadas do Brand Kit */
+        get: operations["listBrandVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/connections": {
         parameters: {
             query?: never;
@@ -1653,14 +1688,34 @@ export interface components {
             tone: string;
             colors?: string[];
             differentiators?: string[];
-            /** @description Alimenta o Policy Engine deterministico, nao apenas o prompt. */
+            /** @description Restrições de comunicação registradas para a marca. */
             restrictions?: string[];
         };
-        BrandProfile: components["schemas"]["BrandProfileInput"] & {
-            /** Format: uuid */
+        BrandProfileUpdate: {
+            expected_version: number;
+            name: string;
+            tone: string;
+            colors?: string[];
+            differentiators?: string[];
+            restrictions?: string[];
+        };
+        BrandVersions: {
+            items: components["schemas"]["BrandProfile"][];
+            next_cursor: string | null;
+        };
+        BrandProfile: {
+            name: string;
+            tone: string;
+            colors?: string[];
+            differentiators?: string[];
+            /** @description Restrições de comunicação registradas para a marca. */
+            restrictions?: string[];
             id?: string;
             /** Format: date-time */
             created_at?: string;
+            version?: number;
+            /** Format: date-time */
+            updated_at?: string | null;
         };
         Connection: {
             /** Format: uuid */
@@ -2608,6 +2663,12 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /**
+                 * @description Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+                 *     login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+                 *     servidor. Ausente/invalido -> 403.
+                 */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
                 /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
@@ -2630,6 +2691,141 @@ export interface operations {
                 };
             };
             422: components["responses"]["ValidationError"];
+        };
+    };
+    getBrandProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                brandProfileId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Brand Kit atual */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandProfile"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Sem acesso ao Brand Kit */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    updateBrandProfile: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+                 *     login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+                 *     servidor. Ausente/invalido -> 403.
+                 */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                brandProfileId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrandProfileUpdate"];
+            };
+        };
+        responses: {
+            /** @description Brand Kit atualizado e versão anterior preservada */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandProfile"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Sem acesso ao Brand Kit */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Versão ou contexto alterado */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    listBrandVersions: {
+        parameters: {
+            query?: {
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                brandProfileId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Histórico de versões */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandVersions"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Sem acesso ao Brand Kit */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+            /** @description Histórico incompleto */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     listConnections: {

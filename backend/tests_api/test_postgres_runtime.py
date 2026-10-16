@@ -483,6 +483,43 @@ class PostgresRuntimeTests(unittest.TestCase):
                     self.assertIsNone(b.get('/billing/notices', headers=FINANCE).json()['items'][0]['read_at'])
                     self.assertEqual(b.app.state.campaia.subscriptions['demo-tenant'].dunning_reminders_sent, 0)
 
+    def test_brand_revisions_are_atomic_and_stale_updates_fail_across_connections(self):
+        from unittest.mock import patch
+        from starlette.testclient import TestClient
+        from tests_api.test_helpers import OWNER, OTHER_OWNER, unique_idem
+        from tests_api.test_brand_versions import BODY
+        with patch.dict(os.environ, {'GEMINI_API_KEY': '', 'ASAAS_API_KEY': ''}):
+            a, b = [TestClient(create_app(database_url=DSN, env='test')) for _ in range(2)]
+            self.addCleanup(a.close); self.addCleanup(b.close)
+            created = a.post('/brand-profiles', headers={**OWNER, **unique_idem()}, json=BODY)
+            self.assertEqual(created.status_code, 201, created.text)
+            first = created.json()
+            endpoint = '/brand-profiles/' + first['id']
+            def update(client):
+                return client.put(endpoint, headers={**OWNER, **unique_idem()},
+                    json={**BODY, 'expected_version': 1, 'tone': 'a' if client is a else 'b'})
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                responses = list(pool.map(update, (a, b)))
+            self.assertEqual(sorted(r.status_code for r in responses), [200, 409], [r.text for r in responses])
+            current = next(r.json() for r in responses if r.status_code == 200)
+            self.assertEqual(b.get(endpoint, headers=OWNER).json(), current)
+            history = b.get(endpoint + '/versions', headers=OWNER).json()
+            self.assertEqual(history['items'], [current, first])
+            self.assertEqual(b.get(endpoint + '/versions', headers=OTHER_OWNER).status_code, 404)
+            original = a.app.state.campaia.audit.append
+            def fail(**event):
+                original(**event)
+                if event['action'] == 'BRAND_PROFILE_UPDATE':
+                    raise RuntimeError('injected PG brand update')
+            headers = {**OWNER, **unique_idem()}
+            with patch.object(a.app.state.campaia.audit, 'append', side_effect=fail):
+                with self.assertRaisesRegex(RuntimeError, 'injected PG brand update'):
+                    a.put(endpoint, headers=headers, json={**BODY, 'expected_version': 2, 'tone': 'not committed'})
+            self.assertEqual(b.get(endpoint, headers=OWNER).json(), current)
+            self.assertEqual(b.get(endpoint + '/versions', headers=OWNER).json(), history)
+            self.assertEqual(sum(e.action == 'BRAND_PROFILE_UPDATE' for e in
+                b.app.state.campaia.audit.list_for_tenant('demo-tenant')), 1)
+
     def test_persistent_ai_cost_budget_is_shared_and_unknown_holds_survive_restart(self):
         from unittest.mock import patch
         from tests_api.test_ai_cost_evidence import CostProvider, request

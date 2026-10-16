@@ -235,7 +235,7 @@ test.describe("Protocolo de sessao real", () => {
     expect(brandProfilesForB).toEqual([]);
 
     // A UI de B tambem nunca renderiza qualquer texto do segredo de A.
-    await expect(pageB.getByText("Segredo do tenant A")).toHaveCount(0);
+    await expect(pageB.getByText("Segredo do tenant A", { exact: true })).toHaveCount(0);
 
     await contextA.close();
     await contextB.close();
@@ -288,7 +288,39 @@ test.describe("Protocolo de sessao real", () => {
     await page.getByRole("button", { name: "Salvar Brand Kit" }).click();
     const createResponse = await createResponsePromise;
     expect(createResponse.status()).toBe(201);
-    await expect(page.getByText("Marca E2E")).toBeVisible();
+    const createdBrand = await createResponse.json();
+    const brandCard = page.getByTestId('brand-profile-' + createdBrand.id);
+    await expect(brandCard.getByText("Marca E2E", { exact: true })).toBeVisible();
+    const second = await page.context().newPage();
+    await second.goto("/brand-kit");
+    await second.getByTestId('brand-profile-' + createdBrand.id).getByRole("button", { name: "Editar Marca E2E", exact: true }).click();
+    await second.getByLabel("Tom de voz").fill("rascunho concorrente");
+    await brandCard.getByRole("button", { name: "Editar Marca E2E", exact: true }).click();
+    await page.getByLabel("Tom de voz").fill("direto");
+    const updatePromise = page.waitForResponse(response =>
+      response.url().endsWith('/brand-profiles/' + createdBrand.id) && response.request().method() === 'PUT');
+    await page.getByRole("button", { name: "Salvar alterações", exact: true }).click();
+    const updateResponse = await updatePromise;
+    expect(updateResponse.status()).toBe(200);
+    expect((await updateResponse.json()).version).toBe(2);
+    await expect(brandCard.getByText("direto", { exact: true })).toBeVisible();
+    const conflictPromise = second.waitForResponse(response =>
+      response.url().endsWith('/brand-profiles/' + createdBrand.id) && response.request().method() === 'PUT');
+    await second.getByRole("button", { name: "Salvar alterações", exact: true }).click();
+    const conflict = await conflictPromise;
+    expect(conflict.status()).toBe(409);
+    expect((await conflict.json()).code).toBe("BRAND_VERSION_CHANGED");
+    await expect(second.getByLabel("Tom de voz")).toHaveValue("rascunho concorrente");
+    await second.close();
+    await brandCard.getByRole("button", { name: "Histórico de Marca E2E", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Versão 2 — Marca E2E", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Versão 1 — Marca E2E", exact: true })).toBeVisible();
+    const historyResponse = await page.request.get('/api/campaia/brand-profiles/' + createdBrand.id + '/versions',
+      { headers: await sessionCookieHeader(page) });
+    expect(historyResponse.status()).toBe(200);
+    const history = await historyResponse.json();
+    expect(history.items.map((item: { version: number }) => item.version)).toEqual([2, 1]);
+    expect(history.items[1].tone).toBe("inspirador");
 
     // Conexoes: fecha o ciclo real start -> callback -> Connection persistida.
     await page.goto("/connections");

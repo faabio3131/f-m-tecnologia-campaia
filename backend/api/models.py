@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -174,14 +174,21 @@ class SwitchMembershipRequest(ApiModel):
 # --------------------------------------------------------------------------- brand profiles
 
 
+BrandText = Annotated[str, Field(max_length=2000)]
+
+
 class BrandProfileCreate(ApiModel):
-    name: str
+    name: str = Field(max_length=120)
     # Contract declares `required: [name, tone]` (bff-openapi.yaml BrandProfileInput) --
     # no default here, so a missing tone is a 422 VALIDATION_FAILED, not a silent "".
-    tone: str
-    colors: list[str] = Field(default_factory=list)
-    differentiators: list[str] = Field(default_factory=list)
-    restrictions: list[str] = Field(default_factory=list)
+    tone: str = Field(max_length=200)
+    colors: list[BrandText] = Field(default_factory=list, max_length=64)
+    differentiators: list[BrandText] = Field(default_factory=list, max_length=64)
+    restrictions: list[BrandText] = Field(default_factory=list, max_length=64)
+
+
+class BrandProfileUpdate(BrandProfileCreate):
+    expected_version: int = Field(ge=1, strict=True)
 
 
 class BrandProfileResponse(BaseModel):
@@ -193,6 +200,8 @@ class BrandProfileResponse(BaseModel):
     differentiators: list[str]
     restrictions: list[str]
     created_at: datetime
+    version: int = 1
+    updated_at: datetime | None = None
 
 
 # --------------------------------------------------------------------------- connections

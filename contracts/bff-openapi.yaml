@@ -557,7 +557,9 @@ paths:
       tags: [Marca]
       summary: Cria Brand Kit
       operationId: createBrandProfile
+      security: [cookieAuth: []]
       parameters:
+        - $ref: '#/components/parameters/CsrfToken'
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
@@ -572,6 +574,101 @@ paths:
               schema: { $ref: '#/components/schemas/BrandProfile' }
         '422': { $ref: '#/components/responses/ValidationError' }
 
+  /brand-profiles/{brandProfileId}:
+    get:
+      tags: [Marca]
+      summary: Consulta Brand Kit do tenant
+      operationId: getBrandProfile
+      security: [cookieAuth: []]
+      parameters:
+        - name: brandProfileId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Brand Kit atual
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandProfile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Sem acesso ao Brand Kit
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    put:
+      tags: [Marca]
+      summary: Atualiza Brand Kit com controle de versão
+      operationId: updateBrandProfile
+      security: [cookieAuth: []]
+      parameters:
+        - name: brandProfileId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BrandProfileUpdate' }
+      responses:
+        '200':
+          description: Brand Kit atualizado e versão anterior preservada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandProfile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Sem acesso ao Brand Kit
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Versão ou contexto alterado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /brand-profiles/{brandProfileId}/versions:
+    get:
+      tags: [Marca]
+      summary: Lista versões preservadas do Brand Kit
+      operationId: listBrandVersions
+      security: [cookieAuth: []]
+      parameters:
+        - name: brandProfileId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: cursor
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Histórico de versões
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandVersions' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Sem acesso ao Brand Kit
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503':
+          description: Histórico incompleto
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /connections:
     get:
       tags: [Conexoes]
@@ -2596,24 +2693,57 @@ components:
 
     BrandProfileInput:
       type: object
+      additionalProperties: false
       required: [name, tone]
       properties:
         name: { type: string, maxLength: 120 }
         tone: { type: string, maxLength: 200 }
+        colors: { type: array, maxItems: 64, items: { type: string, maxLength: 2000 } }
+        differentiators: { type: array, maxItems: 64, items: { type: string, maxLength: 2000 } }
+        restrictions:
+          type: array
+          maxItems: 64
+          items: { type: string, maxLength: 2000 }
+          description: Restrições de comunicação registradas para a marca.
+
+    BrandProfileUpdate:
+      type: object
+      additionalProperties: false
+      required: [expected_version, name, tone]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        name: { type: string, maxLength: 120 }
+        tone: { type: string, maxLength: 200 }
+        colors: { type: array, maxItems: 64, items: { type: string, maxLength: 2000 } }
+        differentiators: { type: array, maxItems: 64, items: { type: string, maxLength: 2000 } }
+        restrictions: { type: array, maxItems: 64, items: { type: string, maxLength: 2000 } }
+
+    BrandVersions:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/BrandProfile' }
+        next_cursor: { type: [string, 'null'] }
+
+    BrandProfile:
+      type: object
+      additionalProperties: false
+      required: [name, tone]
+      properties:
+        name: { type: string }
+        tone: { type: string }
         colors: { type: array, items: { type: string } }
         differentiators: { type: array, items: { type: string } }
         restrictions:
           type: array
           items: { type: string }
-          description: Alimenta o Policy Engine deterministico, nao apenas o prompt.
-
-    BrandProfile:
-      allOf:
-        - $ref: '#/components/schemas/BrandProfileInput'
-        - type: object
-          properties:
-            id: { type: string, format: uuid }
-            created_at: { type: string, format: date-time }
+          description: Restrições de comunicação registradas para a marca.
+        id: { type: string }
+        created_at: { type: string, format: date-time }
+        version: { type: integer, minimum: 1 }
+        updated_at: { type: [string, 'null'], format: date-time }
 
     Connection:
       type: object

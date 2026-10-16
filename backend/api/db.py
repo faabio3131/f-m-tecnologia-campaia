@@ -144,6 +144,10 @@ _BILLING_OBSERVATION_FIELDS = {
 # New authoritative commercial terms are isolated from legacy constructor fields.
 # Old binaries can decode the envelope but MUST NOT write V1 contracts on rollback.
 # Disable billing/AI mutation and drain workers before any old-code rollback.
+_BRAND_VERSION_FIELDS = {
+    ('api.repositories', 'BrandProfile'): frozenset({'version', 'updated_at'}),
+}
+
 _AI_COST_FIELDS = {
     ('campaia_core.ai_gateway', 'Provenance'): frozenset({'cost_complete'}),
     ('campaia_core.ai_gateway', 'ProviderResponse'): frozenset({'cost_observation'}),
@@ -201,6 +205,8 @@ def encode(value: Any) -> Any:
         commercial = {key: fields.pop(key) for key in commercial_keys if key in fields}
         ai_keys = _AI_COST_FIELDS.get((cls.__module__, cls.__qualname__), ())
         ai_cost = {key: fields.pop(key) for key in ai_keys if key in fields}
+        brand_keys = _BRAND_VERSION_FIELDS.get((cls.__module__, cls.__qualname__), ())
+        brand_version = {key: fields.pop(key) for key in brand_keys if key in fields}
         envelope = {"__type__": "dataclass", "mod": cls.__module__, "qual": cls.__qualname__, "fields": fields}
         if extensions:
             envelope["billing_observations"] = extensions
@@ -208,6 +214,8 @@ def encode(value: Any) -> Any:
             envelope["commercial_v1"] = commercial
         if any(value is not None for value in ai_cost.values()):
             envelope["ai_cost_v1"] = ai_cost
+        if brand_version:
+            envelope["brand_v1"] = brand_version
         return envelope
     raise TypeError(f"api.db.encode: no encoding rule for {type(value)!r} (value={value!r})")
 
@@ -259,6 +267,12 @@ def decode(value: Any) -> Any:
                     or set(ai_cost).intersection(fields)):
                 raise ValueError("Unsupported or duplicate AI cost observations.")
             fields.update({k: decode(v) for k, v in ai_cost.items()})
+            brand_version = value.get("brand_v1", {})
+            allowed_brand = _BRAND_VERSION_FIELDS.get((value["mod"], value["qual"]), ())
+            if (not isinstance(brand_version, dict) or not set(brand_version).issubset(allowed_brand)
+                    or set(brand_version).intersection(fields)):
+                raise ValueError("Unsupported or duplicate brand version metadata.")
+            fields.update({k: decode(v) for k, v in brand_version.items()})
             return cls(**fields)
         return {k: decode(v) for k, v in value.items()}
     if isinstance(value, list):

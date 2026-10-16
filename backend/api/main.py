@@ -48,7 +48,8 @@ from .routes_billing import (
     put_subscription,
     reactivate_billing_subscription,
 )
-from .routes_brand import create_brand_profile, list_brand_profiles
+from .routes_brand import (create_brand_profile, list_brand_profiles, get_brand_profile,
+                           update_brand_profile, list_brand_versions)
 from .routes_campaigns import (
     create_brief,
     get_campaign,
@@ -152,6 +153,9 @@ routes = [
 
     Route("/brand-profiles", list_brand_profiles, methods=["GET"]),
     Route("/brand-profiles", create_brand_profile, methods=["POST"]),
+    Route("/brand-profiles/{brandProfileId}", get_brand_profile, methods=["GET"]),
+    Route("/brand-profiles/{brandProfileId}", update_brand_profile, methods=["PUT"]),
+    Route("/brand-profiles/{brandProfileId}/versions", list_brand_versions, methods=["GET"]),
 
     Route("/connections", list_connections, methods=["GET"]),
     Route("/connections/oauth/start", oauth_start, methods=["POST"]),
