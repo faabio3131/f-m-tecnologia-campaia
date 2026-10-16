@@ -6,6 +6,7 @@ Do not reuse brand asset paths: creative scope includes campaign and version.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import re
 from dataclasses import dataclass, field
@@ -82,6 +83,7 @@ class CreativeManifest:
     provider: str
     model: str
     generation_request_id: str = field(repr=False)
+    md5_base64: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.identity, CreativeIdentity):
@@ -98,6 +100,13 @@ class CreativeManifest:
             if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", name):
                 _invalid()
         _hash_scope(self.generation_request_id)
+        if self.md5_base64 is not None:
+            try:
+                raw = base64.b64decode(self.md5_base64, validate=True)
+                if len(raw) != 16 or base64.b64encode(raw).decode("ascii") != self.md5_base64:
+                    _invalid()
+            except (ValueError, TypeError):
+                _invalid()
 
     @classmethod
     def from_normalized_png(cls, identity: CreativeIdentity, png: bytes, *,
@@ -105,7 +114,8 @@ class CreativeManifest:
         checked = verify_normalized_png(png)
         return cls(identity=identity, sha256=hashlib.sha256(png).hexdigest(),
                    size=len(png), width=checked.width, height=checked.height,
-                   provider=provider, model=model, generation_request_id=generation_request_id)
+                   provider=provider, model=model, generation_request_id=generation_request_id,
+                   md5_base64=base64.b64encode(hashlib.md5(png, usedforsecurity=False).digest()).decode("ascii"))
 
     def verify(self, png: bytes) -> None:
         try:
@@ -175,7 +185,15 @@ class CreativeStorageIdentity(AssetIdentity):
 def storage_manifest(manifest: CreativeManifest, png: bytes) -> AssetManifest:
     """Build a GCS-compatible digest manifest only from verified normalized PNG."""
     manifest.verify(png)
-    return AssetManifest.from_normalized_png(CreativeStorageIdentity.from_creative(manifest.identity), png)
+    return recovery_storage_manifest(manifest)
+
+
+def recovery_storage_manifest(manifest: CreativeManifest) -> AssetManifest:
+    """Observe only when the persisted manifest contains a verified MD5 checksum."""
+    if manifest.md5_base64 is None:
+        raise AssetStorageError(AssetStorageErrorCode.INVALID)
+    return AssetManifest(CreativeStorageIdentity.from_creative(manifest.identity),
+                         manifest.size, manifest.sha256, manifest.md5_base64)
 
 
 
@@ -213,4 +231,4 @@ class CreativeStateTransition:
         return self.expected_revision + 1
 
 
-__all__ = ["CreativeIdentity", "CreativeManifest", "CreativeStoredProof", "CreativeState", "CreativeStateTransition", "CreativeStorageIdentity", "storage_manifest"]
+__all__ = ["CreativeIdentity", "CreativeManifest", "CreativeStoredProof", "CreativeState", "CreativeStateTransition", "CreativeStorageIdentity", "storage_manifest", "recovery_storage_manifest"]
