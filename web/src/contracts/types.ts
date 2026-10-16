@@ -56,3 +56,9 @@ export type BrandAssetPage = components["schemas"]["BrandAssetPage"];
 export type BrandSelectionInput = components["schemas"]["BrandSelectionInput"];
 export type BriefInput = components["schemas"]["BriefInput"];
 export type CampaignBrandSnapshot = components["schemas"]["CampaignBrandSnapshot"];
+
+export type CopyProposalInput = components["schemas"]["CopyProposalInput"];
+export type AudienceProposalInput = components["schemas"]["AudienceProposalInput"];
+export type CreativeProposal = components["schemas"]["CreativeProposal"];
+export type CreativeProposalPage = components["schemas"]["CreativeProposalPage"];
+export type CreativeProposalQuote = components["schemas"]["CreativeProposalQuote"];

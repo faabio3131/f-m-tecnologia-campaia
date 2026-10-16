@@ -47,6 +47,8 @@ def build_e2e_app() -> Starlette:
     from tests_support.asset_storage import TestOnlyAssetStorage
     app.state.campaia.asset_storage = TestOnlyAssetStorage()
     state: AppState = app.state.campaia
+    from tests_support.creative_ai import install_test_creative_provider
+    install_test_creative_provider(state)
     state.id_token_verifier = DeterministicTestIdTokenVerifier()
     state.allowed_origins = frozenset({allowed_origin})
     return app

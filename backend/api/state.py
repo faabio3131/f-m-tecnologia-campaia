@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from campaia_core.credential_vault import CredentialCipher
 
 from campaia_core.agents import AGENTS, AgentRunner
-from campaia_core.ai_gateway import AIGateway, AIProvider
+from campaia_core.ai_gateway import AIGateway, AIProvider, AITask
 from campaia_core.ai_simulator import SimulatedAIProvider
 from campaia_core.asaas_gateway import AsaasConfig, AsaasGateway
 from campaia_core.asaas_webhook import AsaasWebhookReceiver
@@ -316,6 +316,7 @@ def _default_ai_provider() -> AIProvider:
         schemas = {spec.output_schema.schema_id: spec.output_schema for spec in AGENTS.values()}
         return GeminiProvider(config=GeminiConfig.from_env(), schemas=schemas)
     return SimulatedAIProvider(
+        supported_tasks=frozenset({AITask.PLAN_CAMPAIGN}),
         output={
             "objetivo": "Gerar demanda qualificada dentro do orcamento aprovado.",
             "funil": "TOPO_MEIO",
@@ -404,6 +405,10 @@ class AppState:
     oauth_pending_states: dict[str, "PendingOAuthState"] = field(default_factory=dict)
 
     # Private asset storage stays disabled unless explicitly configured. No ADC at startup.
+    creative_proposals: object | None = field(default=None, init=False)
+    proposal_slots: object = field(default_factory=lambda: threading.BoundedSemaphore(2), repr=False)
+    proposal_rate_limiter: object = field(default_factory=lambda: FixedWindowRateLimiter(
+        max_requests=30, window=timedelta(hours=1)))
     asset_storage: object | None = None
     asset_store: object | None = field(default=None, init=False)
     asset_upload_slots: object = field(default_factory=lambda: threading.BoundedSemaphore(2), repr=False)
@@ -584,8 +589,13 @@ class AppState:
         if self.db is not None:
             from .brand_assets import BrandAssetStore
             self.asset_store = BrandAssetStore(self)
+            from .creative_proposals import CreativeProposalRepository
+            self.creative_proposals = CreativeProposalRepository(self.db.table("creative_proposals"))
             if self.database_url is not None:
                 from .postgres import PostgresFixedWindowRateLimiter
+                self.proposal_rate_limiter = PostgresFixedWindowRateLimiter(
+                    self.db, scope="creative-proposals", max_requests=30,
+                    window=timedelta(hours=1))
                 self.asset_rate_limiter = PostgresFixedWindowRateLimiter(
                     self.db, scope="brand-assets-upload", max_requests=30,
                     window=timedelta(hours=1))

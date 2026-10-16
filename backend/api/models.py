@@ -12,7 +12,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
 class ApiModel(BaseModel):
@@ -345,6 +345,35 @@ class CreditConfirmation(ApiModel):
     policy_version: str = Field(min_length=1, max_length=256)
     credits: int = Field(gt=0, strict=True)
     extra_amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
+
+
+class CreativeProposalInput(ApiModel):
+    expected_plan_version: int = Field(ge=1, strict=True)
+    channel: Literal["GOOGLE_ADS", "META_ADS", "META_FACEBOOK", "META_INSTAGRAM", "WHATSAPP"]
+    credit_confirmation: CreditConfirmation | None = None
+
+
+class CopyProposalInput(CreativeProposalInput):
+    offer: str = Field(default="", max_length=2000)
+    tone: str = Field(default="", max_length=200)
+    variants: int = Field(default=5, ge=1, le=5, strict=True)
+
+
+class AudienceProposalInput(CreativeProposalInput):
+    audience: str = Field(default="", max_length=2000)
+    region: str = Field(default="", max_length=120)
+    exclusions: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]] = Field(default_factory=list, max_length=20)
+    sensitive_declared: bool = Field(default=False, strict=True)
+
+
+class CopyProposalOutput(ApiModel):
+    variacoes: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]] = Field(min_length=1, max_length=5)
+
+
+class AudienceProposalOutput(ApiModel):
+    segmentos: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]] = Field(min_length=1, max_length=20)
+    exclusoes: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]] = Field(max_length=20)
+    sensivel: bool = Field(strict=True)
 
 
 class PlanRegenerateRequest(ApiModel):

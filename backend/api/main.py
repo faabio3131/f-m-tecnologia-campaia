@@ -48,6 +48,7 @@ from .routes_billing import (
     put_subscription,
     reactivate_billing_subscription,
 )
+from .routes_creatives import list_creative_proposals, quote_creative_proposal, generate_creative_proposal
 from .routes_brand_assets import (
     list_brand_assets, upload_brand_asset, read_brand_asset,
     reconcile_brand_asset, delete_brand_asset,
@@ -186,6 +187,9 @@ routes = [
     Route("/campaigns/{campaignId}/plan", get_plan, methods=["GET"]),
     Route("/campaigns/{campaignId}/plan/quote", quote_strategy, methods=["GET"]),
     Route("/campaigns/{campaignId}/plan/regenerate", regenerate_plan, methods=["POST"]),
+    Route("/campaigns/{campaignId}/proposals/{proposalKind}/quote", quote_creative_proposal, methods=["GET"]),
+    Route("/campaigns/{campaignId}/proposals/{proposalKind}", list_creative_proposals, methods=["GET"]),
+    Route("/campaigns/{campaignId}/proposals/{proposalKind}", generate_creative_proposal, methods=["POST"]),
     Route("/campaigns/{campaignId}/validate", validate_campaign, methods=["POST"]),
     Route("/campaigns/{campaignId}/publish", publish_campaign, methods=["POST"]),
     Route("/campaigns/{campaignId}/pause", pause_campaign, methods=["POST"]),
