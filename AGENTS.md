@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@fcf7ac2788886acba6196e066fc94757f56888cf`
+**CURRENT confirmado:** `main@c8590ee00b3e16b45c3990fcd850760e59271ca0`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -385,13 +385,17 @@ desabilitado; não certificar G5 com simulador ou apenas CI.
 ### Já existe
 Brand Profile textual, persistência, Web, Cloud Storage na infraestrutura.
 
-WP-R03-01 em validação: edição textual, controle concorrente de versão e histórico imutável,
+WP-R03-01 / PR #64 integrada, CI da PR e pós-merge verdes: edição textual, controle concorrente de versão e histórico imutável,
 com replay seguro na Web. Ver `docs/WP_R03_01_EDICAO_HISTORICO_MARCA_20261016.md`.
 O cadastro/listagem existentes foram preservados. Assets e aplicação explícita ao pipeline
 permanecem próximos deltas, não certificados por esta etapa.
 
+WP-R03-02A em validação: contrato interno e adaptador privado GCS com leitura fixada por geração,
+integridade, limites de resposta e mutações condicionais sem retry automático. Ainda sem endpoint,
+AppState ou UI; nenhuma ativação ou chamada real. Ver
+`docs/WP_R03_02A_TRANSPORTE_STORAGE_PRIVADO_20261016.md`.
+
 ### Falta
-- concluir validação da edição/histórico do Brand Kit;
 - upload real de logo/assets;
 - metadata e private/signed access;
 - isolamento cross-tenant dos objetos;
