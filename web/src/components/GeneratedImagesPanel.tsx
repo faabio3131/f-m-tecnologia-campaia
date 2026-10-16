@@ -106,7 +106,7 @@ export function GeneratedImagesPanel({ campaignId, planVersion }: { campaignId: 
     <form onSubmit={review}>
       <Input label="Descrição da imagem" value={prompt} onChange={(event) => setPrompt(event.target.value)}
         minLength={8} maxLength={1500} disabled={!enabled || busy} required />
-      <Button disabled={!enabled || busy || prompt.trim().length < 8} variant="secondary">Revisar créditos para gerar imagem</Button>
+      <Button type="submit" disabled={!enabled || busy || prompt.trim().length < 8} variant="secondary">Revisar créditos para gerar imagem</Button>
     </form>
     {pending ? <div>
       <p>Confirme a geração com {pending.quote.credits} créditos e valor extra previsto de {pending.quote.extra_amount}.</p>
