@@ -34,3 +34,9 @@ Run Backend, Frontend, F4 CI on exact PR head. Do not merge until evidence and d
 - Testes de transições válidas, inválidas e revisão fora de faixa.
 - **Ainda não existe repository PostgreSQL nem efeito GCS de criativos.** O contrato não é persistência transacional, nem deve ser apresentado como tal. Próximo incremento requer integração com padrões reais de migration/transactions já presentes no repositório e testes PostgreSQL dedicados.
 - Sem merge, migration aplicada, deploy, credenciais ou cobrança real.
+
+## Incremento de persistência F3 (ainda PARTIAL)
+- `api.creative_repository.CreativeRepository`: operações tenant-scoped pelo `RecordTable` já existente; claim de quota e ID em transação, advisory lock por tenant; replay não faz nova reserva; updates de estado validam revision CAS.
+- Testes com banco SQLite real: restart, replay, quota concorrente, cross-tenant, transições, geração obrigatória antes de STORED.
+- **Não afirmar PostgreSQL verificado**: `PostgresDatabase.table("creative_assets")` requer migration versionada ainda não criada e testes de integração PostgreSQL. CI do novo HEAD pendente.
+- Sem storage dispatch, GCS, créditos, API pública ou migration real. A fonte foi atualizada sem ativação operacional.
