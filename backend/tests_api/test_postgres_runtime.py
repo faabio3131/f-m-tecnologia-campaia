@@ -483,6 +483,53 @@ class PostgresRuntimeTests(unittest.TestCase):
                     self.assertIsNone(b.get('/billing/notices', headers=FINANCE).json()['items'][0]['read_at'])
                     self.assertEqual(b.app.state.campaia.subscriptions['demo-tenant'].dunning_reminders_sent, 0)
 
+    def test_persistent_ai_cost_budget_is_shared_and_unknown_holds_survive_restart(self):
+        from unittest.mock import patch
+        from tests_api.test_ai_cost_evidence import CostProvider, request
+        from campaia_core.ai_gateway import OutputSchema, AIStatus, CostObservation
+        tenant = 'pg-cost-fixture-tenant'
+        with patch.dict(os.environ, {'GEMINI_API_KEY': '', 'ASAAS_API_KEY': ''}):
+            a, b = self._states()
+            for state in (a, b):
+                self.addCleanup(state.db.close)
+                state.ai_gateway.schemas['cost-fixture'] = OutputSchema(
+                    'cost-fixture', frozenset({'ok'}), {'ok': bool})
+            a.ai_gateway.ledger.set_cap(tenant, Decimal('2'))
+            providers = [CostProvider(), CostProvider()]
+            for state, provider in zip((a, b), providers):
+                state.ai_gateway.providers = [provider]
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(lambda state: state.ai_gateway.execute(request(tenant=tenant)), (a, b)))
+            self.assertEqual(sorted(result.status.value for result in results), sorted([AIStatus.OK.value, AIStatus.COST_LIMIT.value]))
+            self.assertEqual(sum(provider.calls for provider in providers), 1)
+            self.assertEqual(b.ai_gateway.ledger.used(tenant), Decimal('1'))
+            self.assertEqual(b.ai_gateway.ledger.remaining(tenant), Decimal('1'))
+            a.ai_gateway.ledger.set_cap(tenant, Decimal('3'))
+            req = request(tenant=tenant)
+            self.assertTrue(a.ai_gateway.ledger.begin_attempt(req, 'pg-crashed-cost-run', 0, 'fixture-provider'))
+            fresh = create_app(database_url=DSN, env='test').state.campaia
+            self.addCleanup(fresh.db.close)
+            self.assertEqual(fresh.ai_gateway.ledger.used(tenant), Decimal('1'))
+            self.assertEqual(fresh.ai_gateway.ledger.remaining(tenant), Decimal('0'))
+            self.assertEqual(fresh.ai_gateway.ledger.report(tenant)['cost_completeness'], 'INCOMPLETE')
+            self.assertFalse(fresh.ai_gateway.ledger.begin_attempt(req, 'pg-crashed-cost-run', 0, 'fixture-provider'))
+            observation = CostObservation('SIMULATED', Decimal('1'))
+            fresh.ai_gateway.ledger.finish_attempt(req, 'pg-crashed-cost-run', 0, observation, 'FIXTURE_OBSERVED')
+            fresh.ai_gateway.ledger.finish_attempt(req, 'pg-crashed-cost-run', 0, observation, 'FIXTURE_OBSERVED')
+            self.assertEqual(b.ai_gateway.ledger.used(tenant), Decimal('2'))
+            self.assertEqual(b.ai_gateway.ledger.remaining(tenant), Decimal('1'))
+            identity = a.ai_gateway.ledger._rows(tenant)[0]
+            self.assertNotIn('input', identity)
+            record_id = a.db.table('ai_cost_journal').rows_for_tenant(tenant)[0][0]
+            self.assertIsNone(b.db.table('ai_cost_journal').get_for_tenant(record_id, 'another-tenant'))
+            with psycopg.connect(DSN) as conn:
+                with self.assertRaises(psycopg.errors.RaiseException):
+                    conn.execute("DELETE FROM campaia_runtime.ai_cost_journal")
+            with psycopg.connect(DSN) as conn:
+                with self.assertRaises(psycopg.errors.InsufficientPrivilege):
+                    conn.execute("UPDATE campaia_runtime.ai_cost_caps SET tenant_id = 'another-tenant'")
+            self.assertEqual(b.ai_gateway.ledger.used(tenant), Decimal('2'))
+
     def test_billing_notice_tables_are_immutable_and_tenant_scoped(self):
         a, b = self._states()
         at = datetime.now(timezone.utc)
@@ -622,6 +669,7 @@ class PostgresRuntimeTests(unittest.TestCase):
                 "004_billing_persistence",
                 "005_credit_journal",
                 "006_billing_notices",
+                "007_ai_cost_evidence",
             },
         )
         self.assertTrue(RUNTIME_TABLES.issubset(self._runtime_tables()))
@@ -629,6 +677,7 @@ class PostgresRuntimeTests(unittest.TestCase):
         self.assertEqual(
             self.runner.rollback_all(),
             [
+                "007_ai_cost_evidence",
                 "006_billing_notices",
                 "005_credit_journal",
                 "004_billing_persistence",

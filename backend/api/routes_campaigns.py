@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from copy import deepcopy
+from hashlib import sha256
+import json
 from decimal import Decimal
 
 from starlette.requests import Request
@@ -44,6 +46,7 @@ from .models import (
     PublishRequest,
 )
 from .repositories import ExternalResourceState
+from .unmetered_execution import execute_unmetered
 from .metered_execution import commercial_subscription, execute_metered, quote_action
 from .commercial_limits import enforce_campaign_capacity
 
@@ -196,8 +199,8 @@ def _run_strategist(state, fixture, record) -> dict:
         }
     # An external timeout/provider error may already have incurred provider cost.
     # Commercial replays must reconcile instead of redispatching that operation.
-    if (commercial_subscription(state, fixture.tenant_id) is not None
-            and str(result.status) in {"TIMEOUT", "PROVIDER_ERROR"}):
+    if (str(result.status) in {"TIMEOUT", "PROVIDER_ERROR"}
+            and not getattr(result.provenance, "cost_complete", False)):
         raise ApiError('AI_OPERATION_PENDING', 'Execução externa incerta; reserva mantida para reconciliação.', status_code=503)
     # AgentFailure with a known no-delivery outcome.
     raise ApiError(
@@ -266,33 +269,27 @@ async def regenerate_plan(request: Request) -> JSONResponse:
                                  confirmation, 'strategy', generate, deliver)
         return JSONResponse(result, status_code=202)
 
-    def _do_regenerate():
-        record = _get_campaign_or_404(
-            state, fixture.tenant_id, campaign_id, principal=principal
-        )
-        plan = _run_strategist(state, fixture, record)
+    def snapshot():
+        record = _get_campaign_or_404(state, fixture.tenant_id, campaign_id, principal=principal)
+        return sha256(json.dumps(dict(record.brief), sort_keys=True, default=str).encode()).hexdigest(), record.plan_version
+
+    def generate_legacy():
+        record = _get_campaign_or_404(state, fixture.tenant_id, campaign_id, principal=principal)
+        return _run_strategist(state, fixture, record)
+
+    def deliver_legacy(plan):
+        record = _get_campaign_or_404(state, fixture.tenant_id, campaign_id, principal=principal)
         record.plan = plan
         record.plan_version += 1
         if record.campaign.state is CampaignState.DRAFT:
-            record.campaign.transition_to(
-                CampaignState.STRATEGY_READY, reason="plan:regenerated"
-            )
-        state.audit.append(
-            tenant_id=fixture.tenant_id,
-            actor=fixture.user_id,
-            action="PLAN_REGENERATE",
-            target=record.campaign_id,
-            details={"plan_version": record.plan_version},
-        )
-        return PlanResponse(
-            campaign_id=record.campaign_id,
-            plan_version=record.plan_version,
-            plan=record.plan,
-        ).model_dump(mode="json")
+            record.campaign.transition_to(CampaignState.STRATEGY_READY, reason="plan:regenerated")
+        state.audit.append(tenant_id=fixture.tenant_id, actor=fixture.user_id,
+            action="PLAN_REGENERATE", target=record.campaign_id, details={"plan_version": record.plan_version})
+        return PlanResponse(campaign_id=record.campaign_id, plan_version=record.plan_version,
+                            plan=record.plan).model_dump(mode="json")
 
-    result, _replay = state.idempotency.execute(
-        fixture.tenant_id, f"http:regenerate_plan:{idem_key}", _do_regenerate
-    )
+    result = execute_unmetered(state, fixture, idem_key, campaign_id,
+                               snapshot, generate_legacy, deliver_legacy)
     return JSONResponse(result, status_code=202)
 
 

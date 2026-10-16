@@ -415,5 +415,61 @@ class TestArquiteturaDoAIGateway(unittest.TestCase):
         # isso e esperado e documentado; o que a arquitetura proibe e o modulo `saga`.
 
 
+
+
+class CostEvidenceTests(unittest.TestCase):
+    def test_invalid_amounts_and_token_counts_cannot_become_cost_evidence(self):
+        from campaia_core.ai_gateway import CostObservation
+        for amount in (Decimal('-1'), Decimal('NaN'), Decimal('Infinity'), True, 1.5):
+            with self.assertRaises(ValueError):
+                CostObservation('UNVERIFIED_ESTIMATE', amount)
+        for count in (True, 1.5, -1, 10**12 + 1):
+            with self.assertRaises(ValueError):
+                CostObservation('UNKNOWN', None, input_tokens=count)
+        with self.assertRaises(ValueError):
+            CostObservation('UNKNOWN', Decimal('0'))
+        with self.assertRaises(ValueError):
+            CostObservation('NOT_DISPATCHED', Decimal('0'), dispatched=True)
+
+    def test_timeout_then_valid_fallback_does_not_claim_complete_cost(self):
+        gateway = AIGateway(providers=[_StaticProvider('first', raises=ProviderTimeout('unknown')),
+            _StaticProvider('second', response=_ok_response())])
+        result = gateway.execute(_req())
+        self.assertTrue(result.ok)
+        self.assertFalse(result.provenance.cost_complete)
+        self.assertEqual(result.provenance.cost_units, Decimal('1'))
+
+    def test_known_invalid_output_cost_is_counted_before_a_successful_fallback(self):
+        from campaia_core.ai_gateway import CostObservation, ProviderOutputInvalid
+        failed = _StaticProvider('first', raises=ProviderOutputInvalid('invalid',
+            cost_observation=CostObservation('UNVERIFIED_ESTIMATE', Decimal('2'))))
+        gateway = AIGateway(providers=[failed, _StaticProvider('second', response=_ok_response())])
+        result = gateway.execute(_req())
+        self.assertTrue(result.ok)
+        self.assertTrue(result.provenance.cost_complete)
+        self.assertEqual(result.provenance.cost_units, Decimal('3'))
+        self.assertEqual(gateway.ledger.used('tenant-a'), Decimal('3'))
+
+    def test_bad_provider_cost_is_unknown_instead_of_reducing_the_ledger(self):
+        gateway = AIGateway(providers=[_StaticProvider('invalid', response=_ok_response(cost=Decimal('-10')))])
+        result = gateway.execute(_req())
+        self.assertEqual(result.status, AIStatus.PROVIDER_ERROR)
+        self.assertFalse(result.provenance.cost_complete)
+        self.assertEqual(gateway.ledger.used('tenant-a'), Decimal('0'))
+
+    def test_request_ceiling_must_be_finite_positive_decimal_before_provider(self):
+        provider = _StaticProvider('fixture', response=_ok_response())
+        gateway = AIGateway(providers=[provider])
+        for amount in (Decimal('0'), Decimal('-1'), Decimal('NaN'), True):
+            with self.assertRaises(ValueError):
+                gateway.execute(_req(max_cost_units=amount))
+        self.assertEqual(provider.calls, 0)
+
+    def test_raw_provider_errors_are_not_copied_into_provenance(self):
+        private = 'customer@example.invalid sensitive provider body'
+        result = AIGateway(providers=[_StaticProvider('fixture', raises=ProviderError(private))]).execute(_req())
+        self.assertNotIn(private, str(result.provenance))
+        self.assertFalse(result.provenance.cost_complete)
+
 if __name__ == "__main__":
     unittest.main()

@@ -573,6 +573,16 @@ class AppState:
         if self.identity_directory is None:
             self.identity_directory = _default_identity_directory(self.env, self.organizations)
 
+        if self.db is not None:
+            from .ai_cost_store import PersistentAICostLedger
+            previous_caps = dict(getattr(self.ai_gateway.ledger, 'caps', {}))
+            mode = 'SIMULATED' if isinstance(self.ai_provider, SimulatedAIProvider) else 'PROVIDER'
+            cost_ledger = PersistentAICostLedger(self, namespace=self.env + ':' + mode)
+            self.ai_gateway.ledger = cost_ledger
+            self.ai_gateway.cost_journal = cost_ledger
+            for tenant, cap in previous_caps.items():
+                if cost_ledger.cap(tenant) is None:
+                    cost_ledger.set_cap(tenant, cap)
         self.ai_gateway.providers.append(self.ai_provider)
         self.agent_runner = AgentRunner(gateway=self.ai_gateway)
         self.agent_runner.register_schemas()

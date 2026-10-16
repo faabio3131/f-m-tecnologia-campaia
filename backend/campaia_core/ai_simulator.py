@@ -16,6 +16,7 @@ from decimal import Decimal
 
 from .ai_gateway import (
     AIRequest,
+    CostObservation,
     AITask,
     ModerationBlocked,
     ProviderError,
@@ -72,6 +73,7 @@ class SimulatedAIProvider:
                 cost_units=self.cost_units,
                 latency_ms=self.latency_ms,
                 model=self.model,
+                cost_observation=CostObservation('SIMULATED', self.cost_units, model=self.model),
             )
 
         custo = self.cost_units * 100 if comportamento == Behavior.EXPENSIVE else self.cost_units
@@ -80,4 +82,5 @@ class SimulatedAIProvider:
             cost_units=custo,
             latency_ms=self.latency_ms,
             model=self.model,
+            cost_observation=CostObservation('SIMULATED', custo, model=self.model),
         )

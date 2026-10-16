@@ -85,6 +85,10 @@ class ProviderError(CampaiaError):
     code = "PROVIDER_ERROR"
 
 
+class ProviderOutputInvalid(ProviderError):
+    code = "SCHEMA_INVALID"
+
+
 class ProviderTimeout(CampaiaError):
     code = "TIMEOUT"
 
@@ -165,6 +169,8 @@ class Provenance:
     cost_units: Decimal
     latency_ms: int
     attempts: tuple[Attempt, ...]
+    # Completeness of observed budget units, never proof of current prices/margin.
+    cost_complete: bool = False
 
     @property
     def fallback_used(self) -> bool:
@@ -186,12 +192,54 @@ class AIResult:
 
 
 @dataclass(frozen=True)
+class CostObservation:
+    """Minimal usage/budget evidence; no prompt, output, raw error or credential."""
+    basis: str
+    cost_units: Decimal | None
+    dispatched: bool = True
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    currency: str | None = None
+    pricing_reference: str | None = None
+    model: str | None = None
+
+    def __post_init__(self):
+        if self.basis not in {'SIMULATED', 'UNVERIFIED_ESTIMATE', 'UNKNOWN', 'NOT_DISPATCHED'}:
+            raise ValueError('Unsupported cost evidence basis.')
+        if type(self.dispatched) is not bool:
+            raise ValueError('Dispatch evidence must be boolean.')
+        if self.cost_units is not None and (not isinstance(self.cost_units, Decimal)
+                or not self.cost_units.is_finite() or self.cost_units < 0):
+            raise ValueError('Cost units must be finite non-negative Decimal.')
+        for count in (self.input_tokens, self.output_tokens):
+            if count is not None and (type(count) is not int or not 0 <= count <= 10**12):
+                raise ValueError('Token usage must be an exact non-negative integer.')
+        if self.basis == 'UNKNOWN' and self.cost_units is not None:
+            raise ValueError('Unknown cost must not be reported as zero.')
+        if self.basis == 'NOT_DISPATCHED' and (self.dispatched or self.cost_units != Decimal('0')):
+            raise ValueError('No-dispatch evidence cannot carry a provider cost.')
+        for value in (self.currency, self.pricing_reference, self.model):
+            if value is not None:
+                if not isinstance(value, str) or len(value) > 160:
+                    raise ValueError('Invalid cost metadata.')
+                assert_no_credentials(value)
+
+
+class CostJournal(Protocol):
+    accounts_cost: bool
+    def begin_attempt(self, request: AIRequest, run_id: str, index: int, provider: str) -> bool: ...
+    def finish_attempt(self, request: AIRequest, run_id: str, index: int,
+                       observation: CostObservation, outcome: str) -> None: ...
+
+
+@dataclass(frozen=True)
 class ProviderResponse:
     output: dict
     cost_units: Decimal
     latency_ms: int
     model: str
     model_version: str | None = None
+    cost_observation: CostObservation | None = None
 
 
 class AIProvider(Protocol):
@@ -206,7 +254,7 @@ class AIProvider(Protocol):
 
 @dataclass
 class CostLedger:
-    """Consumo de IA por tenant. Base de qualquer modelo comercial (D-06)."""
+    """Unidades internas de orçamento de IA por tenant, separadas dos créditos comerciais."""
 
     caps: dict[str, Decimal] = field(default_factory=dict)
     spent: dict[str, Decimal] = field(default_factory=dict)
@@ -283,6 +331,7 @@ class AIGateway:
     provider_latency_hint: dict[str, int] = field(default_factory=dict)
     provider_quality_hint: dict[str, int] = field(default_factory=dict)
     _circuits: dict[str, _Circuit] = field(default_factory=dict)
+    cost_journal: CostJournal | None = None
 
     # ------------------------------------------------------------------ selecao
 
@@ -309,98 +358,108 @@ class AIGateway:
     def execute(self, request: AIRequest) -> AIResult:
         if not request.tenant_id:
             raise TenantIsolationViolation("Requisicao de IA sem tenant_id.")
-
-        # Trava de credencial ANTES de qualquer chamada externa.
+        if (not isinstance(request.max_cost_units, Decimal) or not request.max_cost_units.is_finite()
+                or request.max_cost_units <= 0):
+            raise ValueError("Request cost ceiling must be a positive finite Decimal.")
         assert_no_credentials(request.input)
-
         run_id = str(uuid.uuid4())
-        tentativas: list[Attempt] = []
-        custo_total = Decimal("0")
+        attempts: list[Attempt] = []
+        total = Decimal("0")
+        complete = True
         schema = self.schemas.get(request.output_schema_id)
 
+        def fail(status):
+            return self._fail(request, run_id, status, tuple(attempts), total, cost_complete=complete)
+
+        def record(index, observation, outcome):
+            nonlocal total, complete
+            if self.cost_journal is not None:
+                self.cost_journal.finish_attempt(request, run_id, index, observation, outcome)
+            if observation.cost_units is None:
+                complete = False
+                return
+            total += observation.cost_units
+            if self.cost_journal is None or not self.cost_journal.accounts_cost:
+                self.ledger.charge(request.tenant_id, observation.cost_units)
+
         if self.ledger.would_exceed(request.tenant_id, request.max_cost_units):
-            return self._fail(
-                request, run_id, AIStatus.COST_LIMIT,
-                (Attempt("-", Outcome.COST_LIMIT, "Teto de custo do tenant atingido."),),
-                custo_total,
-            )
-
-        candidatos = self.candidates(request)
-        if not candidatos:
-            return self._fail(
-                request, run_id, AIStatus.NO_PROVIDER,
-                (Attempt("-", Outcome.ERROR, "Nenhum provedor apto para a tarefa."),),
-                custo_total,
-            )
-
-        ultimo_status = AIStatus.PROVIDER_ERROR
-
-        for provider in candidatos[:MAX_ATTEMPTS_PER_REQUEST]:
-            circuito = self._circuit(provider.name)
-            if circuito.open:
-                tentativas.append(
-                    Attempt(provider.name, Outcome.CIRCUIT_OPEN, "Circuito aberto.")
-                )
+            attempts.append(Attempt("-", Outcome.COST_LIMIT, "Teto de custo do tenant atingido."))
+            return fail(AIStatus.COST_LIMIT)
+        candidates = self.candidates(request)
+        if not candidates:
+            attempts.append(Attempt("-", Outcome.ERROR, "Nenhum provedor apto para a tarefa."))
+            return fail(AIStatus.NO_PROVIDER)
+        last_status = AIStatus.PROVIDER_ERROR
+        dispatched_attempt = False
+        for index, provider in enumerate(candidates[:MAX_ATTEMPTS_PER_REQUEST]):
+            circuit = self._circuit(provider.name)
+            if circuit.open:
+                attempts.append(Attempt(provider.name, Outcome.CIRCUIT_OPEN, "Circuito aberto."))
                 continue
-
+            if self.cost_journal is not None and not self.cost_journal.begin_attempt(request, run_id, index, provider.name):
+                if not dispatched_attempt:
+                    attempts.append(Attempt(provider.name, Outcome.COST_LIMIT, "Orçamento já comprometido."))
+                    return fail(AIStatus.COST_LIMIT)
+                break
+            dispatched_attempt = True
             try:
-                resposta = provider.generate(request)
-            except ProviderTimeout as exc:
+                response = provider.generate(request)
+            except (ProviderTimeout, ModerationBlocked, ProviderError) as exc:
+                observation = exc.details.get('cost_observation')
+                if not isinstance(observation, CostObservation):
+                    observation = CostObservation('UNKNOWN', None)
+                record(index, observation, type(exc).__name__)
+                if isinstance(exc, ModerationBlocked):
+                    attempts.append(Attempt(provider.name, Outcome.ERROR, "Conteúdo bloqueado."))
+                    return fail(AIStatus.BLOCKED_BY_MODERATION)
                 self._register_failure(provider.name)
-                tentativas.append(Attempt(provider.name, Outcome.TIMEOUT, str(exc)))
-                ultimo_status = AIStatus.TIMEOUT
+                timeout = isinstance(exc, ProviderTimeout)
+                invalid = isinstance(exc, ProviderOutputInvalid)
+                attempts.append(Attempt(provider.name, Outcome.TIMEOUT if timeout else Outcome.SCHEMA_INVALID if invalid else Outcome.ERROR,
+                                        "Tempo esgotado." if timeout else "Falha do provedor."))
+                last_status = AIStatus.TIMEOUT if timeout else AIStatus.SCHEMA_INVALID if invalid else AIStatus.PROVIDER_ERROR
+                if total > request.max_cost_units:
+                    return fail(AIStatus.COST_LIMIT)
                 continue
-            except ModerationBlocked as exc:
-                # Moderacao NAO e falha do provedor: nao abre circuito e nao tenta outro.
-                tentativas.append(Attempt(provider.name, Outcome.ERROR, str(exc)))
-                return self._fail(
-                    request, run_id, AIStatus.BLOCKED_BY_MODERATION,
-                    tuple(tentativas), custo_total,
-                )
-            except ProviderError as exc:
+            except Exception:
+                record(index, CostObservation('UNKNOWN', None), 'UNEXPECTED_ERROR')
+                raise
+            observation = getattr(response, 'cost_observation', None)
+            try:
+                if not isinstance(response, ProviderResponse):
+                    raise ValueError('Unsupported provider response.')
+                if observation is not None and not isinstance(observation, CostObservation):
+                    raise ValueError('Unsupported cost evidence.')
+                if observation is None:
+                    observation = CostObservation('UNVERIFIED_ESTIMATE', response.cost_units,
+                                                  model=response.model)
+                if observation.cost_units != response.cost_units:
+                    raise ValueError('Response and cost evidence disagree.')
+            except (ValueError, TypeError):
+                record(index, CostObservation('UNKNOWN', None), 'INVALID_COST_EVIDENCE')
+                attempts.append(Attempt(provider.name, Outcome.ERROR, "Medição de custo inválida."))
+                return fail(AIStatus.PROVIDER_ERROR)
+            try:
+                error = schema.validate(response.output) if schema else None
+            except Exception:
+                record(index, observation, 'VALIDATOR_ERROR')
+                raise
+            outcome = 'COST_LIMIT' if total + response.cost_units > request.max_cost_units else 'SCHEMA_INVALID' if error else 'OK'
+            record(index, observation, outcome)
+            if total > request.max_cost_units:
+                attempts.append(Attempt(provider.name, Outcome.COST_LIMIT, "Custo acima do teto da requisicao."))
+                return fail(AIStatus.COST_LIMIT)
+            if error is not None:
                 self._register_failure(provider.name)
-                tentativas.append(Attempt(provider.name, Outcome.ERROR, str(exc)))
-                ultimo_status = AIStatus.PROVIDER_ERROR
+                attempts.append(Attempt(provider.name, Outcome.SCHEMA_INVALID, error))
+                last_status = AIStatus.SCHEMA_INVALID
                 continue
-
-            # Chegou ao provedor: custou dinheiro, independentemente do que voltou.
-            custo_total += resposta.cost_units
-            self.ledger.charge(request.tenant_id, resposta.cost_units)
-
-            if custo_total > request.max_cost_units:
-                tentativas.append(
-                    Attempt(provider.name, Outcome.COST_LIMIT, "Custo acima do teto da requisicao.")
-                )
-                return self._fail(
-                    request, run_id, AIStatus.COST_LIMIT, tuple(tentativas), custo_total
-                )
-
-            erro = schema.validate(resposta.output) if schema else None
-            if erro is not None:
-                # Saida invalida NAO e corrigida aqui. Outro provedor pode tentar.
-                self._register_failure(provider.name)
-                tentativas.append(Attempt(provider.name, Outcome.SCHEMA_INVALID, erro))
-                ultimo_status = AIStatus.SCHEMA_INVALID
-                continue
-
-            circuito.consecutive_failures = 0
-            tentativas.append(Attempt(provider.name, Outcome.OK))
-            return AIResult(
-                request_id=request.request_id,
-                ai_run_id=run_id,
-                status=AIStatus.OK,
-                output=resposta.output,
-                provenance=Provenance(
-                    provider=provider.name,
-                    model=resposta.model,
-                    prompt_version=request.prompt_version,
-                    cost_units=custo_total,
-                    latency_ms=resposta.latency_ms,
-                    attempts=tuple(tentativas),
-                ),
-            )
-
-        return self._fail(request, run_id, ultimo_status, tuple(tentativas), custo_total)
+            circuit.consecutive_failures = 0
+            attempts.append(Attempt(provider.name, Outcome.OK))
+            return AIResult(request.request_id, run_id, AIStatus.OK, response.output,
+                Provenance(provider.name, response.model, request.prompt_version, total,
+                           response.latency_ms, tuple(attempts), cost_complete=complete))
+        return fail(last_status)
 
     # ------------------------------------------------------------------ auxiliares
 
@@ -417,6 +476,7 @@ class AIGateway:
         status: AIStatus,
         tentativas: tuple[Attempt, ...],
         custo: Decimal,
+        *, cost_complete: bool = False,
     ) -> AIResult:
         """Falha tambem tem proveniencia: sem isso, nao se audita o que foi tentado."""
         return AIResult(
@@ -431,5 +491,6 @@ class AIGateway:
                 cost_units=custo,
                 latency_ms=0,
                 attempts=tentativas,
+                cost_complete=cost_complete,
             ),
         )

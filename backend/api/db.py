@@ -144,6 +144,11 @@ _BILLING_OBSERVATION_FIELDS = {
 # New authoritative commercial terms are isolated from legacy constructor fields.
 # Old binaries can decode the envelope but MUST NOT write V1 contracts on rollback.
 # Disable billing/AI mutation and drain workers before any old-code rollback.
+_AI_COST_FIELDS = {
+    ('campaia_core.ai_gateway', 'Provenance'): frozenset({'cost_complete'}),
+    ('campaia_core.ai_gateway', 'ProviderResponse'): frozenset({'cost_observation'}),
+}
+
 _COMMERCIAL_FIELDS = {
     ("campaia_core.payment_gateway", "ChargeCommand"): frozenset({"due_at"}),
     ("campaia_core.payment_gateway", "ChargeResult"): frozenset({"observed_amount", "observed_due_date", "source_status", "deleted", "refund_observations", "refunds_present", "billing_type", "chargeback_status"}),
@@ -194,11 +199,15 @@ def encode(value: Any) -> Any:
         extensions = {key: fields.pop(key) for key in extension_keys if key in fields}
         commercial_keys = _COMMERCIAL_FIELDS.get((cls.__module__, cls.__qualname__), ())
         commercial = {key: fields.pop(key) for key in commercial_keys if key in fields}
+        ai_keys = _AI_COST_FIELDS.get((cls.__module__, cls.__qualname__), ())
+        ai_cost = {key: fields.pop(key) for key in ai_keys if key in fields}
         envelope = {"__type__": "dataclass", "mod": cls.__module__, "qual": cls.__qualname__, "fields": fields}
         if extensions:
             envelope["billing_observations"] = extensions
         if any(value is not None for value in commercial.values()):
             envelope["commercial_v1"] = commercial
+        if any(value is not None for value in ai_cost.values()):
+            envelope["ai_cost_v1"] = ai_cost
         return envelope
     raise TypeError(f"api.db.encode: no encoding rule for {type(value)!r} (value={value!r})")
 
@@ -244,6 +253,12 @@ def decode(value: Any) -> Any:
                     or set(commercial).intersection(fields)):
                 raise ValueError("Unsupported or duplicate commercial terms.")
             fields.update({k: decode(v) for k, v in commercial.items()})
+            ai_cost = value.get("ai_cost_v1", {})
+            allowed_ai = _AI_COST_FIELDS.get((value["mod"], value["qual"]), ())
+            if (not isinstance(ai_cost, dict) or not set(ai_cost).issubset(allowed_ai)
+                    or set(ai_cost).intersection(fields)):
+                raise ValueError("Unsupported or duplicate AI cost observations.")
+            fields.update({k: decode(v) for k, v in ai_cost.items()})
             return cls(**fields)
         return {k: decode(v) for k, v in value.items()}
     if isinstance(value, list):
