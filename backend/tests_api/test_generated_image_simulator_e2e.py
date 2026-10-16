@@ -125,6 +125,18 @@ class ImageApiSimulationTests(BillingCreditHarness, unittest.TestCase):
         self.assertNotIn(missing_step_up.status_code, (200, 202), missing_step_up.text)
         self.assertEqual(self.client.get(route, headers=OWNER).json()["state"], "STORED")
         self.assertEqual(self.storage.calls.count("DELETE"), 0)
+        # Session obtained a legitimate step-up earlier; revocation must be effective.
+        from tests_api.test_helpers import with_step_up
+        authorized = self.client.delete(route, headers={**with_step_up(OWNER), **unique_idem()})
+        self.assertIn(authorized.status_code, (200, 202), authorized.text)
+        self.assertEqual(self.storage.calls.count("DELETE"), 1)
+        self.assertEqual(self.client.get(route, headers=OWNER).status_code, 404)
+        self.assertEqual(self.client.get(
+            created.json()["content_url"].removeprefix("/api/campaia"), headers=OWNER).status_code, 404)
+        repeat = self.client.delete(route, headers={**OWNER, **unique_idem()})
+        self.assertEqual(repeat.status_code, 200, repeat.text)
+        self.assertEqual(self.storage.calls.count("DELETE"), 1)
+
 
     def test_uncertain_gcs_result_recovers_with_one_credit_settlement_and_no_second_post(self):
         from campaia_core.asset_storage import AssetStorageError, AssetStorageErrorCode as Code
