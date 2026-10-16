@@ -17,11 +17,22 @@ def tenant_charges(state, tenant):
             else [(key, charge) for key, charge in state.charges.items() if charge.tenant_id == tenant])
 
 
+def guarantee_pending(state, tenant):
+    request = state.idempotency.get(tenant, 'billing-guarantee-request')
+    if request is None:
+        return False
+    resolution = state.idempotency.get(tenant, 'billing-guarantee-resolution')
+    return (resolution is None or resolution.result.get('state') != 'RESOLVED'
+            or resolution.result.get('request_id') != request.result.get('request_id'))
+
+
 def has_payment_review(state, tenant):
-    return any(charge.payment_reconciliation_state in REVIEW_STATES for _key, charge in tenant_charges(state, tenant))
+    return guarantee_pending(state, tenant) or any(charge.payment_reconciliation_state in REVIEW_STATES for _key, charge in tenant_charges(state, tenant))
 
 
 def payment_access_is_blocked(state, sub, *, at):
+    if sub.plan.credit_policy is not None and guarantee_pending(state, sub.tenant_id):
+        return True
     schedule = sub.paid_cycle_schedule
     if sub.plan.credit_policy is None or schedule is None or schedule.anchor_at is None:
         return False

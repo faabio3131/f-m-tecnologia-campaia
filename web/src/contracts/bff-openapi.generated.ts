@@ -906,6 +906,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/billing/guarantee": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Consulta a garantia comercial do primeiro pagamento verificado */
+        get: operations["getBillingGuarantee"];
+        put?: never;
+        /** Registra pedido de garantia e encerra explicitamente o acesso pago */
+        post: operations["requestBillingGuarantee"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/billing/checkout": {
         parameters: {
             query?: never;
@@ -1267,6 +1285,31 @@ export interface components {
             provider: string | null;
             /** @enum {string|null} */
             mode: "SIMULATOR" | "SANDBOX" | "PRODUCTION" | null;
+        };
+        BillingGuarantee: {
+            /** @enum {string} */
+            state: "UNAVAILABLE" | "MANUAL_REVIEW" | "ELIGIBLE" | "EXPIRED" | "REQUESTED";
+            fingerprint: string | null;
+            /** Format: date-time */
+            first_paid_at: string | null;
+            /** Format: date-time */
+            deadline: string | null;
+            paid_amount: string | null;
+            /** @enum {string} */
+            currency: "BRL";
+            items: {
+                billing_id: string;
+                gateway_charge_id: string;
+                amount: string;
+                /** Format: date-time */
+                paid_at: string;
+                purpose: string;
+                provider: string | null;
+                mode: string | null;
+            }[];
+            request_id: string | null;
+            /** Format: date-time */
+            requested_at: string | null;
         };
         BillingCheckout: {
             /** @enum {string} */
@@ -3598,6 +3641,88 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    getBillingGuarantee: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Janela comercial e pagamentos considerados; não confirma devolução */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingGuarantee"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Sem BILLING_VIEW */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    requestBillingGuarantee: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+                 *     login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+                 *     servidor. Ausente/invalido -> 403.
+                 */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao. */
+                "X-Step-Up-Token": components["parameters"]["StepUpToken"];
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    fingerprint: string;
+                    accept: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Pedido recebido; nenhum estorno foi enviado ou confirmado */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingGuarantee"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["StepUpRequired"];
+            /** @description Janela ou revisão pendente */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
         };
     };
     getBillingCheckout: {

@@ -1412,6 +1412,61 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /billing/guarantee:
+    get:
+      tags: [Billing]
+      summary: Consulta a garantia comercial do primeiro pagamento verificado
+      operationId: getBillingGuarantee
+      security: [cookieAuth: []]
+      responses:
+        '200':
+          description: Janela comercial e pagamentos considerados; não confirma devolução
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingGuarantee' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Sem BILLING_VIEW
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    post:
+      tags: [Billing]
+      summary: Registra pedido de garantia e encerra explicitamente o acesso pago
+      operationId: requestBillingGuarantee
+      security: [cookieAuth: []]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [fingerprint, accept]
+              properties:
+                fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+                accept: { type: boolean }
+      responses:
+        '200':
+          description: Pedido recebido; nenhum estorno foi enviado ou confirmado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingGuarantee' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '409':
+          description: Janela ou revisão pendente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
   /billing/checkout:
     get:
       tags: [Billing]
@@ -2049,6 +2104,32 @@ components:
         invoice: { type: [string, 'null'] }
         provider: { type: [string, 'null'] }
         mode: { type: [string, 'null'], enum: [SIMULATOR, SANDBOX, PRODUCTION, null] }
+
+    BillingGuarantee:
+      type: object
+      required: [state, fingerprint, first_paid_at, deadline, paid_amount, currency, items, request_id, requested_at]
+      properties:
+        state: { type: string, enum: [UNAVAILABLE, MANUAL_REVIEW, ELIGIBLE, EXPIRED, REQUESTED] }
+        fingerprint: { type: [string, 'null'] }
+        first_paid_at: { type: [string, 'null'], format: date-time }
+        deadline: { type: [string, 'null'], format: date-time }
+        paid_amount: { type: [string, 'null'] }
+        currency: { type: string, enum: [BRL] }
+        items:
+          type: array
+          items:
+            type: object
+            required: [billing_id, gateway_charge_id, amount, paid_at, purpose, provider, mode]
+            properties:
+              billing_id: { type: string }
+              gateway_charge_id: { type: string }
+              amount: { type: string }
+              paid_at: { type: string, format: date-time }
+              purpose: { type: string }
+              provider: { type: [string, 'null'] }
+              mode: { type: [string, 'null'] }
+        request_id: { type: [string, 'null'] }
+        requested_at: { type: [string, 'null'], format: date-time }
 
     BillingCheckout:
       type: object

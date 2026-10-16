@@ -114,10 +114,16 @@ class UnpaidRenewalWithdrawalTests(BillingCreditHarness, unittest.TestCase):
         self.addCleanup(other.app.state.campaia.db._conn.close)
         from campaia_core.payment_simulator import PaymentGatewaySimulator
         original = PaymentGatewaySimulator.void_charge
+        requests = [(client, {**with_step_up(OWNER), **unique_idem()}) for client in (self.client, other)]
         with patch.object(PaymentGatewaySimulator, 'void_charge', autospec=True, side_effect=original) as dispatched:
             with ThreadPoolExecutor(max_workers=2) as pool:
-                results = list(pool.map(lambda client: self.withdraw(client=client), [self.client, other]))
-        self.assertTrue(all(result.status_code == 200 for result in results), [r.text for r in results])
+                results = list(pool.map(lambda args: self.withdraw(client=args[0], headers=args[1]), requests))
+            self.assertTrue(any(result.status_code == 200 for result in results), [r.text for r in results])
+            for (client, headers), result in zip(requests, results):
+                if result.status_code == 503:
+                    self.assertEqual(result.json()['code'], 'BILLING_RECONCILIATION_REQUIRED')
+                    result = self.withdraw(client=client, headers=headers)
+                self.assertEqual(result.status_code, 200, result.text)
         self.assertEqual(dispatched.call_count, 1)
         self.assertEqual(len(self.state.charges), 2)
 
@@ -191,3 +197,35 @@ class UnpaidRenewalWithdrawalTests(BillingCreditHarness, unittest.TestCase):
         with patch.object(self.state.billing_gateway, 'void_charge', side_effect=AssertionError('No repeat DELETE')):
             recovered = self.withdraw(headers=headers)
         self.assertEqual(recovered.status_code, 200, recovered.text)
+
+    def test_second_worker_observes_pending_then_retries_same_request_after_owner_delete(self):
+        from threading import Event
+        other = TestClient(create_app(env='test', db_path=str(self.path)))
+        self.addCleanup(other.app.state.campaia.db._conn.close)
+        entered, complete = Event(), Event()
+        original = self.state.billing_gateway.void_charge
+        headers = {**with_step_up(OWNER), **unique_idem()}
+        def blocked(*args):
+            self.assertFalse(self.state.db.in_transaction)
+            entered.set()
+            if not complete.wait(timeout=10):
+                raise TimeoutError('withdrawal coordination timeout')
+            return original(*args)
+        with patch.object(self.state.billing_gateway, 'void_charge', side_effect=blocked) as dispatch:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                first = pool.submit(self.withdraw)
+                try:
+                    self.assertTrue(entered.wait(timeout=5))
+                    pending = self.withdraw(client=other, headers=headers)
+                    self.assertEqual(pending.status_code, 503, pending.text)
+                    self.assertEqual(pending.json()['code'], 'BILLING_RECONCILIATION_REQUIRED')
+                    self.assertEqual(self.item(other)['withdrawal_state'], 'REQUESTED')
+                    self.assertEqual(other.get('/billing/closure', headers=OWNER).json()['state'], 'RECONCILIATION_REQUIRED')
+                finally:
+                    complete.set()
+                owner = first.result(timeout=5)
+                self.assertEqual(owner.status_code, 200, owner.text)
+            confirmed = self.withdraw(client=other, headers=headers)
+            self.assertEqual(confirmed.status_code, 200, confirmed.text)
+        self.assertEqual(dispatch.call_count, 1)
+        self.assertEqual(confirmed.json(), owner.json())

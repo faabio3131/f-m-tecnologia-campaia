@@ -354,6 +354,21 @@ class PostgresRuntimeTests(unittest.TestCase):
                 self.assertEqual(clients[1].get("/billing/closure", headers=OWNER).json()["state"], "SETTLED")
                 self.assertEqual(sum(entry.kind == "OPEN" for entry in
                     clients[1].app.state.campaia.credit_ledger.entries("demo-tenant")), 2)
+                guarantee = clients[0].get('/billing/guarantee', headers=OWNER).json()
+                self.assertEqual(guarantee['state'], 'ELIGIBLE')
+                self.assertEqual(len(guarantee['items']), 2)
+                def request_guarantee(client):
+                    return client.post('/billing/guarantee',
+                        headers={**with_step_up(OWNER), **unique_idem()},
+                        json={'fingerprint': guarantee['fingerprint'], 'accept': True})
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    cases = list(pool.map(request_guarantee, clients))
+                self.assertTrue(all(case.status_code == 200 for case in cases), [case.text for case in cases])
+                self.assertEqual(cases[0].json(), cases[1].json())
+                self.assertEqual(clients[1].get('/billing/guarantee', headers=OWNER).json()['state'], 'REQUESTED')
+                self.assertEqual(sum(e.action == 'BILLING_GUARANTEE_REQUESTED' for e in
+                    clients[1].app.state.campaia.audit.list_for_tenant('demo-tenant')), 1)
+
 
     def test_unpaid_renewal_withdrawal_fence_recovers_across_connections(self):
         import json

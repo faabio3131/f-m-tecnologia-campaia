@@ -24,6 +24,7 @@ const sub: BillingSubscription = {
 function response(status: number, data: unknown) { return Promise.resolve(new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" } })); }
 function mockRead(subscription: unknown = sub, status = 200, catalogStatus = 200) {
   return vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+    if (String(input).endsWith("/billing/guarantee")) return response(200, { state: "UNAVAILABLE", fingerprint: null, first_paid_at: null, deadline: null, paid_amount: null, currency: "BRL", items: [], request_id: null, requested_at: null });
     if (String(input).endsWith("/billing/charges")) return response(200, { items: [], next_cursor: null });
     if (String(input).endsWith("/billing/subscription")) return response(status, subscription);
     if (String(input).endsWith("/billing/plans")) return response(catalogStatus, { items: [{ ...plan, monthly_price: "99.00" }, { ...plan, plan_id: "test-pro", name: "Plano Pro" }] });
@@ -53,6 +54,7 @@ describe("Billing Web", () => {
       if (url.endsWith("/billing/charges")) return response(200, { items: [], next_cursor: null });
       if (url.endsWith("/billing/subscription")) return response(200, current);
       if (url.endsWith("/billing/plans")) return response(200, { items: [plan] });
+      if (url.endsWith("/billing/guarantee")) return response(200, { state: "UNAVAILABLE", fingerprint: null, first_paid_at: null, deadline: null, paid_amount: null, currency: "BRL", items: [], request_id: null, requested_at: null });
       if (url.endsWith("/billing/usage")) return response(200, { availability: "UNAVAILABLE", access_active: false, can_authorize_extras: false, cycle: null, balance: null, alerts: [], actions: [] });
       if (url.endsWith("/billing/checkout")) return response(200, { state: emitted ? "REGISTERED" : "READY", quote, available_at: null, invoice_url: null });
       throw new Error(`Unexpected ${url}`);
