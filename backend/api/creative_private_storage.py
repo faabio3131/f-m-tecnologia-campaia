@@ -114,3 +114,55 @@ class CreativePrivateStorage:
         if observed.manifest != expected:
             raise AssetStorageError(Code.INTEGRITY)
         return self._finalize(manifest, observed.generation)
+
+    def delete(self, identity):
+        """Tombstone first; only CAS winner can dispatch one DELETE."""
+        from campaia_core.creative_assets import CreativeIdentity
+        from campaia_core.asset_storage import StoredAsset
+        if not isinstance(identity, CreativeIdentity):
+            raise AssetStorageError(Code.INVALID)
+        self._outside_transaction()
+        row = self.repository.get(identity)
+        if row["state"] == CreativeState.STORED.value:
+            try:
+                row = self.repository.transition(identity, CreativeStateTransition(
+                    CreativeState.STORED, CreativeState.DELETE_PENDING, row["revision"]))
+            except AssetStorageError as exc:
+                if exc.code != Code.CONFLICT:
+                    raise
+                return self.reconcile_delete(identity)
+            record = row["manifest"]
+            manifest = CreativeManifest(identity=identity, **{
+                k: v for k, v in record.items() if k != "identity"
+            })
+            asset = StoredAsset(recovery_storage_manifest(manifest), row["storage_generation"])
+            try:
+                self.storage.delete_once(asset)
+            except AssetStorageError:
+                return self.repository.get(identity)
+        return self.reconcile_delete(identity)
+
+    def reconcile_delete(self, identity):
+        """Missing GCS generation confirms access revocation; errors retain tombstone/quota."""
+        self._outside_transaction()
+        row = self.repository.get(identity)
+        if row["state"] != CreativeState.DELETE_PENDING.value:
+            return row
+        record = row["manifest"]
+        manifest = CreativeManifest(identity=identity, **{
+            k: v for k, v in record.items() if k != "identity"
+        })
+        try:
+            observed = self.storage.observe(
+                recovery_storage_manifest(manifest), row["storage_generation"])
+        except AssetStorageError:
+            return row
+        if observed is not None:
+            return row
+        try:
+            return self.repository.transition(identity, CreativeStateTransition(
+                CreativeState.DELETE_PENDING, CreativeState.DELETED, row["revision"]))
+        except AssetStorageError as exc:
+            if exc.code != Code.CONFLICT:
+                raise
+            return self.repository.get(identity)
