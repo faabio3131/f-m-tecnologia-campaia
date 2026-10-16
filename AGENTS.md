@@ -875,3 +875,11 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - Dependência externa não deve bloquear WP interno independente. Continuar implementando e verificando internamente com mocks/simuladores explicitamente rotulados; não declarar produção homologada com evidência simulada.
 - Não pular gates internos ou controles de segurança e não aplicar migrações reais, merge/deploy, produção ou ações irreversíveis sem autorização específica do Diretor.
 - Próximo escopo dentro de WP-R04-04B: API/Web de criativos e controles de créditos usando contratos F3/F5 existentes; não iniciar Fase Premium antecipadamente.
+
+
+## WP-R04-04B — API de leitura e cotação interna (16/10/2026)
+
+- Implementado na PR #73 inventário GET por campanha/unidade/tenant, GET de estado de criativo e GET de cotação usando F5 `quote_action("image")`. Todos fail-closed sem F3/billing; sem dados ou URLs GCS expostos.
+- Rotas de geração POST, billing de 15 créditos, liberação de mídia e UX Web de geração **ainda TARGET**; não ativar mutação de imagem antes de validar reserva, external dispatch, resultado, entrega e SETTLE/RELEASE atômicos.
+- Testes de contrato impedem mutação acidental e vazamento de identidade/manifesto do objeto. CI do HEAD novo ainda pendente; não confundir código com DONE_VERIFIED.
+- Homologação GCS externa: `EXTERNAL_INFRASTRUCTURE`, postergada conforme decisão do Diretor até fechamento funcional, sem bloquear WPs internos independentes.
