@@ -191,7 +191,7 @@ function CampaignDetailContent({ campaignId }: { campaignId: string }) {
           busy={busy} onBusy={setBusy} onError={setActionError} onGenerated={contentDelivered} />
       </Card>
 
-      <GeneratedImagesPanel campaignId={campaignId} />
+      <GeneratedImagesPanel campaignId={campaignId} planVersion={plan?.plan_version ?? 0} />
 
       <Button variant="secondary" disabled={busy} onClick={() => setShowProposals(true)}>Abrir textos e públicos</Button>
       {showProposals ? <CreativeProposalsPanel campaignId={campaignId} planVersion={plan?.plan_version ?? 0}
