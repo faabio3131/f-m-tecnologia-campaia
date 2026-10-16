@@ -451,6 +451,11 @@ async def delete_generated_creative(request):
     if not _storage_usable(state, storage):
         raise ApiError("ASSET_STORAGE_DISABLED", "Armazenamento privado indisponível.", status_code=503)
     identity = CreativeIdentity(**row["identity"])
+    # Safety: never delete reviewed/approved material as a regular edit mutation.
+    from .creative_image_review import CreativeImageReviewStore
+    review = CreativeImageReviewStore(state).get(identity)
+    if review and review.get("decision") == "APPROVE":
+        raise ApiError("IMAGE_REVIEW_LOCKED", "Criativo aprovado exige fluxo de revogação governado.", status_code=409)
     result = await run_in_threadpool(CreativePrivateStorage(repository, storage).delete, identity)
     return JSONResponse({"id": creative_id, "state": result["state"],
                          "deletion_confirmed": result["state"] == "DELETED",
