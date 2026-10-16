@@ -977,3 +977,9 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 ## Correção de teste de exclusão/step-up (16/10/2026)
 - Backend vermelho em `b0808f5`: teste `test_delete_route_rejects_missing_step_up_and_cross_tenant` assumia erroneamente que a ausência do header significava sessão sem elevação. `BillingCreditHarness.setup_subscription()` havia concedido step-up válido persistido por sessão; a rota retornou 200 de acordo com a política vigente.
 - Corrigido o **arranjo do teste**, invalidando explicitamente a elevação existente no estado canônico antes de testar ausência de step-up. Não foi removida nem flexibilizada a proteção RBAC/step-up da rota. Repetir CI exata antes de certificar.
+
+
+## WP-R04-04B — matriz ampliada de exclusão governada (16/10/2026)
+- Incluídos testes de API para: cross-tenant negado, step-up revogado negado, step-up fresco autorizando DELETE, mídia privada inacessível após tombstone e segundo DELETE sem repetição da operação externa.
+- Incluídos testes F3/storage para resposta incerta com objeto ainda visível (mantém DELETE_PENDING/quota) e replay do DELETE entre dois handles com somente um dispatch; a exclusão confirmada só libera quota após observação.
+- CURRENT permanece PR #73 sem merge, WP PARTIAL; próximos gates: revalidação completa de aprovação/retention, concorrência multiworker PostgreSQL e custo incerto do provedor. Sem declarar homologação real Gemini/GCS por simulação. Exige CI do HEAD exato e revisão de eventuais falhas.
