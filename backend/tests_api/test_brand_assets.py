@@ -82,6 +82,15 @@ class BrandAssetTests(BillingCreditHarness, unittest.TestCase):
         self.assertEqual(self.storage.calls.count("POST"), 1)
         self.assertEqual(self.storage.calls.count("DELETE"), 1)
 
+    def test_upload_replay_after_deletion_does_not_recreate_the_object(self):
+        headers = {**OWNER, **unique_idem()}
+        item = self.upload(headers=headers).json()
+        self.assertEqual(self.remove(item["id"]).status_code, 200)
+        replay = self.upload(headers=headers)
+        self.assertEqual(replay.status_code, 409, replay.text)
+        self.assertEqual(replay.json()["code"], "ASSET_REMOVED")
+        self.assertEqual(self.storage.calls.count("POST"), 1)
+
     def test_default_disabled_never_accesses_adc(self):
         from campaia_core.asset_storage import DisabledAssetStorage
         self.state.asset_storage = DisabledAssetStorage()

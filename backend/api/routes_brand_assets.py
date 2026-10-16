@@ -92,6 +92,8 @@ async def upload_brand_asset(request: Request):
             record, dispatch = store.reserve(fixture, profile, key, sha256(raw).hexdigest(), kind, image, storage)
             return store.upload(fixture.tenant_id, record, image, storage, dispatch)
         record = await run_in_threadpool(execute)
+        if record["status"] == "DELETED":
+            raise ApiError("ASSET_REMOVED", "O arquivo desta solicitação já foi removido.", status_code=409)
         return JSONResponse(public_asset(record), status_code=201 if record["status"] == "READY" else 202,
                             headers={"Cache-Control": "private, no-store"})
     finally:

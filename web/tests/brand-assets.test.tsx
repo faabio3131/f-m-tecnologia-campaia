@@ -38,7 +38,7 @@ describe("BrandAssetsPanel", () => {
     const input = await screen.findByLabelText("Imagem da marca");
     const file = new File(["fixture bytes"], "logo.png", { type: "image/png" });
     await user.upload(input, file);
-    await user.click(screen.getByRole("button", { name: "Enviar imagem", exact: true }));
+    await user.click(screen.getByRole("button", { name: "Enviar imagem" }));
     expect(await screen.findByRole("img", { name: "Logo de Marca" })).toHaveAttribute("src", asset.content_url);
     const call = fetchSpy.mock.calls.find(([, options]) => options?.method === "POST")!;
     expect(call[1]?.body).toBe(file);
@@ -60,11 +60,11 @@ describe("BrandAssetsPanel", () => {
     render(<BrandAssetsPanel identity="bp-1" name="Marca" canManage />);
     const input = await screen.findByLabelText("Imagem da marca");
     await user.upload(input, new File(["fixture"], "logo.png", { type: "image/png" }));
-    await user.click(screen.getByRole("button", { name: "Enviar imagem", exact: true }));
-    await screen.findByRole("button", { name: "Conferir envio", exact: true });
+    await user.click(screen.getByRole("button", { name: "Enviar imagem" }));
+    await screen.findByRole("button", { name: "Conferir envio" });
     expect(input).toBeDisabled();
     expect(screen.getByLabelText("Finalidade da imagem")).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "Conferir envio", exact: true }));
+    await user.click(screen.getByRole("button", { name: "Conferir envio" }));
     await screen.findByText("Imagem salva.");
     expect(calls).toHaveLength(2);
     expect(calls[0].body).toBe(calls[1].body);
