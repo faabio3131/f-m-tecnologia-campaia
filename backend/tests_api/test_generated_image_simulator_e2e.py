@@ -134,6 +134,15 @@ class ImageApiSimulationTests(BillingCreditHarness, unittest.TestCase):
                   "selected_creative_id": generated.json()["id"]})
         self.assertEqual(selected.status_code, 409, selected.text)
         self.assertEqual(selected.json()["code"], "IMAGE_REVIEW_REQUIRED")
+        # Explicit selection cannot smuggle a foreign, stale or unknown asset.
+        invalid = self.client.post("/campaigns/" + self.campaign + "/publish",
+            headers={**OWNER, **unique_idem()},
+            json={"policy_decision_id": validation.json()["policy_decision_id"],
+                  "approval_id": "no-approval",
+                  "selected_creative_id": "00000000-0000-0000-0000-000000000001"})
+        self.assertEqual(invalid.status_code, 409, invalid.text)
+        self.assertEqual(invalid.json()["code"], "IMAGE_SELECTION_INVALID")
+
         self.assertEqual(self.storage.calls.count("POST"), 1)
 
     def test_confirm_one_delivery_no_duplicate_charge_private_png_and_cross_tenant(self):
