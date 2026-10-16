@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { CopyProposalInput, AudienceProposalInput, CreativeProposal, CreativeProposalPage, CreativeProposalQuote } from "@/contracts/types";
 import { api, ApiClientError } from "@/lib/api/client";
+import { CopyRevisionPanel } from "./CopyRevisionPanel";
 import { Button } from "./Button";
 import { Card } from "./Card";
 import { ErrorState } from "./ErrorState";
@@ -29,6 +30,7 @@ export function CreativeProposalsPanel({ campaignId, planVersion, channels, prod
   const [audience, setAudience] = useState(initialAudience), [region, setRegion] = useState("BR");
   const [exclusions, setExclusions] = useState(""), [sensitive, setSensitive] = useState(false);
   const [prepared, setPrepared] = useState<Prepared | null>(null);
+  const [revisionSource, setRevisionSource] = useState<CreativeProposal | null>(null);
   const [error, setError] = useState<string | null>(null), [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const active = useRef(false), alive = useRef(false), readEpoch = useRef(0);
@@ -73,7 +75,7 @@ export function CreativeProposalsPanel({ campaignId, planVersion, channels, prod
   }
   async function review(event: FormEvent) {
     event.preventDefault();
-    if (active.current || busy || !pages[kind]?.capability.can_generate || allowed.length === 0) return;
+    if (active.current || busy || revisionSource !== null || !pages[kind]?.capability.can_generate || allowed.length === 0) return;
     active.current = true; onBusy(true); setError(null); setNotice(null);
     try {
       const quote = await api.get<CreativeProposalQuote>(base + kind + "/quote");
@@ -116,7 +118,7 @@ export function CreativeProposalsPanel({ campaignId, planVersion, channels, prod
     finally { active.current = false; if (alive.current) onBusy(false); }
   }
 
-  const page = pages[kind], locked = busy || prepared !== null;
+  const page = pages[kind], locked = busy || prepared !== null || revisionSource !== null;
   return <Card><section aria-label="Textos e públicos" style={{ overflowWrap: "anywhere" }}>
     <h2>Textos e públicos</h2>
     <p>Propostas em texto para revisão humana. Cada entrega pede nova validação e aprovação da campanha.</p>
@@ -149,7 +151,7 @@ export function CreativeProposalsPanel({ campaignId, planVersion, channels, prod
       {page?.capability.mode === "SIMULATED" ? <p>Ambiente de teste: geração simulada.</p> : null}
       {page && !page.capability.enabled ? <p>Esta geração está indisponível no momento.</p> : null}
       {page?.capability.billing_required ? <p>Inicie um trial ou ciclo pago antes de gerar.</p> : null}
-      {!prepared ? <Button type="submit" disabled={busy || !page?.capability.can_generate || allowed.length === 0}>Gerar proposta</Button> : null}
+      {!prepared ? <Button type="submit" disabled={locked || !page?.capability.can_generate || allowed.length === 0}>Gerar proposta</Button> : null}
     </form>
     {prepared ? <section aria-label="Confirmar proposta">
       {prepared.body.credit_confirmation ? <p>Esta entrega utiliza {prepared.body.credit_confirmation.credits} créditos.
@@ -158,16 +160,27 @@ export function CreativeProposalsPanel({ campaignId, planVersion, channels, prod
       <Button disabled={busy} onClick={confirm}>{prepared.sent ? "Conferir mesma proposta" : "Confirmar proposta"}</Button>
       {!prepared.sent ? <Button variant="secondary" disabled={busy} onClick={() => setPrepared(null)}>Voltar aos campos</Button> : null}
     </section> : null}
+    {revisionSource ? <CopyRevisionPanel key={revisionSource.id} campaignId={campaignId} source={revisionSource}
+      planVersion={planVersion} busy={busy} canGenerate={pages.copy?.capability.can_generate ?? false}
+      onBusy={onBusy} onCancel={() => setRevisionSource(null)} onDelivered={async () => {
+        setRevisionSource(null); setNotice("Ajuste entregue. Confira a nova versão dos textos.");
+        try { await onDelivered(); await refresh(); }
+        catch { if (alive.current) setError("Ajuste entregue. Atualize o histórico para conferir a versão atual."); }
+      }} /> : null}
     <Button variant="secondary" disabled={busy} onClick={() => readMore(kind)}>Atualizar histórico de propostas</Button>
     {(["copy", "audience"] as const).map(target => <section key={target} aria-label={"Histórico de " + labels[target]}>
       <h3>{labels[target]} preservados</h3>
       {pages[target]?.items.length === 0 ? <p>Nenhuma proposta de {labels[target].toLowerCase()} ainda.</p> : null}
-      {pages[target]?.items.map(item => <article key={item.id}>
+      {pages[target]?.items.map((item, position) => <article key={item.id}>
         <h4>{labels[target]} · versão {item.version}</h4>
         <p>{item.current ? "Contexto vigente" : "Contexto anterior · precisa gerar novamente"} · plano {item.plan_version}</p>
         {"variacoes" in item.output ? <ol>{item.output.variacoes.map((value, index) => <li key={index}>{value}</li>)}</ol>
           : <><p>Segmentos: {item.output.segmentos.join("; ")}.</p><p>Exclusões: {item.output.exclusoes.join("; ") || "Nenhuma"}.</p>
             <p>Tema sensível identificado: {item.output.sensivel ? "Sim" : "Não"}.</p></>}
+        {target === "copy" && position === 0 && item.current && pages.copy?.capability.can_generate
+          ? <Button variant="secondary" disabled={busy || prepared !== null || revisionSource !== null}
+              onClick={() => setRevisionSource(item)}>Ajustar um texto</Button> : null}
+        {typeof item.request_summary.revision_of === "string" ? <p>Revisão de uma variação da versão anterior.</p> : null}
         <details><summary>Contexto e origem</summary>
           <pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(item.request_summary, null, 2)}</pre>
           <p>{item.provider} · {item.model} · prompt {item.prompt_version}</p>

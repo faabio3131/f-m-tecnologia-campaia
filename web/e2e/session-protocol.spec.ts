@@ -504,6 +504,23 @@ test.describe("Protocolo de sessao real", () => {
     const copyBody = await copyResponse.json();
     expect(copyBody.output.variacoes).toHaveLength(5);
     await expect(proposals.getByText("Textos · versão 1", { exact: true })).toBeVisible();
+    await proposals.getByRole("button", { name: "Ajustar um texto", exact: true }).click();
+    const adjustment = proposals.getByRole("region", { name: "Ajustar uma variação", exact: true });
+    await adjustment.getByLabel("Texto para ajustar").selectOption("1");
+    await adjustment.getByLabel("Instruções para o ajuste").fill("Deixe o convite mais direto e preserve as condições.");
+    const revisionPromise = page.waitForResponse(r => r.url().endsWith("/revisions") && r.request().method() === "POST");
+    await adjustment.getByRole("button", { name: "Revisar consumo do ajuste", exact: true }).click();
+    const revisionResponse = await revisionPromise;
+    expect(revisionResponse.status()).toBe(201);
+    const revisionBody = await revisionResponse.json();
+    expect(revisionBody.version).toBe(2);
+    expect(revisionBody.request_summary.revision_of).toBe(copyBody.id);
+    expect(revisionBody.output.variacoes).toHaveLength(5);
+    for (let index = 0; index < 5; index++) {
+      if (index === 1) expect(revisionBody.output.variacoes[index]).not.toBe(copyBody.output.variacoes[index]);
+      else expect(revisionBody.output.variacoes[index]).toBe(copyBody.output.variacoes[index]);
+    }
+    await expect(proposals.getByText("Textos · versão 2", { exact: true })).toBeVisible();
     await proposals.getByLabel("Tipo de proposta").selectOption("audience");
     await proposals.getByLabel("Público envolve tema sensível").check();
     const audiencePromise = page.waitForResponse(r => r.url().endsWith("/proposals/audience") && r.request().method() === "POST");
@@ -511,7 +528,7 @@ test.describe("Protocolo de sessao real", () => {
     const audienceResponse = await audiencePromise;
     expect(audienceResponse.status()).toBe(201);
     const audienceBody = await audienceResponse.json();
-    expect(audienceBody.plan_version).toBe(copyBody.plan_version + 1);
+    expect(audienceBody.plan_version).toBe(revisionBody.plan_version + 1);
     expect(audienceBody.output.sensivel).toBe(true);
     await expect(proposals.getByText("Públicos · versão 1", { exact: true })).toBeVisible();
 
