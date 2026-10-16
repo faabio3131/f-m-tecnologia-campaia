@@ -431,6 +431,23 @@ async def publish_campaign(request: Request) -> JSONResponse:
         record = _get_campaign_or_404(
             state, fixture.tenant_id, campaign_id, principal=principal
         )
+        # Generated images are optional, but any stored image on this exact plan
+        # must have independent, hash/generation-bound human approval.
+        if state.db is not None:
+            from .creative_image_review import CreativeImageReviewStore, decision_applies
+            from campaia_core.creative_assets import CreativeIdentity
+            for _id, _tenant, image in state.db.table("creative_assets").rows_for_tenant(fixture.tenant_id):
+                scope = image["identity"]
+                if (scope["campaign_id"] != record.campaign_id
+                        or scope["business_unit_id"] != record.business_unit_id
+                        or scope["campaign_version"] != record.plan_version
+                        or image["state"] in ("DELETED", "FAILED")):
+                    continue
+                if image["state"] != "STORED" or not decision_applies(
+                        image, CreativeImageReviewStore(state).get(CreativeIdentity(**scope))):
+                    raise ApiError("IMAGE_REVIEW_REQUIRED",
+                        "A imagem gerada desta campanha exige revisão humana antes de publicação.",
+                        status_code=409)
         require_brand_assets(state, record)
         enforce_campaign_capacity(state, fixture.tenant_id, record)
         decision = record.last_policy_decision
