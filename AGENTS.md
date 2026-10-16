@@ -1013,3 +1013,9 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - Cronograma Mestre (27/09/2026) define G7: campanha completa chega a aprovação com estratégia/copy/assets/policy/preview reais; G9–G12 exigem publicação Google/Meta/WhatsApp e reconciliação real; G16–G20 exigem segurança, UAT, GO/NO-GO e disponibilização. Estes gates **não podem ser declarados DONE_VERIFIED** apenas por simulação ou merge.
 - Pendências internas conhecidas do WP-R04-04B: vincular entrega real de mídia por conector (TARGET/EXTERNAL_APPROVAL), revogar publicação já aplicada por compensação governada (TARGET), ampliar testes de revogação/anti-replay (TARGET), evidência externa para encerrar custo incerto (EXTERNAL_CREDENTIAL), retenção jurídica (HUMAN_DECISION), e certificar CI do HEAD após qualquer alteração.
 - Proibidos merge, deploy, aplicação de migrations e GO/NO-GO até autorização expressa do Diretor.
+
+
+## WP-R04-04B — correção de preview e regressão de revogação (16/10/2026)
+- O preview de criativo deixa de anunciar `NOT_REVIEWED` invariavelmente: consulta o registro de revisão persistido, sinaliza APPROVE/REVOKED e mantém `publication_allowed=false` (somente policy/publication governada pode autorizar). Aprovação expirada ou revogada gera bloqueio.
+- Testes: preview com aprovação amarrada à evidência, preview revogado, aprovação com autor distinto, revogação auditada, replay idempotente e bloqueio de reaproveitar aprovação após revogação. Evidência pendente no novo HEAD da CI.
+- Não há comprovação de implantação de mídia em Google/Meta nem revogação de campanha já publicada nos canais; permanece TARGET/EXTERNAL_APPROVAL, não pode ser substituída por simulação. Reconciliação financeira externa e retenção ainda permanecem seus gates específicos.
