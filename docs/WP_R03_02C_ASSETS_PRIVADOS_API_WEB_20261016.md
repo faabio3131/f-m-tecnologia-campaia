@@ -83,3 +83,11 @@ delete+insert explícito na mesma transação, preservando cookie/CSRF/subject/e
 Lock por session_id serializa switch com logout/revogação; falha no INSERT restaura
 a linha anterior. Testes SQLite e PostgreSQL provam rollback, alvo forjado negado,
 guard geral intacto e ausência de ressurreição na concorrência com revogação.
+
+A asserção de isolamento da sessão testa RecordTable: a migration 002 já exclui
+sessions do trigger SQL por serem identidade pré-tenant. Não se adicionou nem removeu
+guard SQL de sessão. A suite também revelou teste de fechamento financeiro dependente
+de timing: uma segunda réplica pode corretamente receber BILLING_DISPATCH_PENDING
+enquanto a primeira ainda emite. O teste agora força essa janela com eventos, exige
+503 específico, libera o único dispatch e exige convergência ao MESMO invoice (um POST).
+Nenhuma regra de cobrança foi alterada nem houve rerun para esconder falha.

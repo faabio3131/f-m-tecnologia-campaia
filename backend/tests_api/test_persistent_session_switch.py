@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from api.main import create_app
+from campaia_core.errors import TenantIsolationViolation
 
 
 class PersistentSessionSwitchTests(unittest.TestCase):
@@ -33,7 +34,7 @@ class PersistentSessionSwitchTests(unittest.TestCase):
         self.assertEqual(self.b.sessions.get(changed.session_id).principal, self.second)
         self.assertIsNone(self.b.db.table("sessions").get_for_tenant(changed.session_id, self.first.tenant_id))
         self.assertEqual(self.b.sessions.switch_principal(changed.session_id, self.first).principal, self.first)
-        with self.assertRaises(Exception):
+        with self.assertRaises(TenantIsolationViolation):
             self.a.db.table("sessions").put(changed.session_id, "foreign-tenant", changed)
 
     def test_target_must_be_an_existing_captured_membership(self):

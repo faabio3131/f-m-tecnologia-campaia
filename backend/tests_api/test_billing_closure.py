@@ -2,6 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from decimal import Decimal
 import unittest
+import threading
 from unittest.mock import patch
 
 from starlette.testclient import TestClient
@@ -124,10 +125,27 @@ class BillingClosureTests(BillingCreditHarness, unittest.TestCase):
         other = TestClient(create_app(env='test', db_path=str(self.path)))
         self.addCleanup(other.app.state.campaia.db._conn.close)
         other.app.state.campaia.billing_gateway.minimum_charge_amount = Decimal('5.00')
-        with patch('api.routes_billing.dispatch_frozen_charge', wraps=dispatch_frozen_charge) as dispatched:
+        started, release = threading.Event(), threading.Event()
+        def held_dispatch(*args, **kwargs):
+            started.set()
+            if not release.wait(timeout=5):
+                raise RuntimeError('test did not release dispatch')
+            return dispatch_frozen_charge(*args, **kwargs)
+        with patch('api.routes_billing.dispatch_frozen_charge', side_effect=held_dispatch) as dispatched:
             with ThreadPoolExecutor(max_workers=2) as pool:
-                results = list(pool.map(lambda client: self.close(quote, client=client), [self.client, other]))
-        self.assertTrue(all(r.status_code == 200 for r in results), [r.text for r in results])
+                first = pool.submit(self.close, quote)
+                try:
+                    self.assertTrue(started.wait(timeout=5))
+                    pending = self.close(quote, client=other)
+                    self.assertEqual(pending.status_code, 503, pending.text)
+                    self.assertEqual(pending.json()['code'], 'BILLING_DISPATCH_PENDING')
+                finally:
+                    release.set()
+                winner = first.result(timeout=5)
+                self.assertEqual(winner.status_code, 200, winner.text)
+            recovered = self.close(quote, client=other)
+            self.assertEqual(recovered.status_code, 200, recovered.text)
+            self.assertEqual(recovered.json()['invoice'], winner.json()['invoice'])
         self.assertEqual(dispatched.call_count, 1)
         self.assertEqual(len(self.state.charges), 2)
         self.assertEqual(self.client.get('/billing/closure', headers=OTHER_OWNER).status_code, 404)

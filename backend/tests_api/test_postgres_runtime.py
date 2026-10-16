@@ -802,9 +802,11 @@ class PostgresRuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "session insert failed"):
                 a.sessions.switch_principal(record.session_id, first)
         self.assertEqual(b.sessions.get(record.session_id).principal, second)
-        with self.assertRaises(psycopg.errors.InsufficientPrivilege):
-            with psycopg.connect(DSN) as conn:
-                conn.execute("UPDATE campaia_runtime.sessions SET tenant_id=%s WHERE id=%s", ("foreign", record.session_id))
+        from campaia_core.errors import TenantIsolationViolation
+        # Sessions are intentionally excluded from the SQL tenant trigger (migration 002).
+        # RecordTable still forbids arbitrary rehome; only the explicit switch may relocate.
+        with self.assertRaises(TenantIsolationViolation):
+            b.db.table("sessions").put(record.session_id, "foreign", b.sessions.get(record.session_id))
         for revoke in ("invalidate", "invalidate_membership"):
             candidate = create()
             with ThreadPoolExecutor(max_workers=2) as pool:
