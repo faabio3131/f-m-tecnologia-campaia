@@ -10,7 +10,7 @@ class CreativeHumanReviewGateTests(unittest.TestCase):
     def setUp(self):
         self.row = {
             "identity": {"creative_id": "creative1", "campaign_version": 2},
-            "manifest": {"sha256": "a" * 64},
+            "manifest": {"sha256": "a" * 64, "width": 1024, "height": 1024},
             "storage_generation": "124", "state": "STORED",
         }
         self.review = {
@@ -39,6 +39,19 @@ class CreativeHumanReviewGateTests(unittest.TestCase):
         revoked = _preview_policy(self.row, campaign, {"decision": "REVOKED"})
         self.assertFalse(revoked["publication_allowed"])
         self.assertIn("HUMAN_REVIEW_REQUIRED", revoked["blocking_reasons"])
+
+    def test_format_hints_are_geometry_only_and_not_channel_approval(self):
+        campaign = SimpleNamespace(plan_version=2)
+        for width, height, expected in (
+            (1024, 1024, "SQUARE"), (800, 1000, "PORTRAIT_4_5"),
+            (900, 1600, "STORY_9_16")):
+            with self.subTest(expected=expected):
+                row = {**self.row, "manifest": {**self.row["manifest"],
+                       "width": width, "height": height}}
+                result = _preview_policy(row, campaign, self.review)
+                self.assertIn(expected, result["format_hints"])
+                self.assertFalse(result["channel_media_validated"])
+                self.assertFalse(result["publication_allowed"])
 
     def test_missing_review_is_not_approval(self):
         self.assertFalse(decision_applies(self.row, None))
