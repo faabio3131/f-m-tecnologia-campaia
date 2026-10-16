@@ -19,10 +19,10 @@ describe("GeneratedImagesPanel", () => {
                  revision: 2, content_type: "image/png", available: false }],
                  has_more: false, generation_enabled: false });
     });
-    render(<GeneratedImagesPanel campaignId="c" />);
+    render(<GeneratedImagesPanel campaignId="c" planVersion={1} />);
     await screen.findByText(/STORAGE_PENDING/);
     expect(screen.getByText(/Créditos previstos por geração: 15/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Gerar imagem" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Revisar créditos para gerar imagem" })).toBeDisabled();
     expect(screen.queryByText(/storage.googleapis.com/)).not.toBeInTheDocument();
     expect(calls).toHaveLength(2);
   });
