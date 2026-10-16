@@ -22,6 +22,8 @@ class StorageFake:
         self.observations = 0
         self.saved = None
         self.uncertain = False
+        self.deletes = 0
+        self.delete_uncertain = False
 
     def upload_once(self, expected, png):
         self.uploads += 1
@@ -30,9 +32,15 @@ class StorageFake:
             raise AssetStorageError(Code.UNCERTAIN)
         return self.saved
 
-    def observe(self, expected):
+    def observe(self, expected, generation=None):
         self.observations += 1
         return self.saved
+
+    def delete_once(self, asset):
+        self.deletes += 1
+        self.saved = None
+        if self.delete_uncertain:
+            raise AssetStorageError(Code.UNCERTAIN)
 
 
 class CreativePrivateStorageTests(unittest.TestCase):
@@ -99,6 +107,23 @@ class CreativePrivateStorageTests(unittest.TestCase):
         self.assertEqual(current["state"], "STORAGE_PENDING")
         self.assertEqual(self.repo.usage("tenant1"), len(self.png))
         self.assertEqual(self.storage.uploads, 1)
+
+    def test_deletion_tombstones_and_never_resends_delete(self):
+        self.handler.upload(self.manifest, self.png)
+        result = self.handler.delete(self.manifest.identity)
+        self.assertEqual(result["state"], "DELETED")
+        self.assertEqual(self.storage.deletes, 1)
+        self.assertEqual(self.repo.usage("tenant1"), 0)
+        self.handler.delete(self.manifest.identity)
+        self.assertEqual(self.storage.deletes, 1)
+
+    def test_uncertain_delete_recovers_only_by_observation(self):
+        self.handler.upload(self.manifest, self.png)
+        self.storage.delete_uncertain = True
+        self.assertEqual(self.handler.delete(self.manifest.identity)["state"], "DELETE_PENDING")
+        self.assertEqual(self.storage.deletes, 1)
+        self.assertEqual(self.handler.reconcile_delete(self.manifest.identity)["state"], "DELETED")
+        self.assertEqual(self.storage.deletes, 1)
 
     def test_invalid_bytes_fail_before_dispatch(self):
         with self.assertRaises(AssetStorageError):
