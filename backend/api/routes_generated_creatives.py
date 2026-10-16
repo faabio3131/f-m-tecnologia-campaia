@@ -137,6 +137,8 @@ async def generate_campaign_image(request):
     body = await parse_bounded_body(request, ImageInput)
     if body.expected_plan_version != campaign.plan_version or campaign.plan is None:
         raise ApiError("AI_INPUT_CHANGED", "Revise a estratégia vigente.", status_code=409)
+    from .campaign_brand import require_brand_assets, brand_agent_context
+    require_brand_assets(state, campaign)
     if not state.image_provider.config.enabled:
         raise ApiError("AI_CAPABILITY_UNAVAILABLE", "Geração de imagem indisponível.", status_code=503)
     storage = configured_asset_storage()
@@ -165,7 +167,8 @@ async def generate_campaign_image(request):
                 request_id=identity.creative_id, tenant_id=fixture.tenant_id,
                 task=AITask.GENERATE_IMAGE,
                 input={"prompt": body.prompt.strip(), "campaign": campaign.campaign_id,
-                       "plan_version": campaign.plan_version},
+                       "plan_version": campaign.plan_version,
+                       "brand": brand_agent_context(campaign)},
                 output_schema_id="generated-image", max_cost_units=ceiling,
                 pinned_provider="GEMINI_IMAGE", timeout_ms=30000,
             )
@@ -207,6 +210,7 @@ async def generate_campaign_image(request):
                 or latest.campaign_id != identity.campaign_id
             ):
                 raise ApiError("AI_INPUT_CHANGED", "Campanha alterada durante geração.", status_code=409)
+            require_brand_assets(state, latest)
             if record["state"] != CreativeState.STORED.value:
                 raise ApiError("AI_OPERATION_PENDING", "Entrega não confirmada.", status_code=503)
             state.audit.append(tenant_id=fixture.tenant_id, actor=fixture.user_id,
