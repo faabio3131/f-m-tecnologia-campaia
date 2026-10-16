@@ -22,7 +22,6 @@ export function GeneratedImagesPanel({ campaignId }: { campaignId: string }) {
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     let active = true;
-    setLoading(true);
     Promise.all([
       api.get<ImagePage>("/campaigns/" + encodeURIComponent(campaignId) + "/images"),
       api.get<ImageQuote>("/campaigns/" + encodeURIComponent(campaignId) + "/images/quote")
