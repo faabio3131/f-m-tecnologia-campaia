@@ -53,6 +53,15 @@ class CreativeHumanReviewGateTests(unittest.TestCase):
                 self.assertFalse(result["channel_media_validated"])
                 self.assertFalse(result["publication_allowed"])
 
+    def test_channel_previews_are_explicitly_draft_only(self):
+        policy = _preview_policy(self.row, SimpleNamespace(plan_version=2), self.review)
+        self.assertEqual(set(policy["channel_previews"]),
+                         {"GOOGLE_ADS", "META_FACEBOOK_INSTAGRAM", "WHATSAPP"})
+        for channel in policy["channel_previews"].values():
+            self.assertEqual(channel["kind"], "DRAFT_ONLY")
+            self.assertFalse(channel["media_ready"])
+        self.assertFalse(policy["publication_allowed"])
+
     def test_missing_review_is_not_approval(self):
         self.assertFalse(decision_applies(self.row, None))
 
