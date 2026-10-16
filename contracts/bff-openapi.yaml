@@ -1412,6 +1412,61 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /billing/renewal:
+    get:
+      tags: [Billing]
+      summary: Consulta autorização de emissão recorrente
+      operationId: getBillingRenewal
+      security: [cookieAuth: []]
+      responses:
+        '200':
+          description: Condições da emissão recorrente; não autoriza débito
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingRenewal' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Sem BILLING_VIEW
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    put:
+      tags: [Billing]
+      summary: Altera autorização explícita de emissão recorrente
+      operationId: setBillingRenewal
+      security: [cookieAuth: []]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [fingerprint, enabled]
+              properties:
+                fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+                enabled: { type: boolean }
+      responses:
+        '200':
+          description: Autorização registrada; nenhuma fatura foi emitida
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingRenewal' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '409':
+          description: Condições ou autorização pendente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
   /billing/guarantee:
     get:
       tags: [Billing]
@@ -2105,6 +2160,23 @@ components:
         invoice: { type: [string, 'null'] }
         provider: { type: [string, 'null'] }
         mode: { type: [string, 'null'], enum: [SIMULATOR, SANDBOX, PRODUCTION, null] }
+
+    BillingRenewal:
+      type: object
+      required: [enabled, valid, can_enable, fingerprint, lifecycle_id, plan_name, monthly_price, currency, provider, mode, next_due_at, accepted_at]
+      properties:
+        enabled: { type: boolean }
+        valid: { type: boolean }
+        can_enable: { type: boolean }
+        fingerprint: { type: string }
+        lifecycle_id: { type: [string, 'null'] }
+        plan_name: { type: string }
+        monthly_price: { type: string }
+        currency: { type: string }
+        provider: { type: string }
+        mode: { type: string, enum: [SIMULATOR, SANDBOX, PRODUCTION] }
+        next_due_at: { type: [string, 'null'], format: date-time }
+        accepted_at: { type: [string, 'null'], format: date-time }
 
     BillingGuarantee:
       type: object

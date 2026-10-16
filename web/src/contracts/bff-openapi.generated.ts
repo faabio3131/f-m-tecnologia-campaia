@@ -906,6 +906,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/billing/renewal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Consulta autorização de emissão recorrente */
+        get: operations["getBillingRenewal"];
+        /** Altera autorização explícita de emissão recorrente */
+        put: operations["setBillingRenewal"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/billing/guarantee": {
         parameters: {
             query?: never;
@@ -1286,6 +1304,23 @@ export interface components {
             provider: string | null;
             /** @enum {string|null} */
             mode: "SIMULATOR" | "SANDBOX" | "PRODUCTION" | null;
+        };
+        BillingRenewal: {
+            enabled: boolean;
+            valid: boolean;
+            can_enable: boolean;
+            fingerprint: string;
+            lifecycle_id: string | null;
+            plan_name: string;
+            monthly_price: string;
+            currency: string;
+            provider: string;
+            /** @enum {string} */
+            mode: "SIMULATOR" | "SANDBOX" | "PRODUCTION";
+            /** Format: date-time */
+            next_due_at: string | null;
+            /** Format: date-time */
+            accepted_at: string | null;
         };
         BillingGuarantee: {
             /** @enum {string} */
@@ -3656,6 +3691,88 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    getBillingRenewal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Condições da emissão recorrente; não autoriza débito */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingRenewal"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Sem BILLING_VIEW */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    setBillingRenewal: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+                 *     login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+                 *     servidor. Ausente/invalido -> 403.
+                 */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao. */
+                "X-Step-Up-Token": components["parameters"]["StepUpToken"];
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    fingerprint: string;
+                    enabled: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Autorização registrada; nenhuma fatura foi emitida */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingRenewal"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["StepUpRequired"];
+            /** @description Condições ou autorização pendente */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
         };
     };
     getBillingGuarantee: {

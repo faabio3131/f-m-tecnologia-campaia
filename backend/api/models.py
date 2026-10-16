@@ -523,6 +523,11 @@ class BillingEntitlementsResponse(BaseModel):
     resources: list[str]
 
 
+class BillingRenewalRequest(ApiModel):
+    fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
+    enabled: bool = Field(strict=True)
+
+
 class BillingCancellationRequest(ApiModel):
     immediate: bool = Field(default=False, strict=True)
 

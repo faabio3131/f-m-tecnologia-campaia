@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import StrEnum
 
+from .billing_renewal import RenewalInvoiceConsent
 from .billing_cycles import PaidCycleSchedule
 from .credit_ledger import CreditPolicy, ExtraCreditConsent
 
@@ -261,6 +262,7 @@ class Subscription:
     last_dunning_at: datetime | None = None
     paid_cycle_schedule: PaidCycleSchedule | None = None
     extra_credit_consent: ExtraCreditConsent | None = None
+    renewal_invoice_consent: RenewalInvoiceConsent | None = None
     cancel_at_period_end: datetime | None = None
     pending_plan_effective_at: datetime | None = None
 
@@ -660,7 +662,7 @@ def request_reactivation(
             raise ValueError("Lifecycle anterior não pode ser reutilizado.")
         return replace(subscription, status=SubscriptionStatus.PENDING_PAYMENT,
                        paid_cycle_schedule=PaidCycleSchedule(lifecycle_id), activated_at=None,
-                       reactivation_requested_at=at, cancel_at_period_end=None,
+                       reactivation_requested_at=at, cancel_at_period_end=None, renewal_invoice_consent=None,
                        pending_plan=None, pending_plan_change_kind=None,
                        pending_plan_change_billing_mode=None, pending_plan_effective_at=None)
     if subscription.status is not SubscriptionStatus.CANCELED:

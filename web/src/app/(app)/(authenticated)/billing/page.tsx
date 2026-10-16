@@ -6,6 +6,7 @@ import { BillingSubscriptionSetup } from "@/components/BillingSubscriptionSetup"
 import { CommercialLifecycleActions } from "@/components/CommercialLifecycleActions";
 import { BillingGuaranteePanel } from "@/components/BillingGuaranteePanel";
 import { BillingClosurePanel } from "@/components/BillingClosurePanel";
+import { BillingRenewalPanel } from "@/components/BillingRenewalPanel";
 import { BillingCheckoutPanel } from "@/components/BillingCheckoutPanel";
 import { BillingUsagePanel } from "@/components/BillingUsagePanel";
 import { BillingChargeHistoryPanel } from "@/components/BillingChargeHistoryPanel";
@@ -134,6 +135,7 @@ function BillingContent({ canManage }: { canManage: boolean }) {
           { label: "Limite de campanhas ativas", value: String(subscription.entitlements?.max_active_campaigns ?? "Não configurado") },
           { label: "Canais", value: subscription.entitlements?.channels.join(", ") || "Nenhum configurado" },
         ]} /></Card>
+        {terms.credit_policy && canManage ? <BillingRenewalPanel key={`renewal:${subscription.status}:${subscription.plan_id}:${subscription.activated_at}:${subscription.cancel_at_period_end}:${subscription.pending_plan_id}`} stepUp={stepUp} /> : null}
         {terms.credit_policy && canManage ? <BillingCheckoutPanel key={`checkout:${subscription.status}:${subscription.plan_id}:${subscription.activated_at}:${subscription.cancel_at_period_end}:${subscription.pending_plan_id}`} stepUp={stepUp} onIssued={refreshBillingRead} /> : null}
         {terms.credit_policy && canManage && subscription.status === "CANCELED" ? <BillingClosurePanel key={`closure:${observationVersion}:${subscription.plan_id}:${subscription.activated_at}:${subscription.cancel_at_period_end}`} stepUp={stepUp} onClosed={refreshBillingRead} /> : null}
         {terms.credit_policy && canManage ? <BillingGuaranteePanel key={`guarantee:${historyVersion}:${observationVersion}:${subscription.status}:${subscription.activated_at}`} stepUp={stepUp} onRequested={refreshBillingRead} /> : null}
