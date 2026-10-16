@@ -21,6 +21,29 @@ function mockFetchResponse(init: {
 }
 
 describe("api client", () => {
+  it("binary upload keeps bytes, CSRF, cookies and the caller nonce", async () => {
+    setCsrfToken("csrf-upload");
+    const bytes = new Blob(["binary fixture"], { type: "image/png" });
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      mockFetchResponse({ status: 202, body: { status: "UPLOAD_UNCERTAIN" } }));
+    await api.upload("/brand-profiles/bp/assets?kind=LOGO", bytes, { idempotencyKey: "stable-upload-key-0001" });
+    const [url, options] = fetchSpy.mock.calls[0];
+    expect(url).toBe("/api/campaia/brand-profiles/bp/assets?kind=LOGO");
+    expect(options?.body).toBe(bytes);
+    expect(options?.credentials).toBe("include");
+    expect(new Headers(options?.headers).get("content-type")).toBe("application/octet-stream");
+    expect(new Headers(options?.headers).get("x-csrf-token")).toBe("csrf-upload");
+    expect(new Headers(options?.headers).get("idempotency-key")).toBe("stable-upload-key-0001");
+  });
+
+  it("binary upload without CSRF never sends bytes", async () => {
+    setCsrfToken(null);
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    await expect(api.upload("/brand-profiles/bp/assets?kind=LOGO", new Blob(["fixture"]),
+      { idempotencyKey: "stable-upload-key-0001" })).rejects.toBeInstanceOf(CsrfUnavailableError);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     setCsrfToken(null);
     setUnauthenticatedListener(null);

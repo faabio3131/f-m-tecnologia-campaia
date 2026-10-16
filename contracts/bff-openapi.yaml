@@ -669,6 +669,359 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /brand-profiles/{brandProfileId}/assets:
+    get:
+      tags: [Marca]
+      summary: Lista arquivos privados da marca
+      operationId: listBrandAssets
+      security: [cookieAuth: []]
+      parameters:
+        - name: brandProfileId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: cursor
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandAssetPage' }
+        '401':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '408':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '413':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    post:
+      tags: [Marca]
+      summary: Envia imagem estática da marca
+      operationId: uploadBrandAsset
+      security: [cookieAuth: []]
+      parameters:
+        - name: brandProfileId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: kind
+          in: query
+          required: true
+          schema: { type: string, enum: [LOGO, REFERENCE] }
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandAsset' }
+        '202':
+          description: Confirmação pendente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandAsset' }
+        '401':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '408':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '413':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /brand-profiles/{brandProfileId}/assets/{assetId}/content:
+    get:
+      tags: [Marca]
+      summary: Consulta imagem privada autenticada
+      operationId: readBrandAsset
+      security: [cookieAuth: []]
+      parameters:
+        - name: brandProfileId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: assetId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+        '401':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '408':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '413':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /brand-profiles/{brandProfileId}/assets/{assetId}/reconcile:
+    post:
+      tags: [Marca]
+      summary: Confere envio ou exclusão pendente sem repetir a escrita
+      operationId: reconcileBrandAsset
+      security: [cookieAuth: []]
+      parameters:
+        - name: brandProfileId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: assetId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandAsset' }
+        '401':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '408':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '413':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /brand-profiles/{brandProfileId}/assets/{assetId}:
+    delete:
+      tags: [Marca]
+      summary: Remove acesso e solicita exclusão da imagem
+      operationId: deleteBrandAsset
+      security: [cookieAuth: []]
+      parameters:
+        - name: brandProfileId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: assetId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandAsset' }
+        '202':
+          description: Confirmação pendente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandAsset' }
+        '401':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '408':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '413':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Erro
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /connections:
     get:
       tags: [Conexoes]
@@ -2726,6 +3079,45 @@ components:
           type: array
           items: { $ref: '#/components/schemas/BrandProfile' }
         next_cursor: { type: [string, 'null'] }
+
+    BrandAsset:
+      type: object
+      additionalProperties: false
+      required: [id, brand_profile_id, kind, status, width, height, size_bytes, content_type, created_at, updated_at, content_url]
+      properties:
+        id: { type: string }
+        brand_profile_id: { type: string }
+        kind: { type: string, enum: [LOGO, REFERENCE] }
+        status: { type: string, enum: [UPLOADING, UPLOAD_UNCERTAIN, READY, DELETE_REQUESTED, DELETE_UNCERTAIN, DELETED] }
+        width: { type: integer }
+        height: { type: integer }
+        size_bytes: { type: integer }
+        content_type: { type: string }
+        created_at: { type: string }
+        updated_at: { type: string }
+        content_url: { type: [string, 'null'] }
+
+    BrandAssetCapability:
+      type: object
+      additionalProperties: false
+      required: [enabled, mode, max_input_bytes, max_active_bytes, used_bytes]
+      properties:
+        enabled: { type: boolean }
+        mode: { type: string, enum: [DISABLED, SIMULATOR, PROVIDER] }
+        max_input_bytes: { type: integer }
+        max_active_bytes: { type: integer }
+        used_bytes: { type: integer }
+
+    BrandAssetPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor, capability]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/BrandAsset' }
+        next_cursor: { type: [string, 'null'] }
+        capability: { $ref: '#/components/schemas/BrandAssetCapability' }
 
     BrandProfile:
       type: object

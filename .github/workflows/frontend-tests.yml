@@ -53,6 +53,7 @@ jobs:
         run: |
           npm run contracts:generate
           cp src/contracts/bff-openapi.generated.ts /tmp/bff-openapi.generated.expected.ts
+          git diff -- src/contracts/bff-openapi.generated.ts
 
       - name: Upload expected contract types on drift
         if: failure() && steps.contract_drift.outcome == 'failure'

@@ -16,6 +16,9 @@ Uso (nunca em produção/staging/preview):
 from __future__ import annotations
 
 import os
+import atexit
+import tempfile
+from pathlib import Path
 
 import uvicorn
 from starlette.applications import Starlette
@@ -34,7 +37,15 @@ def build_e2e_app() -> Starlette:
             "backend real de producao)."
         )
 
-    app = create_app(env="test")
+    # Durable API metadata is exercised by the same browser harness; cloud bytes are a fixture.
+    temporary = tempfile.TemporaryDirectory(prefix="campaia-e2e-")
+    app = create_app(env="test", db_path=str(Path(temporary.name) / "runtime.db"))
+    def cleanup():
+        app.state.campaia.db.close()
+        temporary.cleanup()
+    atexit.register(cleanup)
+    from tests_support.asset_storage import TestOnlyAssetStorage
+    app.state.campaia.asset_storage = TestOnlyAssetStorage()
     state: AppState = app.state.campaia
     state.id_token_verifier = DeterministicTestIdTokenVerifier()
     state.allowed_origins = frozenset({allowed_origin})

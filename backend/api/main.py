@@ -48,6 +48,10 @@ from .routes_billing import (
     put_subscription,
     reactivate_billing_subscription,
 )
+from .routes_brand_assets import (
+    list_brand_assets, upload_brand_asset, read_brand_asset,
+    reconcile_brand_asset, delete_brand_asset,
+)
 from .routes_brand import (create_brand_profile, list_brand_profiles, get_brand_profile,
                            update_brand_profile, list_brand_versions)
 from .routes_campaigns import (
@@ -157,6 +161,11 @@ routes = [
     Route("/brand-profiles/{brandProfileId}", update_brand_profile, methods=["PUT"]),
     Route("/brand-profiles/{brandProfileId}/versions", list_brand_versions, methods=["GET"]),
 
+    Route("/brand-profiles/{brandProfileId}/assets", list_brand_assets, methods=["GET"]),
+    Route("/brand-profiles/{brandProfileId}/assets", upload_brand_asset, methods=["POST"]),
+    Route("/brand-profiles/{brandProfileId}/assets/{assetId}/content", read_brand_asset, methods=["GET"]),
+    Route("/brand-profiles/{brandProfileId}/assets/{assetId}/reconcile", reconcile_brand_asset, methods=["POST"]),
+    Route("/brand-profiles/{brandProfileId}/assets/{assetId}", delete_brand_asset, methods=["DELETE"]),
     Route("/connections", list_connections, methods=["GET"]),
     Route("/connections/oauth/start", oauth_start, methods=["POST"]),
     Route("/connections/oauth/callback", oauth_callback, methods=["POST"]),

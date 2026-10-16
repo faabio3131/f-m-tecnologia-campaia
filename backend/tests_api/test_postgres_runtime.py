@@ -696,6 +696,127 @@ class PostgresRuntimeTests(unittest.TestCase):
                 conn.execute("DELETE FROM campaia_runtime.credit_journal")
         self.assertEqual(len(fresh.entries("a")), 4)
 
+    def test_brand_asset_quota_fence_restart_and_pg_guards(self):
+        from unittest.mock import patch
+        from starlette.testclient import TestClient
+        from tests_support.asset_storage import TestOnlyAssetStorage
+        from tests_api.test_brand_assets import png
+        from tests_api.test_brand_versions import BODY
+        from tests_api.test_helpers import OWNER, OTHER_OWNER, unique_idem
+        from campaia_core.asset_storage import AssetStorageError, AssetStorageErrorCode as Code
+        from campaia_core.asset_images import normalize_asset_image
+
+        a = TestClient(create_app(database_url=DSN, env="test"))
+        b = TestClient(create_app(database_url=DSN, env="test"))
+        self.addCleanup(a.app.state.campaia.db.close)
+        self.addCleanup(b.app.state.campaia.db.close)
+        storage = TestOnlyAssetStorage(max_active_bytes=len(normalize_asset_image(png()).data))
+        for client in (a, b):
+            client.app.state.campaia.asset_storage = storage
+        profile = a.post("/brand-profiles", headers={**OWNER, **unique_idem()}, json=BODY).json()["id"]
+        base = "/brand-profiles/" + profile + "/assets"
+        def upload(client, headers):
+            return client.post(base + "?kind=LOGO",
+                headers={**headers, "Content-Type": "application/octet-stream"}, content=png())
+        headers = {**OWNER, **unique_idem()}
+        original = storage.upload_once
+        def lost(expected, data):
+            original(expected, data)
+            raise AssetStorageError(Code.UNCERTAIN)
+        with patch.object(storage, "upload_once", side_effect=lost):
+            pending = upload(a, headers)
+        self.assertEqual(pending.status_code, 202, pending.text)
+        self.assertEqual(upload(b, {**OWNER, **unique_idem()}).status_code, 409)
+        ready = upload(b, headers)
+        self.assertEqual(ready.status_code, 201, ready.text)
+        identity = ready.json()["id"]
+        self.assertEqual(storage.calls.count("POST"), 1)
+        self.assertEqual(b.get(base, headers=OTHER_OWNER).status_code, 404)
+        with self.assertRaises(psycopg.errors.InsufficientPrivilege):
+            with psycopg.connect(DSN) as conn:
+                conn.execute("UPDATE campaia_runtime.brand_assets SET tenant_id=%s WHERE id=%s", ("foreign", identity))
+        with self.assertRaises(psycopg.errors.RaiseException):
+            with psycopg.connect(DSN) as conn:
+                conn.execute("UPDATE campaia_runtime.brand_assets SET data=jsonb_set(data, '{kind}', %s::jsonb) WHERE id=%s", ('"REFERENCE"', identity))
+        with self.assertRaises(psycopg.errors.RaiseException):
+            with psycopg.connect(DSN) as conn:
+                conn.execute("UPDATE campaia_runtime.brand_assets SET data=jsonb_set(data, '{generation}', %s::jsonb) WHERE id=%s", ('"999999"', identity))
+        delete_headers = {**OWNER, **unique_idem()}
+        self.assertEqual(a.delete(base + "/" + identity, headers=delete_headers).status_code, 200)
+        self.assertEqual(b.delete(base + "/" + identity, headers=delete_headers).status_code, 200)
+        self.assertEqual(storage.calls.count("DELETE"), 1)
+        self.assertEqual(b.app.state.campaia.asset_store.usage("demo-tenant"), 0)
+        with self.assertRaises(psycopg.errors.RaiseException):
+            with psycopg.connect(DSN) as conn:
+                conn.execute("UPDATE campaia_runtime.brand_assets SET data=jsonb_set(data, '{status}', %s::jsonb) WHERE id=%s", ('"READY"', identity))
+        with self.assertRaises(psycopg.errors.RaiseException):
+            with psycopg.connect(DSN) as conn:
+                conn.execute("DELETE FROM campaia_runtime.brand_assets WHERE id=%s", (identity,))
+
+    def test_brand_asset_concurrent_pg_quota_serializes_different_intents(self):
+        from tests_support.asset_storage import TestOnlyAssetStorage
+        from tests_api.test_brand_assets import png
+        from campaia_core.asset_images import normalize_asset_image
+        a, b = self._states()
+        self.addCleanup(a.db.close)
+        self.addCleanup(b.db.close)
+        image = normalize_asset_image(png())
+        storage = TestOnlyAssetStorage(max_active_bytes=len(image.data))
+        barrier = threading.Barrier(2)
+        from api.errors import ApiError
+        def reserve(state, key):
+            barrier.wait()
+            try:
+                record, dispatch = state.asset_store.reserve(state.tokens["demo-owner-token"],
+                    "bp-pg-test", key, "input-digest", "LOGO", image, storage)
+                return record["asset_id"], dispatch
+            except ApiError as error:
+                return error.code, False
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            one = pool.submit(reserve, a, "pg-asset-quota-a")
+            two = pool.submit(reserve, b, "pg-asset-quota-b")
+            results = [one.result(timeout=10), two.result(timeout=10)]
+        self.assertEqual(sum(result[1] for result in results), 1)
+        self.assertIn(("ASSET_QUOTA_EXCEEDED", False), results)
+        self.assertEqual(b.asset_store.usage("demo-tenant"), len(image.data))
+        self.assertEqual(len(a.asset_store.rows("demo-tenant")), 1)
+
+    def test_persistent_session_switch_is_atomic_and_serializes_revocation(self):
+        from dataclasses import replace
+        from unittest.mock import patch
+        a, b = self._states()
+        self.addCleanup(a.db.close)
+        self.addCleanup(b.db.close)
+        first = a.tokens["demo-owner-token"]
+        second = replace(first, tenant_id="other-tenant", user_id="other-member")
+        def create():
+            return a.sessions.create(first, now=datetime.now(timezone.utc),
+                available_principals=(first, second), subject="same-subject")
+        record = create()
+        switched = a.sessions.switch_principal(record.session_id, second)
+        self.assertEqual(switched.csrf_secret, record.csrf_secret)
+        self.assertEqual(b.sessions.get(record.session_id).principal, second)
+        self.assertIsNone(b.db.table("sessions").get_for_tenant(record.session_id, first.tenant_id))
+        self.assertIsNone(a.sessions.switch_principal(record.session_id, replace(second, user_id="foreign")))
+        with patch.object(a.sessions._table, "put", side_effect=RuntimeError("session insert failed")):
+            with self.assertRaisesRegex(RuntimeError, "session insert failed"):
+                a.sessions.switch_principal(record.session_id, first)
+        self.assertEqual(b.sessions.get(record.session_id).principal, second)
+        from campaia_core.errors import TenantIsolationViolation
+        # Sessions are intentionally excluded from the SQL tenant trigger (migration 002).
+        # RecordTable still forbids arbitrary rehome; only the explicit switch may relocate.
+        with self.assertRaises(TenantIsolationViolation):
+            b.db.table("sessions").put(record.session_id, "foreign", b.sessions.get(record.session_id))
+        for revoke in ("invalidate", "invalidate_membership"):
+            candidate = create()
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                switch = pool.submit(a.sessions.switch_principal, candidate.session_id, second)
+                revoked = pool.submit(getattr(b.sessions, revoke),
+                    candidate.session_id if revoke == "invalidate" else first.user_id)
+                switch.result(timeout=10)
+                revoked.result(timeout=10)
+            self.assertIsNone(a.sessions.get(candidate.session_id))
+
     def test_00_migration_up_down_up_is_reversible_and_covers_current_stores(self) -> None:
         self.assertEqual(
             set(self.runner.applied_versions()),
@@ -707,6 +828,7 @@ class PostgresRuntimeTests(unittest.TestCase):
                 "005_credit_journal",
                 "006_billing_notices",
                 "007_ai_cost_evidence",
+                "008_brand_assets",
             },
         )
         self.assertTrue(RUNTIME_TABLES.issubset(self._runtime_tables()))
@@ -714,6 +836,7 @@ class PostgresRuntimeTests(unittest.TestCase):
         self.assertEqual(
             self.runner.rollback_all(),
             [
+                "008_brand_assets",
                 "007_ai_cost_evidence",
                 "006_billing_notices",
                 "005_credit_journal",

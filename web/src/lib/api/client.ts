@@ -85,6 +85,8 @@ export class ApiNetworkError extends Error {
 export interface RequestOptions {
   /** Corpo JSON da requisicao. */
   json?: unknown;
+  /** Binary upload; only the dedicated upload method sets this. */
+  binary?: Blob;
   /** Idempotency-Key estavel para a MESMA acao logica -- nunca gerada aqui;
    * quem chama decide o valor e reusa nas tentativas/retries da mesma acao
    * (Etapa 2, secao 25). */
@@ -111,6 +113,7 @@ async function request<T>(
   options: RequestOptions = {},
 ): Promise<T> {
   const isMutating = MUTATING_METHODS.has(method);
+  if (options.binary !== undefined && options.json !== undefined) throw new Error("Corpo de envio inválido.");
 
   if (isMutating) {
     const token = getCsrfToken();
@@ -124,6 +127,7 @@ async function request<T>(
   if (options.json !== undefined) {
     headers.set("content-type", "application/json");
   }
+  if (options.binary !== undefined) headers.set("content-type", "application/octet-stream");
   if (isMutating) {
     headers.set(CSRF_HEADER_NAME, getCsrfToken() as string);
     if (options.idempotencyKey) {
@@ -143,7 +147,7 @@ async function request<T>(
       method,
       headers,
       credentials: "include",
-      body: options.json !== undefined ? JSON.stringify(options.json) : undefined,
+      body: options.binary ?? (options.json !== undefined ? JSON.stringify(options.json) : undefined),
       signal: controller.signal,
     });
   } catch (cause) {
@@ -167,7 +171,9 @@ async function request<T>(
 }
 
 export const api = {
-  get: <T>(path: string, options?: Omit<RequestOptions, "json" | "idempotencyKey">) =>
+  upload: <T>(path: string, binary: Blob, options: Omit<RequestOptions, "json" | "binary">) =>
+    request<T>("POST", path, { ...options, binary }),
+  get: <T>(path: string, options?: Omit<RequestOptions, "json" | "binary" | "idempotencyKey">) =>
     request<T>("GET", path, options),
   post: <T>(path: string, json?: unknown, options?: RequestOptions) =>
     request<T>("POST", path, { ...options, json }),

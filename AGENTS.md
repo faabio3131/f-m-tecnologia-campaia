@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@ff5586ab6698324e62bb47df14589ab67c2dd0c2`
+**CURRENT confirmado:** `main@45a1ad6fd838d579ad7f1b094a13014eacefb550`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -394,9 +394,13 @@ WP-R03-02A / PR #65 integrada, CI da PR e pós-merge verdes: contrato interno e 
 integridade, limites de resposta e mutações condicionais sem retry automático. Ainda sem endpoint,
 AppState ou UI; nenhuma ativação ou chamada real. Ver
 `docs/WP_R03_02A_TRANSPORTE_STORAGE_PRIVADO_20261016.md`.
-WP-R03-02B em validação: decoder de imagem em processo restrito, formatos estáticos
+WP-R03-02B / PR #66 integrada, CI da PR e pós-merge verdes: decoder de imagem em processo restrito, formatos estáticos
 PNG/JPEG/WebP, normalização sem metadados e envelope de saída verificado pelo pai.
-Ainda sem endpoint/ativação. Ver `docs/WP_R03_02B_VALIDACAO_ISOLADA_IMAGENS_20261016.md`.
+Sem ativação real. Ver `docs/WP_R03_02B_VALIDACAO_ISOLADA_IMAGENS_20261016.md`.
+WP-R03-02C em validação: assets privados com API/Web, quota por organização, fence de
+upload/delete, normalização isolada e metadata persistente. Migração 008 somente em
+fonte/CI; default desabilitado. E2E usa armazenamento SIMULATOR explícito, não prova GCS
+real. Ver `docs/WP_R03_02C_ASSETS_PRIVADOS_API_WEB_20261016.md`.
 
 ### Falta
 - upload real de logo/assets;

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { deflateSync } from "node:zlib";
 
 /**
  * E2E real do protocolo de sessao (Etapa 2, secoes 29-30). Roda contra o Next.js
@@ -6,6 +7,27 @@ import { test, expect, type Page } from "@playwright/test";
  * (backend/tests_support/e2e_server.py) -- nunca um mock de rede. Ver
  * playwright.session.config.ts.
  */
+
+
+function smallStaticPng() {
+  function chunk(kind: string, data: Buffer) {
+    const label = Buffer.from(kind);
+    const payload = Buffer.concat([label, data]);
+    let crc = 0xffffffff;
+    for (const byte of payload) {
+      crc ^= byte;
+      for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+    }
+    const length = Buffer.alloc(4), checksum = Buffer.alloc(4);
+    length.writeUInt32BE(data.length); checksum.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
+    return Buffer.concat([length, payload, checksum]);
+  }
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(2, 0); header.writeUInt32BE(3, 4); header[8] = 8; header[9] = 2;
+  const pixels = Buffer.from([0, 255, 0, 0, 255, 0, 0]);
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk("IHDR", header), chunk("IDAT", deflateSync(Buffer.concat([pixels, pixels, pixels]))), chunk("IEND", Buffer.alloc(0))]);
+}
 
 const TENANT_A_TESTID = "test-identity-e2e-test-id-token-tenant-a-owner";
 const TENANT_B_TESTID = "test-identity-e2e-test-id-token-tenant-b-owner";
@@ -321,6 +343,47 @@ test.describe("Protocolo de sessao real", () => {
     const history = await historyResponse.json();
     expect(history.items.map((item: { version: number }) => item.version)).toEqual([2, 1]);
     expect(history.items[1].tone).toBe("inspirador");
+
+
+    // Assets: API + SQLite + worker reais; armazenamento de objetos explicitamente simulado.
+    await brandCard.getByRole("button", { name: "Arquivos de Marca E2E", exact: true }).click();
+    const assetsPanel = page.getByRole("region", { name: "Arquivos de Marca E2E", exact: true });
+    await expect(assetsPanel.getByText("Ambiente de teste: armazenamento simulado.")).toBeVisible();
+    await assetsPanel.getByLabel("Imagem da marca").setInputFiles({
+      name: "logo.png", mimeType: "image/png", buffer: smallStaticPng(),
+    });
+    const uploadPromise = page.waitForResponse(response => response.url().includes('/brand-profiles/' + createdBrand.id + '/assets?kind=LOGO')
+      && response.request().method() === 'POST');
+    await assetsPanel.getByRole("button", { name: "Enviar imagem", exact: true }).click();
+    const uploadResponse = await uploadPromise;
+    expect(uploadResponse.status()).toBe(201);
+    const uploaded = await uploadResponse.json();
+    expect(uploaded.status).toBe("READY");
+    const preview = assetsPanel.getByRole("img", { name: "Logo de Marca E2E", exact: true });
+    await expect(preview).toBeVisible();
+    await expect.poll(() => preview.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBe(2);
+
+    const contextAssetB = await page.context().browser()!.newContext();
+    const pageAssetB = await contextAssetB.newPage();
+    await pageAssetB.goto("/login");
+    await loginViaTestHarness(pageAssetB, TENANT_B_TESTID);
+    const foreign = await pageAssetB.request.get(uploaded.content_url, { headers: await sessionCookieHeader(pageAssetB) });
+    expect(foreign.status()).toBe(404);
+    await contextAssetB.close();
+
+    const assetUrl = '/api/campaia/brand-profiles/' + createdBrand.id + '/assets/' + uploaded.id;
+    const withoutCsrf = await page.request.delete(assetUrl, {
+      headers: { ...(await sessionCookieHeader(page)), "idempotency-key": "e2e-asset-no-csrf-0001" },
+    });
+    expect(withoutCsrf.status()).toBe(403);
+    await assetsPanel.getByRole("button", { name: "Remover imagem", exact: true }).click();
+    const deletePromise = page.waitForResponse(response => response.url().endsWith('/assets/' + uploaded.id)
+      && response.request().method() === 'DELETE');
+    await assetsPanel.getByRole("button", { name: "Confirmar remoção", exact: true }).click();
+    expect((await deletePromise).status()).toBe(200);
+    await expect(assetsPanel.getByText("Nenhum arquivo registrado.")).toBeVisible();
+    const removed = await page.request.get(uploaded.content_url, { headers: await sessionCookieHeader(page) });
+    expect(removed.status()).toBe(404);
 
     // Conexoes: fecha o ciclo real start -> callback -> Connection persistida.
     await page.goto("/connections");
