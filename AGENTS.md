@@ -909,3 +909,13 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - UI Web agora possui formulário de imagem com revisão de créditos e confirmação explícita, além do inventário; configuração externa ausente desativa a ação, sem simular integração real.
 - `PARTIAL`: homologação real GCS/Gemini continua EXTERNAL_INFRASTRUCTURE / EXTERNAL_CREDENTIAL; testes e CI do HEAD atual PENDENTES, especialmente E2E de sucesso, erro, replay, corrupção, recovery e cross-tenant.
 - **Atenção:** ponte de reconciliação operacional `STORAGE_PENDING -> STORED -> SETTLE` após crash com reserva comercial segue TARGET, assim como entrega privada binária/autorizada, policy preview e paginação. Não liberar deploy/merge/G7 com esses blockers internos.
+
+
+## WP-R04-04B — recuperação comercial, mídia privada e matriz E2E (16/10/2026)
+
+- GET autenticado de mídia PNG estável: `/campaigns/{campaignId}/images/{creativeId}/content`, streaming sem URL pública, validação de manifesto e GCS generation; UI Web exibe imagem somente após status STORED.
+- POST governado `/campaigns/{campaignId}/images/{creativeId}/reconcile` para observar objeto após crash e liquidar reserva F5 usando a referência canônica F3/F5 persistida, sem repetir POST Gemini/GCS; VERSION/CAMPAIGN/TENANT/UNIT/RBAC são verificados.
+- Criativo persiste `credit_operation_id` imutável na claim; recuperação de imagem STORED revalida metadata GCS antes de settlement. Default externo desabilitado; `SIMULATOR` apenas em `test/dev-local`; não confundir sucesso CI com homologação externa.
+- Novo teste de integração explícito `test_generated_image_simulator_e2e.py`: RESERVE -> simulação de modelo imagem com custo registrado F3 -> upload privado simulado -> F5 SETTLE -> replay sem segundo POST/débito -> GET de PNG autenticado -> bloqueio cross-tenant. Histórico real e documentação são atuais somente após CI verde.
+- Dependências internas remanescentes: testes de timeout/falha de GCS + replay de recuperação após restart com SETTLE, controle de versão de campanhas e Brand Kit, formatos/variações por canal, upload manual, policy/preview e paginação conforme G7. Externos: GCS/ADC, Gemini com credencial e custos reais (EXTERNAL_INFRASTRUCTURE/EXTERNAL_CREDENTIAL).
+- **O WP segue PARTIAL até evidências de todos os gates internos.** PR #73 não mergeada; nenhuma migration, produção ou homologação externa autorizadas.
