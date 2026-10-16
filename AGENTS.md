@@ -1019,3 +1019,9 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - O preview de criativo deixa de anunciar `NOT_REVIEWED` invariavelmente: consulta o registro de revisão persistido, sinaliza APPROVE/REVOKED e mantém `publication_allowed=false` (somente policy/publication governada pode autorizar). Aprovação expirada ou revogada gera bloqueio.
 - Testes: preview com aprovação amarrada à evidência, preview revogado, aprovação com autor distinto, revogação auditada, replay idempotente e bloqueio de reaproveitar aprovação após revogação. Evidência pendente no novo HEAD da CI.
 - Não há comprovação de implantação de mídia em Google/Meta nem revogação de campanha já publicada nos canais; permanece TARGET/EXTERNAL_APPROVAL, não pode ser substituída por simulação. Reconciliação financeira externa e retenção ainda permanecem seus gates específicos.
+
+
+## Reteste WP-R04-04B — 16/10/2026, correção CI e revogação protegida
+- CI em `300958a` teve PostgreSQL runtime integration SUCCESS, mas API tests FAILURE por `NameError: state is not defined` em `preview_generated_creative`, originado na nova consulta persistida. Corrigida causa direta: _scope agora vincula `state` na rota de preview. Repetir CI do HEAD atual antes de declarar DONE_VERIFIED.
+- Nova regra fail-closed: revogação de imagem aprovada não é permitida via rota comum enquanto a campanha possuir `external_resources` registrados; exige compensação governada e reconciliação antes de alterar aprovação já aplicada. Sem inventar pausa/remoção externa.
+- Continua vedado merge/deploy; externos Gemini/GCS/canais e custo real mantidos em EXTERNAL_CREDENTIAL/PRODUCTION_GATE. Histórico de PRs #48–#72 merged confirmado, #73 Draft.
