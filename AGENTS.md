@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@9fcd24172e38c0e45b28b80169877f41aefbc052`
+**CURRENT confirmado:** `main@2356746585221315ea15b199ecc7d8e074fe8ef2`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -353,7 +353,7 @@ sem nova mensalidade, residual e reserva durante encerramento. Ver
 de valor/status, reversões e consulta somente leitura pelo histórico. Ver
 `docs/WP_R02_11_CONFERENCIA_RECEBIMENTOS_20261015.md`. WP-R02-12 / PR #56 integrada, CI da PR e pós-merge verdes: retirada
 comprovada de renovação aberta após encerramento, sem repetir DELETE incerto ou duplicar
-excedente final. Ver `docs/WP_R02_12_RETIRADA_RENOVACAO_ABERTA_20261015.md`. WP-R02-13 em validação:\nevidência mínima de devoluções pendentes/parciais/integralmente concluídas, sem nova franquia.\nVer `docs/WP_R02_13_OBSERVACOES_ESTORNO_20261015.md`. Antes da ativação V1,
+excedente final. Ver `docs/WP_R02_12_RETIRADA_RENOVACAO_ABERTA_20261015.md`. WP-R02-13 / PR #57 integrada, CI da PR e pós-merge verdes:\nevidência mínima de devoluções pendentes/parciais/integralmente concluídas, sem nova franquia.\nVer `docs/WP_R02_13_OBSERVACOES_ESTORNO_20261015.md`. WP-R02-14 em validação: fato pago/primeira\ncontratação imutáveis e pedido de garantia com encerramento explícito, sem refund fictício.\nVer `docs/WP_R02_14_PEDIDO_GARANTIA_20261016.md`. Antes da ativação V1,
 resolver refunds/chargebacks, garantia e conflitos; depois scheduler/dunning único. Catálogo real continua
 desabilitado; não certificar G5 com simulador ou apenas CI.
 

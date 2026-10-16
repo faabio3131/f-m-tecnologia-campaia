@@ -22,6 +22,8 @@ from campaia_core.credit_ledger import ExtraCreditConsent
 from campaia_core.billing_cycles import PaidCycleSchedule, period_index, COMMERCIAL_TIMEZONE
 from .billing_closure import record_closed_lifecycle, closure_quote, final_charge, close_without_invoice, require_final_usage_resolved, result_key as closure_result_key
 from .billing_void import withdrawal_quote, withdrawal_state, withdrawal_observed_at, withdraw_unpaid_renewal, verified_void, intent_key as void_intent_key
+from .billing_facts import record_settled_fact
+from .billing_guarantee import guarantee_quote, request_guarantee
 from .billing_receipts import has_reversal_signal, observe_payment, require_no_payment_review, has_payment_review, payment_access_is_blocked
 from .billing_checkout import checkout_quote
 from .billing_dispatch import execute_invoice, obligation_key
@@ -579,6 +581,23 @@ def _review_checkout(state, charge, body):
     return charge
 
 
+async def get_billing_guarantee(request: Request) -> JSONResponse:
+    fixture, state = _authorize_billing(request, Permission.BILLING_VIEW)
+    with state.db.transaction() if state.db is not None else nullcontext():
+        if state.db is not None:
+            state.idempotency._table.lock_key(f"tenant:{fixture.tenant_id}")
+        _require_subscription(state, fixture.tenant_id)
+        return JSONResponse(guarantee_quote(state, fixture.tenant_id, at=datetime.now(timezone.utc)))
+
+
+async def request_billing_guarantee(request: Request) -> JSONResponse:
+    fixture, state = _authorize_billing(request, Permission.BILLING_MANAGE)
+    key = require_idempotency_key(request)
+    body = await parse_body(request, BillingClosureRequest)
+    requested_at = datetime.now(timezone.utc)
+    return JSONResponse(request_guarantee(state, fixture, key, body.model_dump(), at=requested_at))
+
+
 async def get_billing_closure(request: Request) -> JSONResponse:
     fixture, state = _authorize_billing(request, Permission.BILLING_VIEW)
     with state.db.transaction() if state.db is not None else nullcontext():
@@ -1009,6 +1028,7 @@ def _apply_verified_payment_event(state, charge, event, *, observed_at, source="
     if fact is None:
         return JSONResponse({"accepted": True, "processed": False, "status": status.value})
 
+    record_settled_fact(state, charge, event, fact, source=source)
     handoff = build_campaia_fiscal_handoff(fact)
     state.charges[event.payment_id] = replace(state.charges[event.payment_id], status=ChargeStatus.SETTLED)
 

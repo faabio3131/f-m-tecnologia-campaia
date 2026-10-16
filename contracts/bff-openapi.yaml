@@ -1412,6 +1412,1192 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /billing/guarantee:
+    get:
+      tags: [Billing]
+      summary: Consulta a garantia comercial do primeiro pagamento verificado
+      operationId: getBillingGuarantee
+      security: [cookieAuth: []]
+      responses:
+        '200':
+          description: Janela comercial e pagamentos considerados; não confirma devolução
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingGuarantee' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Sem BILLING_VIEW
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    post:
+      tags: [Billing]
+      summary: Registra pedido de garantia e encerra explicitamente o acesso pago
+      operationId: requestBillingGuarantee
+      security: [cookieAuth: []]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [fingerprint, accept]
+              properties:
+                fingerprint: { type: string, pattern: '^[a-f0-9]{64}    get:
+      tags: [Billing]
+      summary: Revisa a obrigação comercial autoritativa sem emitir cobrança
+      description: Sem consulta ao gateway nem freeze financeiro; titular minimizado e ambiente explícito.
+      operationId: getBillingCheckout
+      security: [cookieAuth: []]
+      responses:
+        '200':
+          description: Cotação, cobrança já registrada ou indisponibilidade explícita
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingCheckout' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Sem BILLING_VIEW
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /billing/charges/{gatewayChargeId}/withdraw:
+    post:
+      tags: [Billing]
+      summary: Retira renovação aberta após encerramento, sem estornar ou apagar histórico
+      description: Fence durável permite apenas uma tentativa de exclusão; replay incerto consulta o provedor. Somente prova de exclusão de invoice não paga permite separar consumo final.
+      operationId: withdrawBillingRenewal
+      security: [cookieAuth: []]
+      parameters:
+        - name: gatewayChargeId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [fingerprint, accept]
+              properties:
+                fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+                accept: { type: boolean }
+      responses:
+        '200':
+          description: Retirada confirmada; não representa pagamento ou devolução
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [state, billing_id, gateway_charge_id, amount, observed_at]
+                properties:
+                  state: { type: string, enum: [VOID] }
+                  billing_id: { type: string }
+                  gateway_charge_id: { type: string }
+                  amount: { type: string }
+                  provider: { type: string }
+                  mode: { type: string }
+                  observed_at: { type: string, format: date-time }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '409':
+          description: Retirada indisponível ou revisão/contexto alterado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Retirada incerta; não repetir exclusão automaticamente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /billing/charges/{gatewayChargeId}/reconcile:
+    post:
+      tags: [Billing]
+      summary: Consulta recebimento no provedor e concilia sem emitir outra cobrança
+      description: GET externo fora da transação; valor/status vêm apenas do provedor vinculado à obrigação do tenant.
+      operationId: reconcileBillingPayment
+      security: [cookieAuth: []]
+      parameters:
+        - name: gatewayChargeId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        '200':
+          description: Observação conferida ou pendente; não aceita comprovante/status fornecido pelo cliente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingWebhookReceipt' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Contexto ou provedor/ambiente divergente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Consulta externa não confirmada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /billing/charges:
+    get:
+      tags: [Billing]
+      summary: Historico de cobrancas do tenant com ultima observacao registrada
+      description: |
+        Sem chamadas ao gateway. Status e origem sao observacoes persistidas, nao consulta
+        em tempo real; registros legados podem nao possuir essas informacoes. Nao retorna
+        CPF/CNPJ, customer_ref nem credenciais. Pagina fixa de ate 50 cobrancas.
+      operationId: listBillingCharges
+      security: [cookieAuth: []]
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Historico isolado por tenant, inclusive sem assinatura atual
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingChargeHistory' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Usuario sem BILLING_VIEW
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    post:
+      tags: [Billing]
+      summary: Cria cobranca idempotente para uma competencia
+      description: |
+        A cobranca usa plano/proposito autoritativos do servidor. Retry com a mesma
+        Idempotency-Key nao duplica efeito externo. Confirmacao chega pelo webhook.
+      operationId: createBillingCharge
+      security: [cookieAuth: []]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/StepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BillingChargeCreate' }
+      responses:
+        '202':
+          description: Cobranca criada ou reencontrada no gateway
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingCharge' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Cotação alterada ou contexto de conciliação divergente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Emissão incerta ou divergente, sem redispatch automático
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /webhooks/asaas:
+    post:
+      tags: [Billing]
+      summary: Recebe evento de pagamento do Asaas
+      description: |
+        Endpoint provider-to-provider sem sessao de usuario. Autenticidade vem de
+        asaas-access-token; dedupe e rate-limit sao server-side. Pagamento tardio pode
+        ser liquidado financeiramente sem reativar entitlement indevido.
+      operationId: receiveAsaasWebhook
+      security: []
+      parameters:
+        - name: asaas-access-token
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Evento aceito; processed indica se houve liquidacao aplicavel
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingWebhookReceipt' }
+        '401':
+          description: Token de webhook invalido
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingWebhookReceipt' }
+        '429':
+          description: Rate limit por origem excedido
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingWebhookReceipt' }
+
+  /campaigns/{campaignId}/insights:
+    get:
+      tags: [Metricas]
+      summary: Metricas reconciliadas da campanha
+      operationId: getInsights
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsightSeries' }
+
+  /audit-events:
+    get:
+      tags: [Governanca]
+      summary: Trilha de auditoria do tenant
+      operationId: listAuditEvents
+      parameters:
+        - name: campaign_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: cursor
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditEvent' }
+                  next_cursor: { type: [string, 'null'] }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token de sessao. O `tenant_id` e derivado dele e nunca aceito do cliente.
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: campaia_session
+      description: |
+        Sessao real Web (ADR-0018/WP-02) -- cookie HttpOnly/Secure/SameSite=Lax, opaco,
+        emitido por POST /auth/session apos login real via Google Identity Platform. O
+        `tenant_id` e derivado da sessao server-side, nunca aceito do cliente. Mutacoes sob
+        este esquema exigem tambem o header X-CSRF-Token (ver parametro CsrfToken) --
+        double-submit cookie, diferente do fluxo bearerAuth (mobile), que nao usa CSRF.
+
+  parameters:
+    CsrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema: { type: string }
+      description: |
+        Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+        login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+        servidor. Ausente/invalido -> 403.
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 16, maxLength: 128 }
+      description: Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original.
+    StepUpToken:
+      name: X-Step-Up-Token
+      in: header
+      required: true
+      schema: { type: string }
+      description: Prova de reautenticacao recente. Exigido em conexao de conta, verba, autonomia e aprovacao.
+    CampaignId:
+      name: campaignId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ConnectionId:
+      name: connectionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Unauthorized:
+      description: Nao autenticado
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Nao encontrado neste tenant
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ValidationError:
+      description: Payload invalido segundo o schema canonico
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    InvalidState:
+      description: Transicao de estado nao permitida pela maquina de estados
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    StepUpRequired:
+      description: Reautenticacao necessaria
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ApprovalRequired:
+      description: Aprovacao humana ausente, invalida ou expirada
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+
+    BillingSubscriptionUpsert:
+      type: object
+      additionalProperties: false
+      required: [plan_id, customer_document]
+      properties:
+        plan_id: { type: string }
+        customer_document:
+          type: string
+          description: CPF/CNPJ exigido pelo contrato de cobranca; nunca inferido.
+        initial_only:
+          type: boolean
+          default: false
+          description: Quando true, recusa assinatura existente sem altera-la
+        expected_plan_fingerprint:
+          type: [string, 'null']
+          pattern: '^[a-f0-9]{64}$'
+          description: Versao das condicoes selecionadas; mudanca no catalogo exige nova confirmacao
+        start_trial:
+          type: boolean
+          default: false
+
+    BillingPlanChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [target_plan_id]
+      properties:
+        expected_plan_fingerprint: { type: [string, 'null'], pattern: '^[a-f0-9]{64}$' }
+        target_plan_id: { type: string }
+
+    BillingEntitlements:
+      type: object
+      required: [max_users, max_active_campaigns, channels, ai_capabilities, resources]
+      properties:
+        max_users: { type: [integer, 'null'], minimum: 1 }
+        max_active_campaigns: { type: [integer, 'null'], minimum: 1 }
+        channels: { type: array, items: { type: string } }
+        ai_capabilities: { type: array, items: { type: string } }
+        resources: { type: array, items: { type: string } }
+
+    BillingPlan:
+      type: object
+      required: [fingerprint, plan_id, name, currency, monthly_price, included_credits,
+                 extra_credit_unit_price, trial_days, cancellation_mode,
+                 reactivation_mode, reactivation_billing_mode, plan_changes]
+      properties:
+        fingerprint: { type: string, pattern: '^[a-f0-9]{64}$' }
+        plan_id: { type: string }
+        name: { type: string }
+        currency: { type: string, enum: [BRL] }
+        monthly_price: { type: string }
+        included_credits: { type: string }
+        extra_credit_unit_price: { type: string }
+        trial_days: { type: [integer, 'null'] }
+        credit_policy:
+          anyOf:
+            - { $ref: '#/components/schemas/BillingCreditPolicy' }
+            - { type: 'null' }
+        cancellation_mode: { type: [string, 'null'] }
+        reactivation_mode: { type: [string, 'null'] }
+        reactivation_billing_mode: { type: [string, 'null'] }
+        plan_changes:
+          type: array
+          items:
+            type: object
+            required: [target_plan_id, kind, billing_mode]
+            properties:
+              target_plan_id: { type: string }
+              kind: { type: string }
+              activation: { type: [string, 'null'] }
+              billing_mode: { type: [string, 'null'] }
+
+    BillingSubscription:
+      type: object
+      required:
+        [tenant_id, customer_ref, customer_document, plan_id, plan_name, status,
+         commercial_terms, entitlement_access_active]
+      properties:
+        payment_review_required: { type: boolean }
+        commercial_terms:
+          description: Snapshot contratado; nao substituido por alteracoes posteriores do catalogo
+          $ref: '#/components/schemas/BillingPlan'
+        tenant_id: { type: string }
+        customer_ref: { type: string }
+        customer_document: { type: string }
+        plan_id: { type: string }
+        plan_name: { type: string }
+        status:
+          type: string
+          enum: [PENDING_PAYMENT, TRIAL, ACTIVE, PAST_DUE, EXPIRED, CANCELED]
+        trial_started_at: { type: [string, 'null'], format: date-time }
+        trial_ends_at: { type: [string, 'null'], format: date-time }
+        activated_at: { type: [string, 'null'], format: date-time }
+        pending_plan_id: { type: [string, 'null'] }
+        pending_plan_name: { type: [string, 'null'] }
+        pending_plan_change_kind: { type: [string, 'null'] }
+        pending_plan_change_billing_mode: { type: [string, 'null'] }
+        cancel_at_period_end: { type: [string, 'null'], format: date-time }
+        pending_plan_effective_at: { type: [string, 'null'], format: date-time }
+        paid_period_starts_at: { type: [string, 'null'], format: date-time }
+        paid_period_ends_at: { type: [string, 'null'], format: date-time }
+        pending_plan_entitlements:
+          anyOf:
+            - { $ref: '#/components/schemas/BillingEntitlements' }
+            - { type: 'null' }
+        canceled_at: { type: [string, 'null'], format: date-time }
+        reactivation_requested_at: { type: [string, 'null'], format: date-time }
+        past_due_at: { type: [string, 'null'], format: date-time }
+        grace_period_ends_at: { type: [string, 'null'], format: date-time }
+        past_due_in_grace: { type: boolean }
+        past_due_access_mode:
+          type: [string, 'null']
+          enum: [ALLOW_DURING_GRACE, BLOCK_IMMEDIATELY, null]
+        dunning_reminders_sent: { type: integer, minimum: 0 }
+        next_dunning_reminder_at: { type: [string, 'null'], format: date-time }
+        entitlement_access_active: { type: boolean }
+        entitlements:
+          anyOf:
+            - { $ref: '#/components/schemas/BillingEntitlements' }
+            - { type: 'null' }
+
+    BillingChargeHistoryItem:
+      type: object
+      required: [billing_id, gateway_charge_id, competence, currency, amount, plan_id,
+                 purpose, created_at, gateway_status, gateway_provider, gateway_mode,
+                 status_observed_at, status_source, invoice_url]
+      properties:
+        billing_id: { type: string }
+        gateway_charge_id: { type: string }
+        competence: { type: string }
+        currency: { type: string }
+        amount: { type: string }
+        plan_id: { type: [string, 'null'] }
+        gateway_observed_amount: { type: [string, 'null'] }
+        payment_reconciliation_state: { type: [string, 'null'] }
+        gateway_refund_amount: { type: [string, 'null'] }
+        gateway_refund_state: { type: [string, 'null'] }
+        gateway_refund_observed_at: { type: [string, 'null'], format: date-time }
+        reconciliation_available: { type: boolean }
+        withdrawal_state: { type: [string, 'null'], enum: [REQUESTED, VOID, REVIEW, null] }
+        withdrawal_fingerprint: { type: [string, 'null'] }
+        withdrawal_observed_at: { type: [string, 'null'], format: date-time }
+        purpose: { type: string, enum: [REGULAR, PLAN_CHANGE, REACTIVATION, FINAL_USAGE] }
+        created_at: { type: [string, 'null'], format: date-time }
+        gateway_status: { type: [string, 'null'] }
+        gateway_provider: { type: [string, 'null'] }
+        gateway_mode: { type: [string, 'null'] }
+        status_observed_at: { type: [string, 'null'], format: date-time }
+        status_source: { type: [string, 'null'] }
+        invoice_url:
+          type: [string, 'null']
+          description: Fatura hospedada retornada pelo Asaas, validada por ambiente; nunca sintetizada
+
+    BillingChargeHistory:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/BillingChargeHistoryItem' }
+        next_cursor: { type: [string, 'null'] }
+
+    CreditConfirmation:
+      type: object
+      additionalProperties: false
+      required: [cycle_id, policy_version, credits, extra_amount]
+      properties:
+        cycle_id: { type: string }
+        policy_version: { type: string }
+        credits: { type: integer, minimum: 1 }
+        extra_amount: { type: string }
+
+    StrategyCreditQuote:
+      type: object
+      required: [mode, action, cycle_id, policy_version, credits, extra_amount, included_available]
+      properties:
+        mode: { type: string, enum: [COMMERCIAL, LEGACY] }
+        action: { type: string }
+        cycle_id: { type: [string, 'null'] }
+        policy_version: { type: [string, 'null'] }
+        credits: { type: [integer, 'null'] }
+        extra_amount: { type: [string, 'null'] }
+        included_available: { type: [integer, 'null'] }
+
+    BillingCreditPolicy:
+      type: object
+      required: [version, trial_credits, trial_max_users, trial_max_active_campaigns, action_weights]
+      properties:
+        version: { type: string }
+        trial_credits: { type: integer, minimum: 1 }
+        trial_max_users: { type: integer, minimum: 1 }
+        trial_max_active_campaigns: { type: integer, minimum: 1 }
+        action_weights:
+          type: object
+          additionalProperties: { type: integer, minimum: 1 }
+
+    BillingCreditConsent:
+      type: object
+      additionalProperties: false
+      required: [cycle_id, policy_version, extra_credit_price, cap]
+      properties:
+        cycle_id: { type: string, minLength: 1, maxLength: 256 }
+        policy_version: { type: string, minLength: 1, maxLength: 256 }
+        extra_credit_price: { type: string }
+        cap: { type: string }
+
+    BillingUsage:
+      type: object
+      required: [availability, cycle, balance, actions, alerts, access_active, can_authorize_extras]
+      properties:
+        access_active: { type: boolean }
+        can_authorize_extras: { type: boolean }
+        availability: { type: string, enum: [AVAILABLE, UNAVAILABLE] }
+        cycle:
+          anyOf:
+            - { $ref: '#/components/schemas/BillingUsageCycle' }
+            - { type: 'null' }
+        balance:
+          anyOf:
+            - { $ref: '#/components/schemas/BillingUsageBalance' }
+            - { type: 'null' }
+        actions:
+          type: array
+          items:
+            type: object
+            required: [action, credits]
+            properties:
+              action: { type: string }
+              credits: { type: integer }
+        alerts:
+          type: array
+          items: { type: string, enum: [INCLUDED_80, INCLUDED_100, EXTRA_CAP_80, EXTRA_CAP_100] }
+
+    BillingUsageCycle:
+      type: object
+      required: [id, starts_at, ends_at, trial, policy_version]
+      properties:
+        id: { type: string }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        trial: { type: boolean }
+        policy_version: { type: string }
+
+    BillingUsageBalance:
+      type: object
+      required: [included_credits, reserved_credits, consumed_credits, included_available,
+                 extra_committed_amount, extra_consumed_amount, extra_cap, extra_credit_price, currency]
+      properties:
+        included_credits: { type: integer }
+        reserved_credits: { type: integer }
+        consumed_credits: { type: integer }
+        included_available: { type: integer }
+        extra_committed_amount: { type: string }
+        extra_consumed_amount: { type: string }
+        extra_cap: { type: string }
+        extra_credit_price: { type: string }
+        currency: { type: string, enum: [BRL] }
+
+    BillingChargeCreate:
+      type: object
+      additionalProperties: false
+      required: [competence]
+      properties:
+        competence: { type: string }
+        accept_quote: { type: boolean, default: false }
+        expected_quote_fingerprint: { type: [string, 'null'], pattern: '^[a-f0-9]{64}$' }
+        extra_credits_used:
+          anyOf:
+            - { type: number, minimum: 0 }
+            - { type: string }
+          default: '0'
+
+    BillingClosure:
+      type: object
+      required: [state, fingerprint, amount, minimum, lifecycle_id, cycle_id, invoice, provider, mode]
+      properties:
+        state: { type: string, enum: [UNAVAILABLE, PENDING_USAGE, NO_CHARGE, MINIMUM_UNAVAILABLE, ABSORBABLE, ABSORBED, INVOICE_REQUIRED, INVOICED, SETTLED, RECONCILIATION_REQUIRED] }
+        fingerprint: { type: [string, 'null'] }
+        amount: { type: [string, 'null'] }
+        minimum: { type: [string, 'null'] }
+        lifecycle_id: { type: [string, 'null'] }
+        cycle_id: { type: [string, 'null'] }
+        invoice: { type: [string, 'null'] }
+        provider: { type: [string, 'null'] }
+        mode: { type: [string, 'null'], enum: [SIMULATOR, SANDBOX, PRODUCTION, null] }
+
+    BillingGuarantee:
+      type: object
+      required: [state, fingerprint, first_paid_at, deadline, paid_amount, currency, items, request_id, requested_at]
+      properties:
+        state: { type: string, enum: [UNAVAILABLE, MANUAL_REVIEW, ELIGIBLE, EXPIRED, REQUESTED] }
+        fingerprint: { type: [string, 'null'] }
+        first_paid_at: { type: [string, 'null'], format: date-time }
+        deadline: { type: [string, 'null'], format: date-time }
+        paid_amount: { type: [string, 'null'] }
+        currency: { type: string, enum: [BRL] }
+        items:
+          type: array
+          items:
+            type: object
+            required: [billing_id, gateway_charge_id, amount, paid_at, purpose, provider, mode]
+            properties:
+              billing_id: { type: string }
+              gateway_charge_id: { type: string }
+              amount: { type: string }
+              paid_at: { type: string, format: date-time }
+              purpose: { type: string }
+              provider: { type: [string, 'null'] }
+              mode: { type: [string, 'null'] }
+        request_id: { type: [string, 'null'] }
+        requested_at: { type: [string, 'null'], format: date-time }
+
+    BillingCheckout:
+      type: object
+      required: [state, quote, available_at, invoice_url]
+      properties:
+        state: { type: string, enum: [READY, PENDING, REGISTERED, NOT_DUE, CLOSED, UNAVAILABLE] }
+        quote:
+          anyOf:
+            - { $ref: '#/components/schemas/BillingCheckoutQuote' }
+            - { type: 'null' }
+        available_at: { type: [string, 'null'], format: date-time }
+        invoice_url: { type: [string, 'null'] }
+
+    BillingCheckoutQuote:
+      type: object
+      required: [organization_name, holder_document_masked, fingerprint, billing_id, competence, amount, currency, plan_id, plan_name, included_credits, extra_credit_price, action_weights, policy_version, purpose, cycle_index, due_at, period_starts_at, period_ends_at, lines, provider, mode]
+      properties:
+        organization_name: { type: [string, 'null'] }
+        holder_document_masked: { type: string }
+        fingerprint: { type: string }
+        billing_id: { type: string }
+        competence: { type: string }
+        amount: { type: string }
+        currency: { type: string, enum: [BRL] }
+        plan_id: { type: string }
+        plan_name: { type: string }
+        included_credits: { type: integer }
+        extra_credit_price: { type: string }
+        action_weights:
+          type: array
+          items:
+            type: object
+            required: [action, credits]
+            properties:
+              action: { type: string }
+              credits: { type: integer }
+        policy_version: { type: string }
+        purpose: { type: string, enum: [REGULAR, PLAN_CHANGE, REACTIVATION, FINAL_USAGE] }
+        cycle_index: { type: integer }
+        due_at: { type: [string, 'null'], format: date-time }
+        period_starts_at: { type: [string, 'null'], format: date-time }
+        period_ends_at: { type: [string, 'null'], format: date-time }
+        lines:
+          type: array
+          items:
+            type: object
+            required: [description, amount]
+            properties:
+              description: { type: string }
+              amount: { type: string }
+        provider: { type: string }
+        mode: { type: string, enum: [SIMULATOR, SANDBOX, PRODUCTION] }
+
+    BillingCharge:
+      type: object
+      required:
+        [billing_id, tenant_id, competence, currency, amount, gateway_charge_id, gateway_status]
+      properties:
+        billing_id: { type: string }
+        tenant_id: { type: string }
+        competence: { type: string }
+        currency: { type: string, enum: [BRL] }
+        amount:
+          anyOf:
+            - { type: number }
+            - { type: string }
+        gateway_charge_id: { type: string }
+        gateway_status: { type: string, enum: [PENDING, OVERDUE, CONFIRMED, FAILED] }
+
+    BillingWebhookReceipt:
+      type: object
+      required: [accepted]
+      properties:
+        accepted: { type: boolean }
+        reconciled: { type: boolean }
+        reconciliation_state: { type: string }
+        billing_id: { type: string }
+        gateway_charge_id: { type: string }
+        observed_amount: { type: [string, 'null'] }
+        observed_at: { type: string, format: date-time }
+        processed: { type: boolean }
+        reason: { type: [string, 'null'] }
+        status: { type: [string, 'null'] }
+
+    Provider:
+      type: string
+      enum: [GOOGLE_ADS, META, WHATSAPP]
+
+    Channel:
+      type: string
+      enum: [GOOGLE_ADS, META_FACEBOOK, META_INSTAGRAM, WHATSAPP]
+
+    CampaignState:
+      type: string
+      enum: [DRAFT, STRATEGY_READY, ASSETS_READY, VALIDATED, AWAITING_APPROVAL, APPROVED, PUBLISHING, ACTIVE, OPTIMIZING, PAUSED, COMPLETED, FAILED]
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: |
+            Taxonomia canonica. Codigos de provedor NUNCA vazam para o cliente.
+          enum: [UNAUTHENTICATED, PERMISSION_DENIED, STEP_UP_REQUIRED, APPROVAL_REQUIRED,
+                 VALIDATION_FAILED, VALIDATION_REJECTED, INVALID_STATE, CAPABILITY_UNSUPPORTED,
+                 BUDGET_LIMIT, RATE_LIMITED, QUOTA_EXHAUSTED, POLICY_VIOLATION,
+                 KILL_SWITCH_ACTIVE, NOT_FOUND, AUTH_EXPIRED, DECLINED, TRANSIENT, UNKNOWN,
+                 BILLING_CATALOG_UNAVAILABLE, BILLING_PLAN_CHANGE_REQUIRES_EXPLICIT_FLOW,
+                 BILLING_PLAN_CHANGE_REJECTED, BILLING_CANCEL_REJECTED,
+                 BILLING_REACTIVATION_REJECTED]
+        message: { type: string, description: Texto compreensivel por usuario nao tecnico. }
+        details: { type: [object, 'null'] }
+        assisted_flow_url:
+          type: [string, 'null']
+          format: uri
+          description: Quando a API do provedor nao permite a acao, aponta o portal oficial. Nunca simular sucesso.
+
+    Me:
+      type: object
+      properties:
+        user_id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        business_unit_id: { type: [string, 'null'], format: uuid }
+        roles: { type: array, items: { type: string } }
+        permissions: { type: array, items: { type: string } }
+        mfa_enabled: { type: boolean }
+
+    SessionUser:
+      type: object
+      description: |
+        Corpo real de POST/GET /auth/session e POST /auth/session/switch
+        (backend/api/models.py::SessionLoginResponse). user_id/tenant_id NAO sao UUID no
+        backend real hoje (ex.: "user-owner-1", "demo-tenant") -- por isso `type: string`
+        simples aqui, sem `format: uuid` (divergencia pre-existente do schema Me, fora do
+        escopo desta correcao pontual).
+      required: [user_id, tenant_id, business_unit_id, roles, csrf_token]
+      properties:
+        user_id: { type: string }
+        tenant_id: { type: string }
+        business_unit_id: { type: [string, 'null'] }
+        roles: { type: array, items: { type: string } }
+        csrf_token:
+          type: string
+          description: Devolver no header X-CSRF-Token em toda mutacao subsequente sob cookieAuth.
+
+    MembershipItem:
+      type: object
+      required: [user_id, tenant_id, business_unit_id, roles, active]
+      properties:
+        user_id: { type: string, description: Identificador do VINCULO -- valor usado em POST /auth/session/switch. }
+        tenant_id: { type: string }
+        business_unit_id: { type: [string, 'null'] }
+        roles: { type: array, items: { type: string } }
+        active: { type: boolean, description: true para exatamente um item -- o vinculo ativo na sessao agora. }
+
+    MembershipsResponse:
+      type: object
+      required: [memberships]
+      properties:
+        memberships:
+          type: array
+          items: { $ref: '#/components/schemas/MembershipItem' }
+
+    TenantOnboardingRequest:
+      type: object
+      required: [id_token, company_name, segment]
+      properties:
+        id_token: { type: string }
+        company_name: { type: string, minLength: 1, maxLength: 160 }
+        document: { type: [string, 'null'], maxLength: 32 }
+        segment: { type: string, minLength: 1, maxLength: 120 }
+        language: { type: string, default: pt-BR, minLength: 2, maxLength: 20 }
+        timezone: { type: string, default: America/Sao_Paulo, maxLength: 80 }
+        entry_mode: { type: string, enum: [TRIAL, PURCHASE], default: TRIAL }
+
+    OrganizationSummary:
+      type: object
+      required: [tenant_id, name, segment, language, timezone, entry_mode, status, created_at]
+      properties:
+        tenant_id: { type: string }
+        name: { type: string }
+        document: { type: [string, 'null'] }
+        segment: { type: string }
+        language: { type: string }
+        timezone: { type: string }
+        entry_mode: { type: string, enum: [TRIAL, PURCHASE] }
+        plan_id:
+          type: [string, 'null']
+          description: Plano atribuido exclusivamente pelo servidor/billing; nunca aceito como entitlement no onboarding publico.
+        status: { type: string, enum: [ACTIVE, INACTIVE] }
+        default_business_unit_id: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+
+    CommercialMembership:
+      type: object
+      required: [id, tenant_id, email, roles, status, created_at, updated_at]
+      properties:
+        id: { type: string }
+        tenant_id: { type: string }
+        email: { type: string, format: email }
+        roles: { type: array, items: { type: string } }
+        business_unit_id: { type: [string, 'null'] }
+        status: { type: string, enum: [ACTIVE, INACTIVE] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        deactivated_at: { type: [string, 'null'], format: date-time }
+
+    TenantOnboardingResponse:
+      type: object
+      required: [session, organization, membership]
+      properties:
+        session: { $ref: '#/components/schemas/SessionUser' }
+        organization: { $ref: '#/components/schemas/OrganizationSummary' }
+        membership: { $ref: '#/components/schemas/CommercialMembership' }
+
+    InvitationCreateRequest:
+      type: object
+      required: [email, roles]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        roles:
+          type: array
+          minItems: 1
+          items: { type: string, enum: [OWNER, ADMIN, FINANCE, APPROVER, MARKETER, VIEWER] }
+        business_unit_id: { type: [string, 'null'] }
+
+    MemberInvitation:
+      type: object
+      required: [id, email, roles, status, created_at, expires_at]
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        roles: { type: array, items: { type: string } }
+        business_unit_id: { type: [string, 'null'] }
+        status: { type: string, enum: [PENDING, ACCEPTED, REVOKED, EXPIRED] }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        accepted_by: { type: [string, 'null'] }
+        accept_token:
+          type: [string, 'null']
+          description: Presente somente na resposta da primeira criacao; nunca persistido em claro.
+
+    InvitationAcceptRequest:
+      type: object
+      required: [id_token, accept_token]
+      properties:
+        id_token: { type: string }
+        accept_token: { type: string, minLength: 16, maxLength: 512 }
+
+    MembershipAccessUpdateRequest:
+      type: object
+      required: [roles, business_unit_id]
+      additionalProperties: false
+      properties:
+        roles:
+          type: array
+          minItems: 1
+          items: { type: string, enum: [OWNER, ADMIN, FINANCE, APPROVER, MARKETER, VIEWER] }
+        business_unit_id: { type: string }
+
+    BusinessUnit:
+      type: object
+      required: [id, name, status, created_at]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        status: { type: string, enum: [ACTIVE, INACTIVE] }
+        created_at: { type: string, format: date-time }
+
+    BusinessUnitCreateRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+
+    BusinessUnitRenameRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+
+    BrandProfileInput:
+      type: object
+      required: [name, tone]
+      properties:
+        name: { type: string, maxLength: 120 }
+        tone: { type: string, maxLength: 200 }
+        colors: { type: array, items: { type: string } }
+        differentiators: { type: array, items: { type: string } }
+        restrictions:
+          type: array
+          items: { type: string }
+          description: Alimenta o Policy Engine deterministico, nao apenas o prompt.
+
+    BrandProfile:
+      allOf:
+        - $ref: '#/components/schemas/BrandProfileInput'
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            created_at: { type: string, format: date-time }
+
+    Connection:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        provider: { $ref: '#/components/schemas/Provider' }
+        external_account_id: { type: string }
+        display_name: { type: string }
+        status: { type: string, enum: [ACTIVE, EXPIRED, REVOKED, NEEDS_REAUTH] }
+        api_version: { type: string }
+        last_synced_at: { type: [string, 'null'], format: date-time }
+
+    Capability:
+      type: object
+      properties:
+        # Achado da reconciliacao WP-09 (26/09/2026): `GET
+        # /connections/{connectionId}/capabilities` sempre devolve estes 3 campos
+        # (backend/api/models.py::CapabilityResponse, confirmado por execucao real de
+        # model_dump_json()), mas o contrato nunca os declarava -- aditivo, sem mudanca
+        # de comportamento do backend, mesma classe dos achados de WP-06/07/08.
+        provider: { type: string }
+        country: { type: string }
+        api_version: { type: string }
+        capability_key: { type: string }
+        supported: { type: boolean }
+        requires_approval: { type: boolean }
+        evidence_url: { type: [string, 'null'], format: uri }
+        # ACHADO 20 (Fase 3 desta reconciliacao, 26/09/2026): nullable -- o backend real
+        # nunca fabrica um "verificado agora" quando nenhuma verificacao de fato ocorreu
+        # para o modo de conexao consultado; None e o valor honesto nesse caso. Aditivo
+        # (so amplia o tipo existente).
+        verified_at: { type: [string, 'null'], format: date-time }
+        notes: { type: [string, 'null'] }
+
+    Campaign:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        state: { $ref: '#/components/schemas/CampaignState' }
+        objective: { type: string }
+        channels:
+          type: array
+          items: { $ref: '#/components/schemas/Channel' }
+        external_resources:
+          type: array
+          description: Vazio ate a reconciliacao confirmar. Estado ACTIVE exige ao menos um ID externo.
+          items:
+            type: object
+            properties:
+              channel: { $ref: '#/components/schemas/Channel' }
+              external_resource_id: { type: string }
+              sync_status: { type: string, enum: [PENDING, CONFIRMED, DIVERGENT] }
+              last_synced_at: { type: [string, 'null'], format: date-time }
+        budget:
+          type: object
+          properties:
+            currency: { type: string }
+            # Achado (reconciliacao PR#6, 26/09/2026, confirmado por execucao real de
+            # Decimal.model_dump_json() nesta sessao): estes 3 campos sao `Decimal` em
+            # api/models.py e o pydantic v2 sempre serializa Decimal como STRING em
+            # model_dump_json(), nunca como number. O contrato dizia `number` desde a
+            # construcao original -- nunca era verdade em runtime. Corrigido para
+            # refletir o CURRENT real, mesmo padrao ja usado em ApprovalRequest.amount.
+            total_amount: { type: string }
+            daily_cap: { type: string }
+            spent_to_date: { type: string }
+        created_at: { type: string, format: date-time }
+
+    PolicyDecision:
+      type: object
+      required: [outcome, requires_human_approval, requires_dual_approval, findings]
+      properties:
+        policy_decision_id: { type: [string, 'null'], format: uuid }
+        outcome: { type: string, enum: [APPROVABLE, BLOCKED, NEEDS_CHANGES] }
+        expires_at: { type: [string, 'null'], format: date-time }
+        requires_human_approval: { type: boolean }
+        requires_dual_approval: { type: boolean }
+        findings:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              severity: { type: string, enum: [INFO, WARNING, BLOCKING] }
+              explanation: { type: string }
+
+    ApprovalRequest:
+      type: object
+      required: [id, campaign_id, kind, requested_by, status, requires_dual_approval, decided_by]
+      properties:
+        id: { type: string, format: uuid }
+        campaign_id: { type: string, format: uuid }
+        reason: { type: string, description: Gatilho que exigiu aprovacao humana. }
+        # Campos reais sempre serializados pelo backend (api/models.py::ApprovalResponse)
+        # que nunca tinham sido documentados aqui (achado, WP-05, 26/09/2026).
+        kind: { type: string, enum: [PUBLISH, BUDGET_CHANGE, AUTONOMY_CHANGE] }
+        requested_by: { type: string, description: user_id de quem propos -- nunca pode decidir a propria proposta (segregacao de funcoes). }
+        amount: { type: [string, 'null'] }
+        plan_version: { type: integer }
+        # APPLIED adicionado na Fase 3 desta reconciliacao (achado 19): confirmado por
+        # execucao real que uma ApprovalRequest APPROVED nunca era marcada como consumida
+        # apos autorizar de fato uma mudanca (budget/autonomy) -- o mesmo approval_id
+        # podia ser reutilizado indefinidamente com uma Idempotency-Key nova. APPLIED e
+        # o novo estado terminal para "ja usada para aplicar a mudanca que autorizava".
+        # Aditivo -- nenhum valor existente do enum foi removido ou renomeado.
+        status: { type: string, enum: [PENDING, APPROVED, REJECTED, CHANGES_REQUESTED, EXPIRED, APPLIED] }
+        requires_dual_approval: { type: boolean }
+        decided_by: { type: array, items: { type: string, format: uuid } }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+
+    AutonomySettings:
+      type: object
+      properties:
+        level: { type: integer, minimum: 0, maximum: 3 }
+        level_label: { type: string, enum: [ASSISTENTE, APROVADO, LIMITADO, OPERACIONAL] }
+        # Achado da reconciliacao WP-07 (26/09/2026): GET /autonomy sempre devolve este
+        # campo de fato (backend/api/models.py::AutonomyResponse, confirmado por execucao
+        # real de model_dump_json()), mas o contrato nunca o declarava -- aditivo, sem
+        # mudanca de comportamento do backend, mesma classe de achado do budget (WP-06).
+        max_level_allowed: { type: integer, minimum: 0, maximum: 3 }
+        always_require_human:
+          type: array
+          description: Gatilhos que exigem humano em QUALQUER nivel.
+          items: { type: string }
+        max_budget_change_pct: { type: number }
+        updated_at: { type: string, format: date-time }
+
+    InsightSeries:
+      type: object
+      properties:
+        campaign_id: { type: string, format: uuid }
+        last_synced_at: { type: [string, 'null'], format: date-time }
+        # WP-11 (achado 15): InsightSeriesResponse.model_dump_json() real sempre inclui
+        # `note` (o backend usa este campo para declarar honestamente, ao cliente, que
+        # ainda nao ha camada de analytics real -- "No analytics layer implemented yet
+        # in campaia_core; this is an honest placeholder, not fabricated data.") --
+        # confirmado por execucao direta nesta sessao. Contrato nunca declarava este
+        # campo -- aditivo, sem mudanca de comportamento do backend.
+        note: { type: string }
+        points:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              channel: { $ref: '#/components/schemas/Channel' }
+              impressions: { type: integer }
+              clicks: { type: integer }
+              spend: { type: number }
+              conversions: { type: integer }
+              cpa: { type: [number, 'null'] }
+
+    AuditEvent:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        occurred_at: { type: string, format: date-time }
+        actor_kind: { type: string, enum: [USER, SYSTEM, AI, EXTERNAL_PROVIDER] }
+        actor_id: { type: [string, 'null'], format: uuid }
+        action: { type: string }
+        target: { type: string }
+        policy_decision_id: { type: [string, 'null'], format: uuid }
+        evidence: { type: [object, 'null'] }
+ }
+                accept: { type: boolean }
+      responses:
+        '200':
+          description: Pedido recebido; nenhum estorno foi enviado ou confirmado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingGuarantee' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '409':
+          description: Janela ou revisão pendente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
   /billing/checkout:
     get:
       tags: [Billing]

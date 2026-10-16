@@ -38,3 +38,5 @@ export type CreditConfirmation = components["schemas"]["CreditConfirmation"];
 export type BillingCheckout = components["schemas"]["BillingCheckout"];
 
 export type BillingClosure = components["schemas"]["BillingClosure"];
+
+export type BillingGuarantee = components["schemas"]["BillingGuarantee"];

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { AdministrativeStepUpCard } from "@/components/AdministrativeStepUpCard";
 import { BillingSubscriptionSetup } from "@/components/BillingSubscriptionSetup";
 import { CommercialLifecycleActions } from "@/components/CommercialLifecycleActions";
+import { BillingGuaranteePanel } from "@/components/BillingGuaranteePanel";
 import { BillingClosurePanel } from "@/components/BillingClosurePanel";
 import { BillingCheckoutPanel } from "@/components/BillingCheckoutPanel";
 import { BillingUsagePanel } from "@/components/BillingUsagePanel";
@@ -107,7 +108,7 @@ function BillingContent({ canManage }: { canManage: boolean }) {
     <PageHeader title="Plano e cobrança" description="Assinatura e condições comerciais da sua organização." />
     {loading ? <Spinner label="Carregando assinatura" /> : loadError ?
       <ErrorState title="Não foi possível consultar a assinatura" description="Verifique sua permissão de cobrança e tente recarregar a página." /> : <>
-      {canManage ? <AdministrativeStepUpCard {...stepUp} description="Contratação, alterações de plano, cancelamento e reativação exigem autenticação Google recente." onError={setActionError} /> : null}
+      {canManage ? <AdministrativeStepUpCard {...stepUp} description="Contratação, alterações de plano, cancelamento, garantia e reativação exigem autenticação Google recente." onError={setActionError} /> : null}
       {subscription && terms ? <>
         <Card><StatusPanel title="Assinatura atual" items={[
           { label: "Plano", value: subscription.plan_name },
@@ -120,7 +121,7 @@ function BillingContent({ canManage }: { canManage: boolean }) {
           ...(subscription.pending_plan_name ? [{ label: terms.credit_policy ? "Troca agendada" : "Troca aguardando pagamento", value: subscription.pending_plan_name }] : []),
           ...(subscription.reactivation_requested_at ? [{ label: "Reativação", value: "Aguardando pagamento confirmado" }] : []),
         ]} /></Card>
-        {subscription.payment_review_required ? <Card><p role="status">Há um recebimento em conferência. Consulte o histórico de cobranças para verificar a pendência.</p></Card> : null}
+        {subscription.payment_review_required ? <Card><p role="status">Há uma pendência de conferência em cobrança ou garantia. Consulte os detalhes abaixo.</p></Card> : null}
         {subscription.status === "PAST_DUE" ? <Card><StatusPanel title="Pagamento em atraso" items={[
           { label: "Em atraso desde", value: date(subscription.past_due_at) },
           { label: "Fim da carência", value: date(subscription.grace_period_ends_at) },
@@ -135,6 +136,7 @@ function BillingContent({ canManage }: { canManage: boolean }) {
         ]} /></Card>
         {terms.credit_policy && canManage ? <BillingCheckoutPanel key={`checkout:${subscription.status}:${subscription.plan_id}:${subscription.activated_at}:${subscription.cancel_at_period_end}:${subscription.pending_plan_id}`} stepUp={stepUp} onIssued={refreshBillingRead} /> : null}
         {terms.credit_policy && canManage && subscription.status === "CANCELED" ? <BillingClosurePanel key={`closure:${observationVersion}:${subscription.plan_id}:${subscription.activated_at}:${subscription.cancel_at_period_end}`} stepUp={stepUp} onClosed={refreshBillingRead} /> : null}
+        {terms.credit_policy && canManage ? <BillingGuaranteePanel key={`guarantee:${historyVersion}:${observationVersion}:${subscription.status}:${subscription.activated_at}`} stepUp={stepUp} onRequested={refreshBillingRead} /> : null}
         <BillingUsagePanel key={`usage:${observationVersion}:${subscription.status}:${subscription.plan_id}:${subscription.activated_at}:${subscription.cancel_at_period_end}:${subscription.pending_plan_id}`} canManage={canManage} stepUp={stepUp} />
         {canManage && !terms.credit_policy ? <>
           <Card><h2 className={styles.title}>Gerenciar assinatura</h2>

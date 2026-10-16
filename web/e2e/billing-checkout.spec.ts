@@ -101,4 +101,29 @@ test("duas abas emitem uma fatura; pagamento simulado, uso e fechamento final pr
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: "test-results/final-usage-mobile.png", fullPage: true });
 
+  // A guarantee request covers verified payments but does not dispatch or claim a refund.
+  await page.getByRole("button", { name: "Atualizar garantia", exact: true }).click();
+  const guarantee = await page.evaluate(async () => (await fetch("/api/campaia/billing/guarantee")).json());
+  expect(guarantee.state).toBe("ELIGIBLE");
+  expect(guarantee.items).toHaveLength(2);
+  expect(Number(guarantee.paid_amount)).toBe(17.5);
+  await page.getByRole("button", { name: "Revisar solicitação de garantia", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Confirmar solicitação de garantia", exact: true })).toBeDisabled();
+  await page.getByRole("checkbox", { name: /acesso pago será encerrado imediatamente/ }).check();
+  await page.getByRole("button", { name: "Confirmar solicitação de garantia", exact: true }).click();
+  await expect(page.getByText(/recebimento do pedido não confirma o estorno/)).toBeVisible();
+  const afterGuarantee = await page.evaluate(async () => ({
+    guarantee: await (await fetch("/api/campaia/billing/guarantee")).json(),
+    usage: await (await fetch("/api/campaia/billing/usage")).json(),
+    charges: await (await fetch("/api/campaia/billing/charges")).json(),
+  }));
+  expect(afterGuarantee.guarantee.state).toBe("REQUESTED");
+  expect(afterGuarantee.usage.access_active).toBe(false);
+  expect(afterGuarantee.usage.balance.consumed_credits).toBe(15);
+  expect(afterGuarantee.charges.items).toHaveLength(2);
+  expect(afterGuarantee.charges.items.every((item: { gateway_refund_state: string | null }) => item.gateway_refund_state === null)).toBe(true);
+  await expect(page.getByText("Cancelada", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: "test-results/guarantee-request-mobile.png", fullPage: true });
+
 });
