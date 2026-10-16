@@ -919,3 +919,10 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - Novo teste de integração explícito `test_generated_image_simulator_e2e.py`: RESERVE -> simulação de modelo imagem com custo registrado F3 -> upload privado simulado -> F5 SETTLE -> replay sem segundo POST/débito -> GET de PNG autenticado -> bloqueio cross-tenant. Histórico real e documentação são atuais somente após CI verde.
 - Dependências internas remanescentes: testes de timeout/falha de GCS + replay de recuperação após restart com SETTLE, controle de versão de campanhas e Brand Kit, formatos/variações por canal, upload manual, policy/preview e paginação conforme G7. Externos: GCS/ADC, Gemini com credencial e custos reais (EXTERNAL_INFRASTRUCTURE/EXTERNAL_CREDENTIAL).
 - **O WP segue PARTIAL até evidências de todos os gates internos.** PR #73 não mergeada; nenhuma migration, produção ou homologação externa autorizadas.
+
+
+## Reconciliação CI do ciclo API/Web/imagem + recuperação (16/10/2026)
+- HEAD `20acfe93248e26a4be74cf3b63ecfb6e5f8f8758` na PR #73: Backend **#410 SUCCESS**, Frontend **#349 SUCCESS**, F4 **#244 SUCCESS**. Inclui PostgreSQL, simulador explícito com quota/custos F3/F5, replay sem segunda geração, cross-tenant, conteúdo PNG privado e recuperação de GCS incerto com liquidação comercial.
+- HEAD posterior contém ajuste de UX para atualizar inventário após resposta incerta; repetir a CI e conferir o HEAD exato antes de chamar este incremento DONE_VERIFIED.
+- **WP-R04-04B PARTIAL**: ausência de prova externa por decisão do Diretor, e gates internos ainda pendentes: política/preview e versões por canal, gerenciamento completo de asset/deleção, recuperação governada de custo de provider desconhecido, limites/comportamento de alta carga e E2E adicionais. Não confundir os cenários SIMULATOR do CI com homologação real.
+- Merge/deploy/produção/migration real seguem sujeitos à autorização específica, não concedida nesta execução.
