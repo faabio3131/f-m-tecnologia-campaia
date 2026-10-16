@@ -18,7 +18,7 @@ def obligation_key(billing_id):
     return 'billing-obligation:' + billing_id
 
 
-def execute_invoice(state, fixture, http_key, body, prepare, dispatch, persist, *, operation="billing_charge_create"):
+def execute_invoice(state, fixture, http_key, body, prepare, dispatch, persist, *, operation="billing_charge_create", validate_dispatch=None):
     tenant = fixture.tenant_id
     context = sha256(json.dumps([fixture.user_id, fixture.business_unit_id, body],
                                sort_keys=True, default=str).encode()).hexdigest()
@@ -36,10 +36,10 @@ def execute_invoice(state, fixture, http_key, body, prepare, dispatch, persist, 
         charge = prepare()
         frozen, replayed = state.idempotency.execute(tenant, obligation_key(charge.billing_id), lambda: charge)
         if not replayed:
-            state.audit.append(tenant_id=tenant, actor=fixture.user_id,
+            state.audit.append(tenant_id=tenant, actor=fixture.user_id, actor_kind=getattr(fixture, 'actor_kind', 'USER'),
                                action='BILLING_OBLIGATION_FROZEN', target=frozen.billing_id)
         if body.get('expected_quote_fingerprint') is not None:
-            state.audit.append(tenant_id=tenant, actor=fixture.user_id,
+            state.audit.append(tenant_id=tenant, actor=fixture.user_id, actor_kind=getattr(fixture, 'actor_kind', 'USER'),
                                action='BILLING_CHECKOUT_ACCEPTED', target=frozen.billing_id,
                                details={'fingerprint': body['expected_quote_fingerprint'],
                                         'accepted': body.get('accept_quote') is True})
@@ -61,6 +61,8 @@ def execute_invoice(state, fixture, http_key, body, prepare, dispatch, persist, 
             raise ApiError('BILLING_RECONCILIATION_REQUIRED', 'Ambiente do gateway mudou após o fechamento; concilie no ambiente original.', status_code=409)
 
     def claim():
+        if validate_dispatch is not None:
+            validate_dispatch(charge)
         require_gateway_context()
         current = refresh_trial_status(state.subscriptions[tenant])
         if (current.paid_cycle_schedule is None
@@ -69,7 +71,7 @@ def execute_invoice(state, fixture, http_key, body, prepare, dispatch, persist, 
                 or (charge.purpose is not ChargePurpose.FINAL_USAGE and (
                     current.status is SubscriptionStatus.CANCELED or current.cancel_at_period_end is not None))):
             raise ApiError('BILLING_RECONCILIATION_REQUIRED', 'Contratação mudou após o fechamento; concilie antes de emitir.', status_code=409)
-        state.audit.append(tenant_id=tenant, actor=fixture.user_id,
+        state.audit.append(tenant_id=tenant, actor=fixture.user_id, actor_kind=getattr(fixture, 'actor_kind', 'USER'),
                            action='BILLING_DISPATCH_CLAIMED', target=charge.billing_id)
         return {'claimed_at': datetime.now(timezone.utc)}
 

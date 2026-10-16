@@ -20,7 +20,7 @@ def clock(at):
             return at
     with ExitStack() as stack:
         for module in ('api.routes_billing', 'api.deps', 'api.billing_credits',
-                       'campaia_core.subscription', 'api.commercial_limits', 'api.metered_execution'):
+                       'campaia_core.subscription', 'api.commercial_limits', 'api.metered_execution', 'api.billing_renewal'):
             stack.enter_context(patch(module + '.datetime', Clock))
         yield
 

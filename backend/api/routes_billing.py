@@ -589,6 +589,24 @@ def _review_checkout(state, charge, body):
     return charge
 
 
+async def get_billing_renewal(request: Request) -> JSONResponse:
+    from .billing_renewal import renewal_quote
+    fixture, state = _authorize_billing(request, Permission.BILLING_VIEW)
+    with state.db.transaction() if state.db is not None else nullcontext():
+        if state.db is not None:
+            state.idempotency._table.lock_key(f"tenant:{fixture.tenant_id}")
+        return JSONResponse(renewal_quote(state, fixture.tenant_id))
+
+
+async def set_billing_renewal(request: Request) -> JSONResponse:
+    from .billing_renewal import set_renewal_consent
+    from .models import BillingRenewalRequest
+    fixture, state = _authorize_billing(request, Permission.BILLING_MANAGE)
+    key = require_idempotency_key(request)
+    body = await parse_body(request, BillingRenewalRequest)
+    return JSONResponse(set_renewal_consent(state, fixture, key, body.model_dump()))
+
+
 async def get_billing_guarantee(request: Request) -> JSONResponse:
     fixture, state = _authorize_billing(request, Permission.BILLING_VIEW)
     with state.db.transaction() if state.db is not None else nullcontext():
@@ -788,6 +806,7 @@ def _persist_billing_charge(state, fixture, charge, result):
     state.audit.append(
         tenant_id=fixture.tenant_id,
         actor=fixture.user_id,
+        actor_kind=getattr(fixture, "actor_kind", "USER"),
         action="BILLING_CHARGE_CREATE",
         target=result.gateway_charge_id,
     )

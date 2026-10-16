@@ -408,6 +408,65 @@ class PostgresRuntimeTests(unittest.TestCase):
 
 
 
+    def test_consented_anniversary_worker_and_checkout_share_one_postgres_dispatch(self):
+        import json
+        from pathlib import Path
+        import tempfile
+        from unittest.mock import patch
+        from starlette.testclient import TestClient
+        from tests_api.test_helpers import OWNER, with_step_up, unique_idem
+        from tests_api.test_anniversary_lifecycle import clock
+        from api.billing_renewal import process_renewal_invoice
+        from campaia_core.billing_settlement import dispatch_frozen_charge
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / 'catalog.json'
+            plans = json.loads((Path(__file__).parents[1] / 'config/plans.example.json').read_text())
+            plans[0]['included_credits'] = 10
+            plans[0]['cancellation_mode'] = 'PERIOD_END'
+            plans[0]['credit_policy'] = {'version': 'pg-renewal-v1', 'action_weights': {'strategy': 5},
+                'trial_credits': 30, 'trial_max_users': 1, 'trial_max_active_campaigns': 1}
+            config.write_text(json.dumps(plans))
+            with patch.dict(os.environ, {'CAMPAIA_PLAN_CATALOG_PATH': str(config),
+                    'ASAAS_WEBHOOK_TOKEN': 'pg-renewal-proof', 'ASAAS_API_KEY': '', 'GEMINI_API_KEY': ''}):
+                clients = [TestClient(create_app(database_url=DSN, env='test')) for _ in range(2)]
+                for client in clients:
+                    self.addCleanup(client.close)
+                a, b = clients
+                setup = a.put('/billing/subscription', headers={**with_step_up(OWNER), **unique_idem()},
+                    json={'plan_id': plans[0]['plan_id'], 'customer_document': '11144477735'})
+                self.assertEqual(setup.status_code, 200, setup.text)
+                first = a.post('/billing/charges', headers={**with_step_up(OWNER), **unique_idem()},
+                    json={'competence': 'server-cycle'})
+                self.assertEqual(first.status_code, 202, first.text)
+                paid = a.post('/webhooks/asaas', headers={'asaas-access-token': 'pg-renewal-proof'},
+                    json={'id': 'pg-renewal-first-paid', 'event': 'PAYMENT_RECEIVED', 'payment': {
+                        'id': first.json()['gateway_charge_id'], 'status': 'RECEIVED', 'value': first.json()['amount']}})
+                self.assertEqual(paid.status_code, 200, paid.text)
+                q = b.get('/billing/renewal', headers=OWNER).json()
+                consent = a.put('/billing/renewal', headers={**with_step_up(OWNER), **unique_idem()},
+                    json={'enabled': True, 'fingerprint': q['fingerprint']})
+                self.assertEqual(consent.status_code, 200, consent.text)
+                self.assertTrue(b.get('/billing/renewal', headers=OWNER).json()['valid'])
+                sub = a.app.state.campaia.subscriptions['demo-tenant']
+                with clock(sub.paid_cycle_schedule.bounds(0)[1]):
+                    def dispatch(charge, gateway):
+                        self.assertFalse(a.app.state.campaia.db.in_transaction)
+                        self.assertIsNotNone(b.app.state.campaia.idempotency.get('demo-tenant', 'billing-dispatch:' + charge.billing_id))
+                        return dispatch_frozen_charge(charge, gateway)
+                    with patch('api.billing_renewal.dispatch_frozen_charge', side_effect=dispatch) as sent:
+                        with ThreadPoolExecutor(max_workers=2) as pool:
+                            reports = list(pool.map(lambda client: process_renewal_invoice(
+                                client.app.state.campaia, 'demo-tenant', execute=True, dispatch_enabled=True), clients))
+                        result = process_renewal_invoice(b.app.state.campaia, 'demo-tenant', execute=True, dispatch_enabled=True)
+                    self.assertEqual(result['state'], 'REGISTERED', reports)
+                    self.assertEqual(sent.call_count, 1)
+                    manual = a.post('/billing/charges', headers={**with_step_up(OWNER), **unique_idem()},
+                        json={'competence': 'browser'})
+                    self.assertEqual(manual.status_code, 202, manual.text)
+                    self.assertEqual(manual.json()['gateway_charge_id'], result['gateway_charge_id'])
+                    self.assertEqual(len(b.app.state.campaia.charges.items_for_tenant('demo-tenant')), 2)
+                    self.assertEqual(b.app.state.campaia.subscriptions['demo-tenant'].paid_cycle_schedule.paid_through_index, 0)
+
     def test_unpaid_renewal_withdrawal_fence_recovers_across_connections(self):
         import json
         from pathlib import Path

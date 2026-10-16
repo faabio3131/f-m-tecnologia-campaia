@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@71a59c35e587b7fc22bf4a5881fa627c72f7df30`
+**CURRENT confirmado:** `main@91b98c0b6e156bd6b9b1a5c6918cabf2ef1b5c79`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -359,10 +359,13 @@ Ver `docs/WP_R02_13_OBSERVACOES_ESTORNO_20261015.md`. WP-R02-14 / PR #58 integra
 contratação imutáveis e pedido de garantia com encerramento explícito, sem refund fictício.
 Ver `docs/WP_R02_14_PEDIDO_GARANTIA_20261016.md`. WP-R02-15 / PR #59 integrada, CI da PR e pós-merge verdes: worker privado de
 devolução por invoice, com dry-run/default desligado, fence antes do efeito e recuperação
-somente por GET. Ver `docs/WP_R02_15_WORKER_DEVOLUCAO_GARANTIA_20261016.md`. WP-R02-16 em validação: encerramento financeiro da garantia com prova integral,
+somente por GET. Ver `docs/WP_R02_15_WORKER_DEVOLUCAO_GARANTIA_20261016.md`. WP-R02-16 / PR #60 integrada, CI da PR e pós-merge verdes: encerramento financeiro da garantia com prova integral,
 manifesto das obrigações cobertas, preservação do excedente pago/devolvido e fiscal pendente.
 Ver `docs/WP_R02_16_ENCERRAMENTO_FINANCEIRO_GARANTIA_20261016.md`.
-Antes da ativação V1, fechar conflitos remanescentes e fiscal; depois scheduler/dunning único. Catálogo real continua
+WP-R02-17 em validação: autorização explícita de emissão recorrente por organização,
+worker privado no aniversário e fence compartilhado com checkout, sem débito automático.
+Ver `docs/WP_R02_17_EMISSAO_RECORRENTE_UNICA_20261016.md`.
+Antes da ativação V1, fechar conflitos remanescentes/fiscal, ativação controlada do scheduler e dunning. Catálogo real continua
 desabilitado; não certificar G5 com simulador ou apenas CI.
 
 **Gate G5:** pagamento real ativa entitlement sem intervenção de desenvolvedor.
