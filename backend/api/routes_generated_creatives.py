@@ -182,6 +182,101 @@ async def preview_generated_creative(request):
                         headers={"Cache-Control": "private, no-store"})
 
 
+async def edit_generated_creative_pixels(request):
+    """Create a new private immutable rendition from normalized stored PNG pixels."""
+    from uuid import UUID, uuid5, NAMESPACE_URL
+    from hashlib import sha256
+    from pydantic import BaseModel, ConfigDict
+    from starlette.concurrency import run_in_threadpool
+    from campaia_core.asset_images import edit_normalized_png, AssetImageError
+    from campaia_core.asset_storage import StoredAsset, AssetStorageError
+    from campaia_core.creative_assets import (
+        CreativeIdentity, CreativeManifest, CreativeState, CreativeStateTransition,
+        recovery_storage_manifest,
+    )
+    from campaia_core.gcs_asset_storage import configured_asset_storage
+    from .creative_image_review import CreativeImageReviewStore
+    from .creative_private_storage import CreativePrivateStorage
+    from .deps import require_idempotency_key, require_step_up
+    from .bounded_body import parse_bounded_body
+
+    class EditInput(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        operation: str
+        expected_sha256: str
+        expected_generation: str
+
+    fixture, state, campaign, repository = _scope(request, Permission.CAMPAIGN_EDIT)
+    require_step_up(request, fixture)
+    idem_key = require_idempotency_key(request)
+    body = await parse_bounded_body(request, EditInput, max_bytes=2048)
+    if body.operation not in ("rotate_90", "rotate_180", "flip_horizontal"):
+        raise ApiError("IMAGE_EDIT_INVALID", "Transformação de imagem indisponível.", status_code=422)
+    try:
+        source_id = str(UUID(request.path_params["creativeId"]))
+    except (ValueError, TypeError):
+        raise ApiError("NOT_FOUND", "Imagem indisponível.", status_code=404) from None
+    source = repository.table.get_for_tenant(source_id, fixture.tenant_id)
+    if (source is None or source["state"] != "STORED"
+            or source["identity"]["campaign_id"] != campaign.campaign_id
+            or source["identity"]["business_unit_id"] != campaign.business_unit_id
+            or source["identity"]["campaign_version"] != campaign.plan_version):
+        raise ApiError("NOT_FOUND", "Imagem indisponível.", status_code=404)
+    if (source["manifest"]["sha256"] != body.expected_sha256
+            or source["storage_generation"] != body.expected_generation):
+        raise ApiError("IMAGE_EDIT_CONFLICT", "Origem alterada; releia a imagem.", status_code=409)
+    if campaign.external_resources:
+        raise ApiError("IMAGE_EDIT_LOCKED", "Campanha com publicação externa exige compensação.", status_code=409)
+    if CreativeImageReviewStore(state).get(CreativeIdentity(**source["identity"])):
+        raise ApiError("IMAGE_EDIT_LOCKED", "Origem com revisão humana não pode ser alterada.", status_code=409)
+    storage = configured_asset_storage()
+    if not _storage_usable(state, storage):
+        raise ApiError("ASSET_STORAGE_DISABLED", "Armazenamento privado indisponível.", status_code=503)
+    identity = CreativeIdentity(
+        fixture.tenant_id, campaign.business_unit_id, campaign.campaign_id,
+        campaign.plan_version, str(uuid5(NAMESPACE_URL, fixture.tenant_id + ":pixel-edit:" + source_id + ":" + idem_key)),
+    )
+    operation_key = "pixel-edit:" + source_id + ":" + idem_key
+    fingerprint = sha256((source["manifest"]["sha256"] + ":" + body.expected_generation
+                          + ":" + body.operation).encode()).hexdigest()
+    request_key = operation_key + ":" + fingerprint
+
+    def perform():
+        current = repository.table.get_for_tenant(source_id, fixture.tenant_id)
+        if current != source:
+            raise ApiError("IMAGE_EDIT_CONFLICT", "Origem alterada durante a edição.", status_code=409)
+        old_manifest = CreativeManifest(identity=CreativeIdentity(**source["identity"]),
+            **{k: v for k, v in source["manifest"].items() if k != "identity"})
+        old_asset = StoredAsset(recovery_storage_manifest(old_manifest), source["storage_generation"])
+        original_png = storage.read(old_asset)
+        try:
+            edited = edit_normalized_png(original_png, body.operation)
+        except AssetImageError:
+            raise ApiError("IMAGE_EDIT_FAILED", "Não foi possível editar a imagem.", status_code=422) from None
+        manifest = CreativeManifest.from_normalized_png(
+            identity, edited.data, provider="LOCAL_PIXEL_EDIT", model=body.operation,
+            generation_request_id=identity.creative_id,
+        )
+        try:
+            row, replay = repository.claim(manifest, request_key, storage.max_active_bytes,
+                requested_by=fixture.user_id, source_creative_id=source_id)
+            if not replay:
+                repository.transition(identity, CreativeStateTransition(
+                    CreativeState.RESERVED, CreativeState.GENERATING, row["revision"]))
+            result = CreativePrivateStorage(repository, storage).upload(manifest, edited.data)
+        except AssetStorageError:
+            raise ApiError("IMAGE_EDIT_CONFLICT", "Conflito de edição ou quota privada.", status_code=409) from None
+        if result["state"] != "STORED":
+            raise ApiError("IMAGE_EDIT_PENDING", "Resultado de armazenamento incerto: reconcile antes de repetir.", status_code=503)
+        state.audit.append(tenant_id=fixture.tenant_id, actor=fixture.user_id,
+            action="CREATIVE_PIXEL_EDIT", target=identity.creative_id,
+            details={"source_creative_id": source_id, "operation": body.operation})
+        return _public(result)
+
+    result = await run_in_threadpool(perform)
+    return JSONResponse(result, status_code=201, headers={"Cache-Control": "private, no-store"})
+
+
 async def visual_preview_generated_creative(request):
     """Private HTML draft mockup, not a Google/Meta/WhatsApp platform preview."""
     from uuid import UUID
