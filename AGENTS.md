@@ -1025,3 +1025,10 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - CI em `300958a` teve PostgreSQL runtime integration SUCCESS, mas API tests FAILURE por `NameError: state is not defined` em `preview_generated_creative`, originado na nova consulta persistida. Corrigida causa direta: _scope agora vincula `state` na rota de preview. Repetir CI do HEAD atual antes de declarar DONE_VERIFIED.
 - Nova regra fail-closed: revogação de imagem aprovada não é permitida via rota comum enquanto a campanha possuir `external_resources` registrados; exige compensação governada e reconciliação antes de alterar aprovação já aplicada. Sem inventar pausa/remoção externa.
 - Continua vedado merge/deploy; externos Gemini/GCS/canais e custo real mantidos em EXTERNAL_CREDENTIAL/PRODUCTION_GATE. Histórico de PRs #48–#72 merged confirmado, #73 Draft.
+
+
+## Retomada do Cronograma Mestre — Fase 7 / G7, WP-R04-04B (16/10/2026)
+- CURRENT confirmado: PR #73 Draft contra main, HEAD anterior d25e5c2 certificado com três workflows verdes. G7 exige estratégia, copy, assets, policy e previews reais, com formatos quadrado/vertical/story, edição anterior à aprovação e proveniência; estes itens não ficam DONE_VERIFIED pelo mero sucesso de um simulador.
+- Novo teste negativo: seleção de creative_id inexistente na publicação retorna IMAGE_SELECTION_INVALID antes de atingir a saga de publicação. Testa binding explícito da arte à versão da campanha; também já há cenário de seleção sem revisão.
+- Sequência correta: concluir testes/controles do WP-R04-04B; depois revisão de evidências e autorização específica para eventual merge. G8 Google Ads multi-tenant real permanece posterior a G7, EXTERNAL_CREDENTIAL / EXTERNAL_APPROVAL / EXTERNAL_INFRASTRUCTURE.
+- Nenhum merge/deploy/migration, nem alteração de segredo externo. Certificação do HEAD novo depende de nova CI.
