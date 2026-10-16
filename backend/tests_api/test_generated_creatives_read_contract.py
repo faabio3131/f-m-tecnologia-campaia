@@ -22,12 +22,12 @@ class GeneratedCreativeReadContractTests(unittest.TestCase):
                           "url", "storage_generation", "secret"):
             self.assertNotIn(forbidden, str(result))
 
-    def test_image_mutations_are_not_exposed_before_cost_and_delivery_gates(self):
+    def test_image_mutation_is_explicitly_guarded_by_single_post_route(self):
         images = [r for r in routes if getattr(r, "path", "").startswith(
             "/campaigns/{campaignId}/images")]
-        self.assertEqual(len(images), 3)
-        self.assertTrue(all(r.methods == {"GET", "HEAD"} or r.methods == {"GET"}
-                            for r in images))
+        self.assertEqual(len(images), 4)
+        self.assertEqual(sum("POST" in r.methods for r in images), 1)
+        self.assertEqual(sum("GET" in r.methods for r in images), 3)
         self.assertEqual({r.path for r in images}, {
             "/campaigns/{campaignId}/images",
             "/campaigns/{campaignId}/images/quote",
