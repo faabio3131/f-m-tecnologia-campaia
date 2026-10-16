@@ -62,6 +62,13 @@ class CreativePrivateStorage:
         manifest = CreativeManifest(identity=identity, **{
             k: v for k, v in record.items() if k != "identity"
         })
+        if current["state"] == CreativeState.STORED.value:
+            expected = recovery_storage_manifest(manifest)
+            self._outside_transaction()
+            observed = self.storage.observe(expected, current["storage_generation"])
+            if observed is None or observed.manifest != expected:
+                raise AssetStorageError(Code.INTEGRITY)
+            return current
         return self.reconcile(manifest)
 
     def _finalize(self, manifest: CreativeManifest, generation: str):
