@@ -124,6 +124,40 @@ class ImageApiSimulationTests(BillingCreditHarness, unittest.TestCase):
         self.assertEqual(self.storage.calls.count("POST"), 0)
         self.assertEqual(self.usage().json()["balance"]["consumed_credits"], before)
 
+    def test_pixel_edit_creates_new_immutable_asset_and_replays_without_duplicate_upload(self):
+        from tests_api.test_helpers import with_step_up
+        quote = self.client.get(self.base + "/quote", headers=OWNER).json()
+        version = self.state.campaigns.get("demo-tenant", self.campaign).plan_version
+        original = self.client.post(self.base, headers={**OWNER, **unique_idem()},
+            json={"expected_plan_version": version, "prompt": "Imagem original para edição de pixels",
+                  "credit_confirmation": {field: quote[field] for field in
+                      ("cycle_id", "policy_version", "credits", "extra_amount")}})
+        self.assertEqual(original.status_code, 201, original.text)
+        source_id = original.json()["id"]
+        row = self.state.db.table("creative_assets").get_for_tenant(source_id, "demo-tenant")
+        edit_url = self.base + "/" + source_id + "/pixel-edit"
+        payload = {"operation": "rotate_90", "expected_sha256": row["manifest"]["sha256"],
+                   "expected_generation": row["storage_generation"]}
+        headers = {**with_step_up(OWNER), **unique_idem()}
+        result = self.client.post(edit_url, headers=headers, json=payload)
+        self.assertEqual(result.status_code, 201, result.text)
+        edited_id = result.json()["id"]
+        self.assertNotEqual(edited_id, source_id)
+        self.assertEqual(result.json()["source_creative_id"], source_id)
+        self.assertEqual((result.json()["width"], result.json()["height"]),
+                         (row["manifest"]["height"], row["manifest"]["width"]))
+        storage_calls = len(self.storage.calls)
+        replay = self.client.post(edit_url, headers=headers, json=payload)
+        self.assertEqual(replay.status_code, 201, replay.text)
+        self.assertEqual(replay.json()["id"], edited_id)
+        self.assertEqual(len(self.storage.calls), storage_calls)
+        denial = self.client.post(edit_url, headers={**with_step_up(OWNER), **unique_idem()},
+                                  json={**payload, "expected_sha256": "0" * 64})
+        self.assertEqual(denial.status_code, 409, denial.text)
+        foreign = self.client.post(edit_url, headers={**with_step_up(OTHER_OWNER), **unique_idem()},
+                                   json=payload)
+        self.assertEqual(foreign.status_code, 404, foreign.text)
+
     def test_visual_channel_preview_is_scoped_and_cannot_claim_homologation(self):
         quote = self.client.get(self.base + "/quote", headers=OWNER).json()
         version = self.state.campaigns.get("demo-tenant", self.campaign).plan_version
