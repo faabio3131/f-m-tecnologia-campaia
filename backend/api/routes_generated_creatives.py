@@ -122,10 +122,18 @@ def _preview_policy(row, campaign, review=None):
     stored = row["state"] == "STORED" and bool(row.get("storage_generation"))
     from .creative_image_review import decision_applies
     approved = stored and version_current and decision_applies(row, review)
+    width, height = row["manifest"]["width"], row["manifest"]["height"]
+    # Geometric hints only, never a provider-specific media acceptance certificate.
+    ratio = width / height if height > 0 else 0
+    format_hints = ([name for name, target in
+                     (("SQUARE", 1.0), ("PORTRAIT_4_5", 0.8), ("STORY_9_16", 9 / 16))
+                     if abs(ratio - target) <= 0.02] if width > 0 else [])
     return {
         "preview_available": stored and version_current,
         "campaign_version_current": version_current,
         "storage_verified": stored,
+        "format_hints": format_hints,
+        "channel_media_validated": False,
         "human_review": (review.get("decision", "NOT_REVIEWED") if review else "NOT_REVIEWED"),
         "publication_allowed": False,
         "blocking_reasons": (
