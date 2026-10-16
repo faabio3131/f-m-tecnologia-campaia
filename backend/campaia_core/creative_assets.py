@@ -13,7 +13,7 @@ from enum import StrEnum
 from uuid import UUID
 
 from .asset_images import AssetImageError, verify_normalized_png
-from .asset_storage import MAX_ASSET_BYTES, AssetStorageError, AssetStorageErrorCode
+from .asset_storage import MAX_ASSET_BYTES, AssetStorageError, AssetStorageErrorCode, AssetIdentity, AssetManifest
 
 
 class CreativeState(StrEnum):
@@ -141,6 +141,44 @@ class CreativeStoredProof:
             _invalid()
 
 
+@dataclass(frozen=True, slots=True)
+class CreativeStorageIdentity(AssetIdentity):
+    """Narrow adapter for the *existing* private GCS transport, not a new GCS client."""
+    unit_id: str = field(repr=False)
+    campaign_id: str = field(repr=False)
+    campaign_version: int = 1
+
+    @classmethod
+    def from_creative(cls, creative: CreativeIdentity) -> CreativeStorageIdentity:
+        return cls(tenant_id=creative.tenant_id, brand_profile_id=creative.campaign_id,
+                   asset_id=creative.creative_id, unit_id=creative.business_unit_id,
+                   campaign_id=creative.campaign_id, campaign_version=creative.campaign_version)
+
+    @property
+    def object_name(self) -> str:
+        return (f"creative/v1/{_hash_scope(self.tenant_id)}/"
+                f"{_hash_scope(self.unit_id)}/{_hash_scope(self.campaign_id)}/"
+                f"{self.campaign_version}/{self.asset_id}.png")
+
+    def tags(self, sha256: str) -> dict[str, str]:
+        return {
+            "campaia_schema": "generated_creative_v1",
+            "tenant_sha256": _hash_scope(self.tenant_id),
+            "unit_sha256": _hash_scope(self.unit_id),
+            "campaign_sha256": _hash_scope(self.campaign_id),
+            "campaign_version": str(self.campaign_version),
+            "creative_id": self.asset_id,
+            "sha256": sha256,
+        }
+
+
+def storage_manifest(manifest: CreativeManifest, png: bytes) -> AssetManifest:
+    """Build a GCS-compatible digest manifest only from verified normalized PNG."""
+    manifest.verify(png)
+    return AssetManifest.from_normalized_png(CreativeStorageIdentity.from_creative(manifest.identity), png)
+
+
+
 # This state machine is a pure validation contract. A durable F3 transaction MUST
 # persist the expected revision and enforce compare-and-swap under row lock.
 # It must never be used as an in-memory replacement for atomic persistence.
@@ -175,4 +213,4 @@ class CreativeStateTransition:
         return self.expected_revision + 1
 
 
-__all__ = ["CreativeIdentity", "CreativeManifest", "CreativeStoredProof", "CreativeState", "CreativeStateTransition"]
+__all__ = ["CreativeIdentity", "CreativeManifest", "CreativeStoredProof", "CreativeState", "CreativeStateTransition", "CreativeStorageIdentity", "storage_manifest"]
