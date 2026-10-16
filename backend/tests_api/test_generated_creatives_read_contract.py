@@ -17,21 +17,23 @@ class GeneratedCreativeReadContractTests(unittest.TestCase):
         }
         result = _public(row)
         self.assertFalse(result["available"])
+        self.assertIsNone(result["content_url"])
         self.assertEqual(result["state"], "STORAGE_PENDING")
         for forbidden in ("tenant_id", "business_unit_id", "sha256", "object_name",
-                          "url", "storage_generation", "secret"):
+                          "storage.googleapis.com", "storage_generation", "secret"):
             self.assertNotIn(forbidden, str(result))
 
     def test_image_mutation_is_explicitly_guarded_by_single_post_route(self):
         images = [r for r in routes if getattr(r, "path", "").startswith(
             "/campaigns/{campaignId}/images")]
-        self.assertEqual(len(images), 5)
+        self.assertEqual(len(images), 6)
         self.assertEqual(sum("POST" in r.methods for r in images), 2)
-        self.assertEqual(sum("GET" in r.methods for r in images), 3)
+        self.assertEqual(sum("GET" in r.methods for r in images), 4)
         self.assertEqual({r.path for r in images}, {
             "/campaigns/{campaignId}/images",
             "/campaigns/{campaignId}/images/quote",
             "/campaigns/{campaignId}/images/{creativeId}",
+            "/campaigns/{campaignId}/images/{creativeId}/content",
             "/campaigns/{campaignId}/images/{creativeId}/reconcile",
         })
 
