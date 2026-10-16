@@ -74,6 +74,25 @@ class ImageApiSimulationTests(BillingCreditHarness, unittest.TestCase):
         self.setup_subscription(trial=True)
         self.base = "/campaigns/" + self.campaign + "/images"
 
+    def test_unreviewed_generated_image_blocks_campaign_publication(self):
+        quote = self.client.get(self.base + "/quote", headers=OWNER).json()
+        version = self.state.campaigns.get("demo-tenant", self.campaign).plan_version
+        body = {"expected_plan_version": version, "prompt": "Imagem sujeita a revisão humana",
+                "credit_confirmation": {field: quote[field] for field in
+                    ("cycle_id", "policy_version", "credits", "extra_amount")}}
+        generated = self.client.post(self.base, headers={**OWNER, **unique_idem()}, json=body)
+        self.assertEqual(generated.status_code, 201, generated.text)
+        validation = self.client.post("/campaigns/" + self.campaign + "/validate",
+            headers={**OWNER, **unique_idem()})
+        self.assertEqual(validation.status_code, 200, validation.text)
+        result = self.client.post("/campaigns/" + self.campaign + "/publish",
+            headers={**OWNER, **unique_idem()},
+            json={"policy_decision_id": validation.json()["policy_decision_id"],
+                  "approval_id": "no-approval"})
+        self.assertEqual(result.status_code, 409, result.text)
+        self.assertEqual(result.json()["code"], "IMAGE_REVIEW_REQUIRED")
+        self.assertEqual(self.storage.calls.count("POST"), 1)
+
     def test_confirm_one_delivery_no_duplicate_charge_private_png_and_cross_tenant(self):
         quote = self.client.get(self.base + "/quote", headers=OWNER)
         self.assertEqual(quote.status_code, 200, quote.text)
