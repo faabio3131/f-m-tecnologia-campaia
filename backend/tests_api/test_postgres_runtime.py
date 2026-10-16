@@ -526,7 +526,7 @@ class PostgresRuntimeTests(unittest.TestCase):
                 with self.assertRaises(psycopg.errors.RaiseException):
                     conn.execute("DELETE FROM campaia_runtime.ai_cost_journal")
             with psycopg.connect(DSN) as conn:
-                with self.assertRaises(psycopg.errors.RaiseException):
+                with self.assertRaises(psycopg.errors.InsufficientPrivilege):
                     conn.execute("UPDATE campaia_runtime.ai_cost_caps SET tenant_id = 'another-tenant'")
             self.assertEqual(b.ai_gateway.ledger.used(tenant), Decimal('2'))
 
