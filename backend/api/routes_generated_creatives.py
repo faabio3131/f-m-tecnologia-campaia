@@ -102,7 +102,7 @@ async def list_generated_creatives(request):
 
 
 async def get_generated_creative(request):
-    fixture, _state, campaign, repository = _scope(request, Permission.CAMPAIGN_VIEW)
+    fixture, state, campaign, repository = _scope(request, Permission.CAMPAIGN_VIEW)
     from uuid import UUID
     try:
         candidate = str(UUID(request.path_params["creativeId"]))
@@ -116,20 +116,22 @@ async def get_generated_creative(request):
     return JSONResponse(_public(record), headers={"Cache-Control": "private, no-store"})
 
 
-def _preview_policy(row, campaign):
+def _preview_policy(row, campaign, review=None):
     """Fail-closed image preview: stored bytes never imply human approval/publishability."""
     version_current = row["identity"]["campaign_version"] == campaign.plan_version
     stored = row["state"] == "STORED" and bool(row.get("storage_generation"))
+    from .creative_image_review import decision_applies
+    approved = stored and version_current and decision_applies(row, review)
     return {
         "preview_available": stored and version_current,
         "campaign_version_current": version_current,
         "storage_verified": stored,
-        "human_review": "NOT_REVIEWED",
+        "human_review": (review.get("decision", "NOT_REVIEWED") if review else "NOT_REVIEWED"),
         "publication_allowed": False,
         "blocking_reasons": (
             ([] if stored else ["IMAGE_NOT_STORED"]) +
             ([] if version_current else ["CAMPAIGN_VERSION_CHANGED"]) +
-            ["HUMAN_REVIEW_REQUIRED"]
+            ([] if approved else ["HUMAN_REVIEW_REQUIRED"])
         ),
     }
 
@@ -147,7 +149,10 @@ async def preview_generated_creative(request):
             or row["identity"]["business_unit_id"] != campaign.business_unit_id
             or row["state"] == "DELETED"):
         raise ApiError("NOT_FOUND", "Criativo indisponível.", status_code=404)
-    return JSONResponse({"creative": _public(row), "policy": _preview_policy(row, campaign)},
+    from .creative_image_review import CreativeImageReviewStore
+    from campaia_core.creative_assets import CreativeIdentity
+    review = CreativeImageReviewStore(state).get(CreativeIdentity(**row["identity"]))
+    return JSONResponse({"creative": _public(row), "policy": _preview_policy(row, campaign, review)},
                         headers={"Cache-Control": "private, no-store"})
 
 
