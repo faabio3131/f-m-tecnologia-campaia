@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@3a4aad42fb894571bf13afaa3d168c6c37701deb`
+**CURRENT confirmado:** `main@066ca1bc121d1984337cf4d0194a8a150c22a22e`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -365,10 +365,13 @@ Ver `docs/WP_R02_16_ENCERRAMENTO_FINANCEIRO_GARANTIA_20261016.md`.
 WP-R02-17 / PR #61 integrada, CI da PR e pós-merge verdes: autorização explícita de emissão recorrente por organização,
 worker privado no aniversário e fence compartilhado com checkout, sem débito automático.
 Ver `docs/WP_R02_17_EMISSAO_RECORRENTE_UNICA_20261016.md`.
-WP-R02-18 em validação: avisos de cobrança persistentes no aplicativo, leitura individual,
+WP-R02-18 / PR #62 integrada, CI da PR e pós-merge verdes: avisos de cobrança persistentes no aplicativo, leitura individual,
 isolamento/RBAC e migração 006 somente em fonte/CI. Não afirma envio de e-mail/SMS.
 Ver `docs/WP_R02_18_AVISOS_COBRANCA_IN_APP_20261016.md`.
-Antes da ativação V1, fechar conflitos remanescentes/fiscal, ativação controlada dos jobs,
+WP-R02-19 em validação: tentativas e unidades de custo de IA persistentes, reservas de
+orçamento/limites configurados por namespace, falhas desconhecidas preservadas e preços
+legados explicitamente não verificados. Ver `docs/WP_R02_19_EVIDENCIA_CUSTOS_IA_20261016.md`.
+Antes da ativação V1, fechar custos reais/tarifas/câmbio/fiscal, ativação controlada dos jobs,
 migration real autorizada e canais externos quando contratados. Catálogo real continua
 desabilitado; não certificar G5 com simulador ou apenas CI.
 

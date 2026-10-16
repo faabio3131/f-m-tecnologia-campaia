@@ -36,11 +36,13 @@ import httpx
 
 from .ai_gateway import (
     AIProvider,
+    CostObservation,
     AIRequest,
     AITask,
     ModerationBlocked,
     OutputSchema,
     ProviderError,
+    ProviderOutputInvalid,
     ProviderResponse,
     ProviderTimeout,
 )
@@ -54,11 +56,9 @@ API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 #: o padrao aqui, nunca so por suposicao.
 DEFAULT_MODEL = "gemini-3.8-flash"
 
-#: Preco oficial por milhao de tokens, tarifa introdutoria vigente ate 31/12/2026 (pesquisa de
-#: 24/09/2026, ver ADR-0021) — sobe para 1.50/7.50 em 2027. Usado só para converter uso real em
-#: `cost_units` (que o `CostLedger` do tenant entende como "custo real da chamada", nao uma
-#: unidade abstrata) — reconfirmar contra ai.google.dev/gemini-api/docs/pricing antes de
-#: qualquer mudança de tarifa do Google.
+#: Valores legados do ADR-0021, mantidos para compatibilidade de cálculo.
+#: São ESTIMATIVAS NÃO VERIFICADAS: não comprovam tarifa vigente, fatura do provedor,
+#: câmbio ou margem. Revalidar modelo/tarifa antes da ativação comercial.
 INPUT_PRICE_PER_MILLION_TOKENS = Decimal("0.75")
 OUTPUT_PRICE_PER_MILLION_TOKENS = Decimal("3.75")
 
@@ -191,20 +191,27 @@ def _parse_json_output(raw_text: str) -> dict:
 
 
 def _compute_cost_units(usage: dict) -> Decimal:
-    """Converte tokens de uso real em `cost_units` — aqui, custo real em USD da chamada
-    (nao uma unidade abstrata), para que o teto por tenant (`CostLedger`) signifique
-    dinheiro de verdade. Ausencia de `usage` no corpo (nunca deveria acontecer numa resposta
-    bem-sucedida) falha fechado: cobra o maximo plausivel em vez de assumir custo zero, que
-    esconderia gasto real do teto do tenant."""
+    """Legacy tariff estimate from reported tokens, not a verified current invoice cost."""
     input_tokens = usage.get("total_input_tokens")
     output_tokens = usage.get("total_output_tokens")
-    if not isinstance(input_tokens, (int, float)) or not isinstance(output_tokens, (int, float)):
-        raise ProviderError("Resposta do Gemini sem contagem de tokens ('usage') utilizavel.")
-    custo = (
-        Decimal(str(input_tokens)) / Decimal("1000000") * INPUT_PRICE_PER_MILLION_TOKENS
-        + Decimal(str(output_tokens)) / Decimal("1000000") * OUTPUT_PRICE_PER_MILLION_TOKENS
-    )
-    return custo.quantize(Decimal("0.000001"))
+    if any(type(value) is not int or not 0 <= value <= 10**12 for value in (input_tokens, output_tokens)):
+        raise ProviderError("Resposta do Gemini sem contagem exata de tokens utilizavel.")
+    return (Decimal(input_tokens) / Decimal("1000000") * INPUT_PRICE_PER_MILLION_TOKENS
+        + Decimal(output_tokens) / Decimal("1000000") * OUTPUT_PRICE_PER_MILLION_TOKENS).quantize(Decimal("0.000001"))
+
+
+def _cost_observation(body, model):
+    usage = body.get('usage') if isinstance(body, dict) else None
+    if not isinstance(usage, dict):
+        return CostObservation('UNKNOWN', None, model=model)
+    counts = [usage.get('total_input_tokens'), usage.get('total_output_tokens')]
+    safe = [value if type(value) is int and 0 <= value <= 10**12 else None for value in counts]
+    try:
+        units = _compute_cost_units(usage)
+    except ProviderError:
+        return CostObservation('UNKNOWN', None, input_tokens=safe[0], output_tokens=safe[1], model=model)
+    return CostObservation('UNVERIFIED_ESTIMATE', units, input_tokens=safe[0], output_tokens=safe[1],
+        currency='USD', model=model, pricing_reference='legacy-unverified-input-0.75-output-3.75-per-million')
 
 
 @dataclass
@@ -253,13 +260,18 @@ class GeminiProvider:
         if schema is None:
             raise ProviderError(
                 f"GeminiProvider nao tem o contrato de saida '{request.output_schema_id}' "
-                f"registrado — nao sabe que JSON pedir ao modelo."
+                f"registrado — nao sabe que JSON pedir ao modelo.",
+                cost_observation=CostObservation('NOT_DISPATCHED', Decimal('0'), dispatched=False),
             )
 
         # Fail-closed antes da rede: um tipo Python nao mapeavel para JSON Schema aborta
         # aqui, nunca depois de gastar uma chamada real.
-        response_format = _build_response_format(schema)
-        prompt = _build_prompt(request, schema)
+        try:
+            response_format = _build_response_format(schema)
+            prompt = _build_prompt(request, schema)
+        except (ProviderError, TypeError, ValueError) as exc:
+            raise ProviderError('Contrato do provedor não suportado antes do envio.',
+                cost_observation=CostObservation('NOT_DISPATCHED', Decimal('0'), dispatched=False)) from exc
 
         # `response.elapsed` depende de instrumentacao de rede real que o `httpx.MockTransport`
         # dos testes nao populariza de forma confiavel -- medido manualmente aqui para
@@ -283,30 +295,28 @@ class GeminiProvider:
             raise ProviderError(f"{self.name}: limite de taxa atingido.")
         if response.status_code >= 400:
             raise ProviderError(
-                f"{self.name}: erro HTTP {response.status_code} — {response.text[:500]}"
+                f"{self.name}: erro HTTP {response.status_code}"
             )
 
-        body = response.json()
-
-        # Bloqueio de seguranca/moderacao do proprio Gemini vira ModerationBlocked, nao
-        # ProviderError — mesma distincao que o simulador ja faz (Behavior.MODERATION),
-        # para o AIGateway tratar como recusa de conteudo, nao falha tecnica.
+        try:
+            body = response.json()
+        except (ValueError, TypeError) as exc:
+            raise ProviderError('Resposta do provedor não é JSON.', cost_observation=CostObservation('UNKNOWN', None)) from exc
+        observation = _cost_observation(body, self.config.model)
+        if not isinstance(body, dict):
+            raise ProviderError('Resposta do provedor não é objeto.', cost_observation=observation)
         if body.get("status") == "blocked":
-            raise ModerationBlocked(f"{self.name}: conteudo bloqueado pela moderacao do Gemini.")
-
-        raw_text = _extract_text(body)
-        output = _parse_json_output(raw_text)
-        usage = body.get("usage")
-        if not isinstance(usage, dict):
-            raise ProviderError("Resposta do Gemini sem campo 'usage'.")
-        cost_units = _compute_cost_units(usage)
-
-        return ProviderResponse(
-            output=output,
-            cost_units=cost_units,
-            latency_ms=latency_ms,
-            model=body.get("model", self.config.model),
-        )
+            raise ModerationBlocked(f"{self.name}: conteudo bloqueado pela moderacao do Gemini.",
+                                    cost_observation=observation)
+        try:
+            output = _parse_json_output(_extract_text(body))
+        except (ProviderError, TypeError, ValueError, AttributeError) as exc:
+            raise ProviderOutputInvalid('Saída estruturada do provedor inválida.', cost_observation=observation) from exc
+        if observation.cost_units is None:
+            raise ProviderError("Resposta do Gemini sem uso quantificável.", cost_observation=observation)
+        return ProviderResponse(output=output, cost_units=observation.cost_units,
+            latency_ms=latency_ms, model=body.get("model", self.config.model),
+            cost_observation=observation)
 
 
 __all__ = [

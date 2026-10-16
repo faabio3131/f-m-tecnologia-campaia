@@ -312,5 +312,61 @@ class GeminiProviderRequestShapeTests(unittest.TestCase):
             provider.generate(_request())
 
 
+
+
+class GeminiCostEvidenceTests(unittest.TestCase):
+    def provider(self, body, status=200):
+        provider = GeminiProvider(config=_config(), schemas={_SCHEMA.schema_id: _SCHEMA},
+            transport=httpx.MockTransport(lambda request: httpx.Response(status, json=body)))
+        self.addCleanup(provider._client.close)
+        return provider
+
+    def test_invalid_json_still_preserves_reported_usage_and_unverified_estimate(self):
+        from campaia_core.ai_gateway import ProviderOutputInvalid
+        body = _interaction_response(_HAPPY_OUTPUT)
+        body['steps'][-1]['content'][0]['text'] = 'not JSON'
+        with self.assertRaises(ProviderOutputInvalid) as caught:
+            self.provider(body).generate(_request())
+        observation = caught.exception.details['cost_observation']
+        self.assertEqual(observation.input_tokens, 120)
+        self.assertEqual(observation.output_tokens, 60)
+        self.assertEqual(observation.cost_units, Decimal('0.000315'))
+        self.assertEqual(observation.basis, 'UNVERIFIED_ESTIMATE')
+        self.assertIn('unverified', observation.pricing_reference)
+
+    def test_missing_or_inexact_usage_remains_unknown_instead_of_zero(self):
+        for value in (None, True, 1.25, -1, '100'):
+            body = _interaction_response(_HAPPY_OUTPUT)
+            if value is None:
+                del body['usage']
+            else:
+                body['usage']['total_input_tokens'] = value
+            with self.assertRaises(ProviderError) as caught:
+                self.provider(body).generate(_request())
+            observation = caught.exception.details['cost_observation']
+            self.assertIsNone(observation.cost_units)
+            self.assertEqual(observation.basis, 'UNKNOWN')
+
+    def test_http_error_does_not_copy_provider_body_or_claim_no_cost(self):
+        private = 'private-provider-body-fixture'
+        with self.assertRaises(ProviderError) as caught:
+            self.provider({'error': private}, status=500).generate(_request())
+        self.assertNotIn(private, str(caught.exception))
+        self.assertNotIn(private, str(caught.exception.details))
+
+    def test_success_exposes_the_price_basis_as_unverified(self):
+        response = self.provider(_interaction_response(_HAPPY_OUTPUT)).generate(_request())
+        self.assertEqual(response.cost_observation.basis, 'UNVERIFIED_ESTIMATE')
+        self.assertEqual(response.cost_observation.cost_units, response.cost_units)
+
+    def test_contract_rejection_before_network_has_explicit_no_dispatch_evidence(self):
+        provider = self.provider({})
+        with self.assertRaises(ProviderError) as caught:
+            provider.generate(_request(output_schema_id='unknown-fixture-schema'))
+        observation = caught.exception.details['cost_observation']
+        self.assertFalse(observation.dispatched)
+        self.assertEqual(observation.cost_units, Decimal('0'))
+        self.assertEqual(observation.basis, 'NOT_DISPATCHED')
+
 if __name__ == "__main__":
     unittest.main()
