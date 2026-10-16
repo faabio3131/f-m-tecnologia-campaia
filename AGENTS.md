@@ -890,3 +890,12 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - `api.creative_image_settlement.settle_stored_creative`: subrotina interna, chamada somente após autorização e reserva comercial, exige manifesto STORED com generation persistida; SETTLE F5, idempotência e auditoria na mesma transação F3. Testes unitários de rejeição pendente e liquidação verificada.
 - **Não há ainda rota POST de geração nem componente Web operacional**: não apresentar este helper como entrega API/Web completa. Integração custo F3, provedor Gemini, commit storage, créditos, entrega e status assíncrono requerem fechamento e testes E2E; dependência da homologação GCS real permanece EXTERNAL_INFRASTRUCTURE.
 - Novo HEAD necessita CI. A PR #73 permanece PARTIAL; não fazer merge, deploy nem migrations reais sem aprovação específica.
+
+
+## WP-R04-04B — primeira integração Web real com API de leitura (16/10/2026)
+
+- Novo `GeneratedImagesPanel` no detalhe da campanha, utilizando `api.get` existente para inventário privado e cotação da franquia; sem token, URL de bucket, caminho de objeto nem segredo no navegador.
+- Teste Vitest verifica leitura de estados, cotação e botão de geração desabilitado enquanto falta a mutação segura.
+- O helper de SETTLE F3/F5 passou no Backend #363, Frontend #301 e F4 #197 no commit `9c5b9296eef06555d5efb66f330930d406045b06`.
+- **Geração POST/IA/F3 cost guard/SETTLE+storage E2E não estão concluídos.** Esta tela é inventário de criativos e NÃO é a UI de geração funcional. Não avançar status além de PARTIAL sem prova concreta.
+- PR #73 sem merge; após inclusão da Web, executar nova CI no HEAD exato. Homologação GCS externa permanece fora do fechamento funcional interno, como determinado pelo Diretor.
