@@ -473,6 +473,8 @@ test.describe("Protocolo de sessao real", () => {
 
     await page.goto("/campaigns");
     await page.getByLabel("Objetivo").fill("Campanha E2E WP-05");
+    await page.getByLabel("Produto/serviço").fill("Calçados para caminhada");
+    await page.getByLabel("Público-alvo").fill("Adultos interessados em caminhada");
     const briefResponsePromise = page.waitForResponse(
       (r) => r.url().endsWith("/briefs") && r.request().method() === "POST",
     );
@@ -491,6 +493,28 @@ test.describe("Protocolo de sessao real", () => {
     expect((await planResponsePromise).status()).toBe(202);
     await expect(page.getByText(/"objetivo"/)).toBeVisible();
 
+    await page.getByRole("button", { name: "Abrir textos e públicos", exact: true }).click();
+    const proposals = page.getByRole("region", { name: "Textos e públicos", exact: true });
+    await expect(proposals.getByText("Ambiente de teste: geração simulada.")).toBeVisible();
+    await proposals.getByLabel("Tom dos textos").fill("direto e claro");
+    const copyPromise = page.waitForResponse(r => r.url().endsWith("/proposals/copy") && r.request().method() === "POST");
+    await proposals.getByRole("button", { name: "Gerar proposta", exact: true }).click();
+    const copyResponse = await copyPromise;
+    expect(copyResponse.status()).toBe(201);
+    const copyBody = await copyResponse.json();
+    expect(copyBody.output.variacoes).toHaveLength(5);
+    await expect(proposals.getByText("Textos · versão 1", { exact: true })).toBeVisible();
+    await proposals.getByLabel("Tipo de proposta").selectOption("audience");
+    await proposals.getByLabel("Público envolve tema sensível").check();
+    const audiencePromise = page.waitForResponse(r => r.url().endsWith("/proposals/audience") && r.request().method() === "POST");
+    await proposals.getByRole("button", { name: "Gerar proposta", exact: true }).click();
+    const audienceResponse = await audiencePromise;
+    expect(audienceResponse.status()).toBe(201);
+    const audienceBody = await audienceResponse.json();
+    expect(audienceBody.plan_version).toBe(copyBody.plan_version + 1);
+    expect(audienceBody.output.sensivel).toBe(true);
+    await expect(proposals.getByText("Públicos · versão 1", { exact: true })).toBeVisible();
+
     const validateResponsePromise = page.waitForResponse((r) =>
       r.url().endsWith("/validate"),
     );
@@ -499,6 +523,7 @@ test.describe("Protocolo de sessao real", () => {
     expect(validateResponse.status()).toBe(200);
     const decision = await validateResponse.json();
     expect(decision.outcome).toBe("APPROVABLE");
+    expect(decision.requires_dual_approval).toBe(true);
     await expect(page.getByText(/resultado: approvable/i)).toBeVisible();
 
     const approvalResponsePromise = page.waitForResponse(
@@ -509,6 +534,7 @@ test.describe("Protocolo de sessao real", () => {
     expect(approvalResponse.status()).toBe(201);
     const approval = await approvalResponse.json();
     expect(approval.status).toBe("PENDING");
+    expect(approval.requires_dual_approval).toBe(true);
 
     // Segregacao de funcoes real (I-09/campaia_core.permissions.can_approve): quem
     // propos (owner@demo-tenant, o mesmo user_id desta sessao) NUNCA pode aprovar a

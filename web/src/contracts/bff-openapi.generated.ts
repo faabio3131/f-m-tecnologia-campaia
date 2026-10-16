@@ -606,41 +606,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/campaigns/{campaignId}/proposals/{proposalKind}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                campaignId: components["parameters"]["CampaignId"];
-                proposalKind: "copy" | "audience";
-            };
-            cookie?: never;
-        };
-        get: operations["listCreativeProposals"];
-        put?: never;
-        post: operations["generateCreativeProposal"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/campaigns/{campaignId}/proposals/{proposalKind}/quote": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["quoteCreativeProposal"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/campaigns/{campaignId}/plan/quote": {
         parameters: {
             query?: never;
@@ -1250,6 +1215,41 @@ export interface paths {
         };
         /** Trilha de auditoria do tenant */
         get: operations["listAuditEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/campaigns/{campaignId}/proposals/{proposalKind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaignId: components["parameters"]["CampaignId"];
+                proposalKind: "copy" | "audience";
+            };
+            cookie?: never;
+        };
+        get: operations["listCreativeProposals"];
+        put?: never;
+        post: operations["generateCreativeProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/campaigns/{campaignId}/proposals/{proposalKind}/quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["quoteCreativeProposal"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3873,96 +3873,6 @@ export interface operations {
             };
         };
     };
-    listCreativeProposals: {
-        parameters: {
-            query?: {
-                cursor?: string;
-            };
-            header?: never;
-            path: {
-                campaignId: components["parameters"]["CampaignId"];
-                proposalKind: "copy" | "audience";
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Propostas privadas e capacidade efetiva */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CreativeProposalPage"];
-                };
-            };
-            404: components["responses"]["NotFound"];
-        };
-    };
-    generateCreativeProposal: {
-        parameters: {
-            query?: never;
-            header: {
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
-            path: {
-                campaignId: components["parameters"]["CampaignId"];
-                proposalKind: "copy" | "audience";
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CopyProposalInput"] | components["schemas"]["AudienceProposalInput"];
-            };
-        };
-        responses: {
-            /** @description Proposta entregue e consumo confirmado atomicamente */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CreativeProposal"];
-                };
-            };
-            409: components["responses"]["InvalidState"];
-            422: components["responses"]["ValidationError"];
-            /** @description Capacidade indisponivel ou operacao incerta sem redispatch */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    quoteCreativeProposal: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                campaignId: components["parameters"]["CampaignId"];
-                proposalKind: "copy" | "audience";
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Cotacao antes da confirmacao humana */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CreativeProposalQuote"];
-                };
-            };
-            409: components["responses"]["InvalidState"];
-        };
-    };
     quoteStrategy: {
         parameters: {
             query?: never;
@@ -5439,6 +5349,97 @@ export interface operations {
                     };
                 };
             };
+        };
+    };
+    listCreativeProposals: {
+        parameters: {
+            query?: {
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                campaignId: components["parameters"]["CampaignId"];
+                proposalKind: "copy" | "audience";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Propostas privadas e capacidade efetiva */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeProposalPage"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    generateCreativeProposal: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                campaignId: components["parameters"]["CampaignId"];
+                proposalKind: "copy" | "audience";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CopyProposalInput"] | components["schemas"]["AudienceProposalInput"];
+            };
+        };
+        responses: {
+            /** @description Proposta entregue e consumo confirmado atomicamente */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeProposal"];
+                };
+            };
+            409: components["responses"]["InvalidState"];
+            422: components["responses"]["ValidationError"];
+            /** @description Capacidade indisponivel ou operacao incerta sem redispatch */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    quoteCreativeProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaignId: components["parameters"]["CampaignId"];
+                proposalKind: "copy" | "audience";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cotacao antes da confirmacao humana */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeProposalQuote"];
+                };
+            };
+            409: components["responses"]["InvalidState"];
         };
     };
 }
