@@ -118,6 +118,9 @@ class ImageApiSimulationTests(BillingCreditHarness, unittest.TestCase):
         route = self.base + "/" + created.json()["id"]
         foreign = self.client.delete(route, headers={**OTHER_OWNER, **unique_idem()})
         self.assertIn(foreign.status_code, (403, 404), foreign.text)
+        # setup_subscription performed a valid step-up with this bearer session.
+        # Explicitly revoke its elevation to exercise the true missing-step-up path.
+        self.state.invalidate_step_up_for_session("bearer:demo-owner-token")
         missing_step_up = self.client.delete(route, headers={**OWNER, **unique_idem()})
         self.assertNotIn(missing_step_up.status_code, (200, 202), missing_step_up.text)
         self.assertEqual(self.client.get(route, headers=OWNER).json()["state"], "STORED")
