@@ -146,7 +146,7 @@ _BILLING_OBSERVATION_FIELDS = {
 # Disable billing/AI mutation and drain workers before any old-code rollback.
 _COMMERCIAL_FIELDS = {
     ("campaia_core.payment_gateway", "ChargeCommand"): frozenset({"due_at"}),
-    ("campaia_core.payment_gateway", "ChargeResult"): frozenset({"observed_amount", "observed_due_date", "source_status", "deleted", "refund_observations", "refunds_present"}),
+    ("campaia_core.payment_gateway", "ChargeResult"): frozenset({"observed_amount", "observed_due_date", "source_status", "deleted", "refund_observations", "refunds_present", "billing_type", "chargeback_status"}),
     ("campaia_core.subscription", "PlanDefinition"): frozenset({"credit_policy"}),
     ("campaia_core.subscription", "Subscription"): frozenset({"paid_cycle_schedule", "extra_credit_consent", "cancel_at_period_end", "pending_plan_effective_at"}),
     ("campaia_core.subscription", "SubscriptionCharge"): frozenset({

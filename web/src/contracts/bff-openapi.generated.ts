@@ -1288,7 +1288,7 @@ export interface components {
         };
         BillingGuarantee: {
             /** @enum {string} */
-            state: "UNAVAILABLE" | "MANUAL_REVIEW" | "ELIGIBLE" | "EXPIRED" | "REQUESTED";
+            state: "UNAVAILABLE" | "MANUAL_REVIEW" | "ELIGIBLE" | "EXPIRED" | "REQUESTED" | "PROCESSING";
             fingerprint: string | null;
             /** Format: date-time */
             first_paid_at: string | null;
@@ -1310,6 +1310,17 @@ export interface components {
             request_id: string | null;
             /** Format: date-time */
             requested_at: string | null;
+            /** Format: date-time */
+            processing_started_at?: string | null;
+            processing_review_required?: boolean;
+            refund_progress?: {
+                billing_id: string;
+                gateway_charge_id: string;
+                paid_amount: string;
+                completed_amount: string | null;
+                state: string;
+                mode: string | null;
+            }[];
         };
         BillingCheckout: {
             /** @enum {string} */

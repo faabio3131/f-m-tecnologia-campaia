@@ -60,3 +60,21 @@ describe("First paid guarantee", () => {
     expect(screen.queryByRole("button", { name: "Revisar solicitação de garantia" })).not.toBeInTheDocument();
   });
 });
+
+it("separa tratamento iniciado, pendencia no provedor e devolucao concluida com ajuste ainda pendente", async () => {
+  const user = userEvent.setup();
+  const progress = { ...quote, state: "PROCESSING", request_id: "fixture-case", requested_at: "2026-10-16T02:00:00Z",
+    processing_started_at: "2026-10-16T03:00:00Z", refund_progress: [
+      { billing_id: "bill-fixture", gateway_charge_id: "sim-fixture", paid_amount: "12.50", completed_amount: "0.00", state: "PROVIDER_PENDING", mode: "SIMULATOR" }] };
+  const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(response(progress))
+    .mockResolvedValueOnce(response({ ...progress, refund_progress: [{ ...progress.refund_progress[0],
+      completed_amount: "12.50", state: "REFUND_DONE_ADJUSTMENT_PENDING" }] }));
+  render(<BillingGuaranteePanel stepUp={proof()} onRequested={vi.fn()} />);
+  await screen.findByText("Devolução em processamento no provedor.");
+  expect(screen.queryByText(/Devolução integral informada pelo provedor; ajuste contratual pendente/)).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Atualizar garantia" }));
+  await screen.findByText("Devolução integral informada pelo provedor; ajuste contratual pendente.");
+  expect(screen.getByText("Tratamento iniciado. Devoluções e ajustes são conferidos separadamente.")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Confirmar solicitação de garantia" })).not.toBeInTheDocument();
+  expect(fetch.mock.calls.every(([, init]) => init?.method === "GET")).toBe(true);
+});
