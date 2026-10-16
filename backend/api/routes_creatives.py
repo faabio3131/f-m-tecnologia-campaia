@@ -131,12 +131,14 @@ async def _proposal_body(request, model):
         raise ApiError("VALIDATION_FAILED", "Confira os campos do pedido de geração.", status_code=422) from None
 
 
-def _validated_output(kind, proposal, body):
+def _validated_output(kind, proposal, body, tenant):
     if not isinstance(proposal, Proposal):
         if (str(proposal.status) in ("TIMEOUT", "PROVIDER_ERROR")
                 and not getattr(proposal.provenance, "cost_complete", False)):
             raise ApiError("AI_OPERATION_PENDING", "Resultado externo incerto; reserva mantida para conferência.", status_code=503)
         raise ApiError("AI_OUTPUT_INVALID", "Não foi possível entregar uma proposta válida.", status_code=422)
+    if proposal.tenant_id != tenant or proposal.agent != kind:
+        raise ApiError("AI_OUTPUT_INVALID", "A proposta não corresponde à operação solicitada.", status_code=422)
     try:
         output = (CopyProposalOutput if kind == "copy" else AudienceProposalOutput).model_validate(proposal.output)
     except ValidationError:
@@ -207,7 +209,7 @@ async def generate_creative_proposal(request):
                 captured.update(source=source_digest(current), summary=deepcopy(summary))
             # Claim/reservation and capture have committed; agent/provider owns no DB lock.
             proposal = state.agent_runner.run(kind, tenant_id=fixture.tenant_id, context=context)
-            return proposal, _validated_output(kind, proposal, body)
+            return proposal, _validated_output(kind, proposal, body, fixture.tenant_id)
 
         def deliver(generated):
             current = _fresh(request, fixture, state)

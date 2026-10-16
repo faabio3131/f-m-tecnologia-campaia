@@ -11,7 +11,7 @@ from starlette.testclient import TestClient
 from api.main import create_app
 from campaia_core.ai_gateway import ProviderTimeout
 from tests_api.test_billing_credit_integration import BillingCreditHarness
-from tests_api.test_helpers import OWNER, OTHER_OWNER, VIEWER, APPROVER, FINANCE, unique_idem, with_step_up
+from tests_api.test_helpers import OWNER, OTHER_OWNER, VIEWER, APPROVER, FINANCE, MARKETER, unique_idem, with_step_up
 from tests_support.creative_ai import install_test_creative_provider
 
 BRIEF = {"objective": "Campanha de proposta", "product": "Oferta de calçados", "audience": "Adultos interessados em calçados",
@@ -108,6 +108,38 @@ class CreativeProposalTests(BillingCreditHarness, unittest.TestCase):
         self.assertEqual(captured[0]["quantidade_variacoes"], 5)
         self.assertNotIn("proposal_id", captured[0])
         self.assertNotIn("provenance", captured[0])
+
+
+    def test_mismatched_agent_or_tenant_proposal_is_never_delivered_or_charged(self):
+        self.setup_subscription(trial=True)
+        runner = self.state.agent_runner
+        original = runner.run
+        for changes in ({"tenant_id": "other-tenant"}, {"agent": "audience"}):
+            def wrong(*args, **kwargs):
+                return replace(original(*args, **kwargs), **changes)
+            with patch.object(runner, "run", side_effect=wrong):
+                result = self.send(body=self.body(commercial=True))
+            self.assertEqual(result.status_code, 422, result.text)
+        self.assertEqual(self.included(), 30)
+        self.assertEqual(self.history().json()["items"], [])
+
+
+    def test_other_business_unit_cannot_read_generate_or_request_decide_and_list_approval(self):
+        approved = self.approval()
+        before = self.provider.calls
+        for token in ("demo-marketer-token", "demo-approver-token", "demo-viewer-token"):
+            self.state.tokens[token] = replace(self.state.tokens[token], business_unit_id="other-unit")
+        marketer = {**MARKETER, **unique_idem()}
+        self.assertEqual(self.history(headers=MARKETER).status_code, 404)
+        self.assertEqual(self.client.get(self.base + "copy/quote", headers=MARKETER).status_code, 404)
+        self.assertEqual(self.send(body=self.body(), headers=marketer).status_code, 404)
+        requested = self.client.post("/approvals", headers={**MARKETER, **unique_idem()},
+            json={"campaign_id": self.campaign, "kind": "PUBLISH"})
+        self.assertEqual(requested.status_code, 404, requested.text)
+        decided = self.approve(approved["id"])
+        self.assertEqual(decided.status_code, 404, decided.text)
+        self.assertEqual(self.client.get("/approvals", headers=VIEWER).json(), [])
+        self.assertEqual(self.provider.calls, before)
 
     def test_copy_five_variants_and_audience_charge_three_and_two_only_on_delivery(self):
         self.setup_subscription(trial=True)

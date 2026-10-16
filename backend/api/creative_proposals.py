@@ -75,7 +75,7 @@ class CreativeProposalRepository:
             "output": deepcopy(output), "request_summary": deepcopy(summary),
             "provider": proposal.provenance.provider, "model": proposal.provenance.model,
             "prompt_version": (getattr(proposal.provenance, "prompt_version", None) or AGENTS[kind].prompt_version),
-            "created_by": fixture.user_id, "business_unit_id": fixture.business_unit_id,
+            "created_by": fixture.user_id, "business_unit_id": record.business_unit_id,
             "created_at": datetime.now(timezone.utc),
         }
         serialize_proposal(row, current_source=row["source_digest"])  # Verify the complete public envelope before any write/settlement.

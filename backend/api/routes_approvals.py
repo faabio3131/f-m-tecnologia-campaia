@@ -36,8 +36,16 @@ def _authorize(request: Request, permission: Permission):
 
 
 async def list_approvals(request: Request) -> JSONResponse:
-    fixture, state, _principal = _authorize(request, Permission.CAMPAIGN_VIEW)
-    approvals = state.approvals.list_for_tenant(fixture.tenant_id)
+    fixture, state, principal = _authorize(request, Permission.CAMPAIGN_VIEW)
+    approvals = []
+    for approval in state.approvals.list_for_tenant(fixture.tenant_id):
+        campaign = state.campaigns.get(fixture.tenant_id, approval.campaign_id)
+        if campaign is None:
+            continue
+        if (principal.business_unit_ids is not None and campaign.business_unit_id is not None
+                and campaign.business_unit_id not in principal.business_unit_ids):
+            continue
+        approvals.append(approval)
     return list_response([serialize_approval(a) for a in approvals])
 
 

@@ -22,6 +22,20 @@ async function prepare(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: "Gerar proposta" }));
 }
 describe("CreativeProposalsPanel", () => {
+  it("refreshes current-context markers after the strategy version changes", async () => {
+    let stale = false;
+    vi.spyOn(globalThis, "fetch").mockImplementation(url => response({
+      items: String(url).endsWith("copy") ? [{ ...output, current: !stale }] : [],
+      next_cursor: null, capability,
+    }));
+    const view = render(<CreativeProposalsPanel {...props} />);
+    await screen.findByText(/Contexto vigente/);
+    stale = true;
+    view.rerender(<CreativeProposalsPanel {...props} planVersion={3} />);
+    await screen.findByText(/Contexto anterior/);
+    expect(screen.queryByText(/Contexto vigente/)).not.toBeInTheDocument();
+  });
+
   it("reviews three credits before sending and displays preserved text and provenance", async () => {
     const user = userEvent.setup();
     let saved = false;

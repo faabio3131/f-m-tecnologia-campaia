@@ -21,7 +21,10 @@ Status: PARTIAL / em validação. Evidências finais na PR; não declara G7 conc
 Testes API/PG incluem rollback após inserir material, replay após restart, isolamento,
 revogação durante geração, conteúdo inválido/Unicode, concorrência e aprovação antiga.
 Contrato e tipos sincronizados são obrigatórios. UI e E2E devem confirmar o fluxo e o débito.
-CI completa no HEAD e pós-merge são condições de integração, ainda pendentes neste registro inicial.
+CI de desenvolvimento confirmou domínio/API/PostgreSQL, contrato, Web e E2E de sessão/checkout.
+A fila de aprovações também filtra a unidade real da campanha; não expõe pedidos de outra unidade.
+Revisão final adicionou guardas de tenant/agente da saída, replay de falha conhecida e refresh de contexto.
+HEAD final exato e pós-merge são condições de integração; evidências finais são registradas na PR #69.
 
 ## Limites
 009 apenas em fonte/CI; sem migration real. Cloud SQL permanece desligado.
