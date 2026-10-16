@@ -45,7 +45,8 @@ class CreativeRepository:
                    if r["state"] != CreativeState.DELETED.value)
 
     def claim(self, manifest: CreativeManifest, request_key: str, max_active_bytes: int, *,
-              credit_operation_id: str | None = None, requested_by: str | None = None):
+              credit_operation_id: str | None = None, requested_by: str | None = None,
+              source_creative_id: str | None = None):
         if not isinstance(manifest, CreativeManifest) or type(max_active_bytes) is not int or max_active_bytes <= 0:
             raise AssetStorageError(Code.INVALID)
         if credit_operation_id is not None and (not isinstance(credit_operation_id, str)
@@ -53,15 +54,31 @@ class CreativeRepository:
             raise AssetStorageError(Code.INVALID)
         if requested_by is not None and (not isinstance(requested_by, str) or not 1 <= len(requested_by) <= 256):
             raise AssetStorageError(Code.INVALID)
+        if source_creative_id is not None:
+            from uuid import UUID
+            try:
+                if str(UUID(source_creative_id)) != source_creative_id:
+                    raise ValueError("Invalid source")
+            except (ValueError, AttributeError, TypeError):
+                raise AssetStorageError(Code.INVALID) from None
         identity = manifest.identity
         context = _context(identity, request_key)
         with self.db.transaction():
             self.table.lock_key("creative-quota:" + identity.tenant_id)
+            if source_creative_id is not None:
+                source = self.table.get_for_tenant(source_creative_id, identity.tenant_id)
+                if (source is None or source["state"] != CreativeState.STORED.value
+                        or source["identity"]["campaign_id"] != identity.campaign_id
+                        or source["identity"]["business_unit_id"] != identity.business_unit_id
+                        or source["identity"]["campaign_version"] != identity.campaign_version
+                        or source_creative_id == identity.creative_id):
+                    raise AssetStorageError(Code.CONFLICT)
             existing = self.table.get_for_tenant(identity.creative_id, identity.tenant_id)
             if existing is not None:
                 if (existing["context"] != context or existing["manifest"] != asdict(manifest)
                         or existing.get("credit_operation_id") != credit_operation_id
-                        or existing.get("requested_by") != requested_by):
+                        or existing.get("requested_by") != requested_by
+                        or existing.get("source_creative_id") != source_creative_id):
                     raise AssetStorageError(Code.CONFLICT)
                 return existing, True
             if self.usage(identity.tenant_id) + manifest.size > max_active_bytes:
@@ -69,7 +86,8 @@ class CreativeRepository:
             row = {"identity": asdict(identity), "manifest": asdict(manifest),
                    "state": CreativeState.RESERVED.value, "revision": 0,
                    "storage_generation": None, "context": context,
-                   "credit_operation_id": credit_operation_id, "requested_by": requested_by}
+                   "credit_operation_id": credit_operation_id, "requested_by": requested_by,
+                   "source_creative_id": source_creative_id}
             try:
                 self.table.put(identity.creative_id, identity.tenant_id, row)
             except TenantIsolationViolation:
