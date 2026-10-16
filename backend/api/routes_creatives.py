@@ -188,7 +188,6 @@ async def generate_creative_proposal(request):
     nonce = require_idempotency_key(request)
     source_id = request.path_params.get("proposalId")
     action = "revision" if source_id else kind
-    _available(state, kind)
     _require_billing_mode(state, fixture.tenant_id)
     if not state.proposal_rate_limiter.allow(fixture.tenant_id, now=datetime.now(timezone.utc)):
         raise ApiError("RATE_LIMITED", "Aguarde antes de gerar mais propostas.", status_code=429)
@@ -211,6 +210,7 @@ async def generate_creative_proposal(request):
             return source_digest(current), current.plan_version
 
         def generate():
+            _available(state, kind)  # Completed deliveries remain recoverable if the model is later disabled.
             # Capture a consistent, owned input under a short F3 transaction.
             with state.db.transaction():
                 state.idempotency._table.lock_key("tenant:" + fixture.tenant_id)

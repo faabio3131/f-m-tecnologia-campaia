@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from starlette.testclient import TestClient
 from api.main import create_app
-from campaia_core.ai_gateway import ProviderTimeout
+from campaia_core.ai_gateway import ProviderTimeout, AITask
 from tests_api.test_billing_credit_integration import BillingCreditHarness
 from tests_api.test_creative_proposals import BRIEF
 from tests_api.test_helpers import OWNER, OTHER_OWNER, VIEWER, MARKETER, FINANCE, unique_idem
@@ -106,6 +106,20 @@ class CopyRevisionTests(BillingCreditHarness, unittest.TestCase):
                 "instructions": "Convite mais claro"})
         self.assertEqual(result.status_code, 201, result.text)
         self.assertEqual(result.json()["request_summary"]["offer"], source["request_summary"]["offer"])
+
+
+    def test_delivered_revision_replays_after_restart_even_when_provider_capability_is_disabled(self):
+        body, headers = self.body(), {**OWNER, **unique_idem()}
+        result = self.send(body, headers)
+        self.assertEqual(result.status_code, 201, result.text)
+        client = TestClient(create_app(env="test", db_path=str(self.path)))
+        self.addCleanup(client.app.state.campaia.db.close)
+        self.assertFalse(client.app.state.campaia.ai_provider.supports(AITask.GENERATE_COPY))
+        repeated = self.send(body, headers, client=client)
+        self.assertEqual(repeated.status_code, 201, repeated.text)
+        self.assertEqual(repeated.json(), result.json())
+        self.assertEqual(client.app.state.campaia.ai_provider.calls, 0)
+        self.assertEqual(self.included(), 26)
 
     def test_one_credit_replaces_one_text_and_preserves_original_batch_and_review_history(self):
         policy = self.client.post("/campaigns/" + self.campaign + "/validate",

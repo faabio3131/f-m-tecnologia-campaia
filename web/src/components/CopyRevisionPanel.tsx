@@ -26,7 +26,8 @@ export function CopyRevisionPanel({ campaignId, source, planVersion, busy, canGe
       await api.post<CreativeProposal>(endpoint, request.body, { idempotencyKey: request.key });
     } catch (err) {
       if (!alive.current) return;
-      if (!request.sent && err instanceof ApiClientError && err.status < 500 && err.status !== 408) {
+      if (err instanceof ApiClientError && (err.code === "AI_OPERATION_FAILED"
+          || (!request.sent && err.status < 500 && err.status !== 408))) {
         setIntent(null); setError(err.message);
       } else {
         setError("Resultado ainda não confirmado. Confira o mesmo ajuste para evitar uma nova solicitação.");

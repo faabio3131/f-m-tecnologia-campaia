@@ -22,6 +22,26 @@ async function review(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: "Revisar consumo do ajuste" }));
 }
 describe("CopyRevisionPanel", () => {
+  it("unlocks only after the backend proves a prior uncertain adjustment ended without delivery", async () => {
+    const user = userEvent.setup();
+    let posts = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation((_url, options) => {
+      if (options?.method === "POST") {
+        posts++;
+        if (posts === 1) return Promise.reject(new TypeError("lost"));
+        return response({ code: "AI_OPERATION_FAILED", message: "Operação encerrada sem débito" }, 422);
+      }
+      return response(quote);
+    });
+    render(<CopyRevisionPanel {...props()} />);
+    await review(user); await user.click(screen.getByRole("button", { name: "Confirmar ajuste" }));
+    await screen.findByRole("button", { name: "Conferir mesmo ajuste" });
+    await user.click(screen.getByRole("button", { name: "Conferir mesmo ajuste" }));
+    await screen.findByText("Operação encerrada sem débito");
+    expect(screen.getByLabelText("Instruções para o ajuste")).toBeEnabled();
+    expect(posts).toBe(2);
+  });
+
   it("shows the selected original and reviews one credit before replacing a single index", async () => {
     const user = userEvent.setup(), calls: RequestInit[] = [], current = props();
     vi.spyOn(globalThis, "fetch").mockImplementation((_url, options) => {

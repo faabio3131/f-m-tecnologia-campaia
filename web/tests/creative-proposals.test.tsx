@@ -22,6 +22,27 @@ async function prepare(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: "Gerar proposta" }));
 }
 describe("CreativeProposalsPanel", () => {
+  it("a terminal no-delivery result unlocks a previously uncertain proposal", async () => {
+    const user = userEvent.setup();
+    let posts = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
+      if (String(url).endsWith("/quote")) return response(quote);
+      if (options?.method === "POST") {
+        posts++;
+        if (posts === 1) return Promise.reject(new TypeError("lost"));
+        return response({ code: "AI_OPERATION_FAILED", message: "Operação encerrada sem débito" }, 422);
+      }
+      return response({ items: [], next_cursor: null, capability });
+    });
+    render(<CreativeProposalsPanel {...props} />);
+    await prepare(user); await user.click(screen.getByRole("button", { name: "Confirmar proposta" }));
+    await screen.findByRole("button", { name: "Conferir mesma proposta" });
+    await user.click(screen.getByRole("button", { name: "Conferir mesma proposta" }));
+    await screen.findByText("Operação encerrada sem débito");
+    expect(screen.getByLabelText("Oferta dos textos")).toBeEnabled();
+    expect(posts).toBe(2);
+  });
+
   it("refreshes current-context markers after the strategy version changes", async () => {
     let stale = false;
     vi.spyOn(globalThis, "fetch").mockImplementation(url => response({

@@ -141,6 +141,20 @@ class CreativeProposalTests(BillingCreditHarness, unittest.TestCase):
         self.assertEqual(self.client.get("/approvals", headers=VIEWER).json(), [])
         self.assertEqual(self.provider.calls, before)
 
+
+    def test_delivered_copy_replays_without_the_original_provider_after_restart(self):
+        self.setup_subscription(trial=True)
+        body, headers = self.body(commercial=True), {**OWNER, **unique_idem()}
+        first = self.send(body=body, headers=headers)
+        self.assertEqual(first.status_code, 201, first.text)
+        peer = TestClient(create_app(env="test", db_path=str(self.path)))
+        self.addCleanup(peer.app.state.campaia.db.close)
+        replayed = self.send(body=body, headers=headers, client=peer)
+        self.assertEqual(replayed.status_code, 201, replayed.text)
+        self.assertEqual(replayed.json(), first.json())
+        self.assertEqual(peer.app.state.campaia.ai_provider.calls, 0)
+        self.assertEqual(self.included(), 27)
+
     def test_copy_five_variants_and_audience_charge_three_and_two_only_on_delivery(self):
         self.setup_subscription(trial=True)
         before = self.included()

@@ -19,7 +19,10 @@ API/Web/PostgreSQL/E2E com um texto alterado e demais idênticos, cobrança úni
 rollback após escrever lote, restart/replay, concorrência, falha/timeout e isolamento.
 Primeira CI confirmou API/PostgreSQL; corrigido comentário ausente nos tipos gerados.
 Revisão final preserva contexto já entregue sem reinterpretá-lo como nova entrada do usuário.
-CI final com Web/E2E no HEAD e pós-merge pendentes; registrar resultados na PR #70.
+CI de desenvolvimento confirmou contrato/Web/E2E com revisão de apenas uma variação.
+A entrega já confirmada pode ser recuperada após restart mesmo com modelo desativado;
+falha terminal comprovada libera a interface, sem tratar rate limit como prova de falha.
+CI final no HEAD e pós-merge pendentes; registrar resultados na PR #70.
 
 ## Limites
 Sem novo modelo, ativação de catálogo/credencial, migração real, GCS real ou gasto externo.

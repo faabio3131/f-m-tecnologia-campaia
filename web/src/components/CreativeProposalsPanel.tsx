@@ -60,7 +60,8 @@ export function CreativeProposalsPanel({ campaignId, planVersion, channels, prod
       delivered = await api.post<CreativeProposal>(base + intent.kind, intent.body, { idempotencyKey: intent.key });
     } catch (err) {
       if (!alive.current) return;
-      if (!intent.sent && err instanceof ApiClientError && err.status < 500 && err.status !== 408) {
+      if (err instanceof ApiClientError && (err.code === "AI_OPERATION_FAILED"
+          || (!intent.sent && err.status < 500 && err.status !== 408))) {
         setPrepared(null); setError(err.message);
       } else {
         setError("Resultado ainda não confirmado. Confira a mesma solicitação antes de alterar os campos.");
