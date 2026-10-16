@@ -42,3 +42,7 @@ export type BillingClosure = components["schemas"]["BillingClosure"];
 export type BillingGuarantee = components["schemas"]["BillingGuarantee"];
 
 export type BillingRenewal = components["schemas"]["BillingRenewal"];
+
+export type BillingNotices = components["schemas"]["BillingNotices"];
+export type BillingNotice = components["schemas"]["BillingNotice"];
+export type BillingNoticeRead = components["schemas"]["BillingNoticeRead"];

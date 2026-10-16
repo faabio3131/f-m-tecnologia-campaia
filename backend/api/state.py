@@ -40,6 +40,7 @@ from campaia_core.rate_limit import FixedWindowRateLimiter
 from campaia_core.subscription import Subscription, SubscriptionCharge
 
 from .organization import OrganizationRepository
+from .billing_notices import BillingNoticeRepository
 from .repositories import (
     ApprovalRepository,
     AuditLog,
@@ -411,6 +412,7 @@ class AppState:
     campaigns: CampaignRepository = field(default_factory=CampaignRepository)
     approvals: ApprovalRepository = field(default_factory=ApprovalRepository)
     audit: AuditLog = field(default_factory=AuditLog)
+    billing_notices: BillingNoticeRepository = field(default_factory=BillingNoticeRepository)
     #: F1 commercial onboarding aggregate. Nova FM/FM are never seeded here; both are
     #: ordinary tenants created by the same product flow when used for homologation.
     organizations: OrganizationRepository = field(default_factory=OrganizationRepository)
@@ -521,6 +523,7 @@ class AppState:
             self.campaigns = CampaignRepository(self.db.table("campaigns"))
             self.approvals = ApprovalRepository(self.db.table("approvals"))
             self.audit = AuditLog(self.db.table("audit_events"))
+            self.billing_notices = BillingNoticeRepository(self.db.table("billing_notices"), self.db.table("billing_notice_reads"))
             self.organizations = OrganizationRepository(self.db.table("organizations"))
             self.idempotency = PersistentIdempotencyStore(self.db.table("idempotency"))
             self.subscriptions = PersistentTenantObjectMap(

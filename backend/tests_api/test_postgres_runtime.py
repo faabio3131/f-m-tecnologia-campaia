@@ -466,6 +466,45 @@ class PostgresRuntimeTests(unittest.TestCase):
                     self.assertEqual(manual.json()['gateway_charge_id'], result['gateway_charge_id'])
                     self.assertEqual(len(b.app.state.campaia.charges.items_for_tenant('demo-tenant')), 2)
                     self.assertEqual(b.app.state.campaia.subscriptions['demo-tenant'].paid_cycle_schedule.paid_through_index, 0)
+                    from api.billing_notices import process_billing_notices
+                    from tests_api.test_helpers import FINANCE
+                    with ThreadPoolExecutor(max_workers=2) as pool:
+                        notices = list(pool.map(lambda client: process_billing_notices(
+                            client.app.state.campaia, 'demo-tenant', execute=True,
+                            at=sub.paid_cycle_schedule.bounds(0)[1]), clients))
+                    self.assertEqual(notices[0], notices[1])
+                    inbox = b.get('/billing/notices', headers=OWNER).json()
+                    self.assertEqual(len(inbox['items']), 1)
+                    identity = inbox['items'][0]['id']
+                    read = a.post('/billing/notices/' + identity + '/read',
+                        headers={**OWNER, **unique_idem()})
+                    self.assertEqual(read.status_code, 200, read.text)
+                    self.assertIsNotNone(b.get('/billing/notices', headers=OWNER).json()['items'][0]['read_at'])
+                    self.assertIsNone(b.get('/billing/notices', headers=FINANCE).json()['items'][0]['read_at'])
+                    self.assertEqual(b.app.state.campaia.subscriptions['demo-tenant'].dunning_reminders_sent, 0)
+
+    def test_billing_notice_tables_are_immutable_and_tenant_scoped(self):
+        a, b = self._states()
+        at = datetime.now(timezone.utc)
+        record = {'id': 'notice-fixture', 'created_at': at}
+        table = a.db.table('billing_notices')
+        table.put('notice-fixture', 'tenant-a', record)
+        self.assertEqual(b.db.table('billing_notices').get_for_tenant('notice-fixture', 'tenant-a'), record)
+        self.assertIsNone(b.db.table('billing_notices').get_for_tenant('notice-fixture', 'tenant-b'))
+        with self.assertRaises(Exception):
+            table.put('notice-fixture', 'tenant-b', record)
+        with psycopg.connect(DSN) as conn:
+            with self.assertRaises(psycopg.errors.RaiseException):
+                conn.execute("UPDATE campaia_runtime.billing_notices SET tenant_id = 'tenant-b'")
+        with psycopg.connect(DSN) as conn:
+            with self.assertRaises(psycopg.errors.RaiseException):
+                conn.execute("DELETE FROM campaia_runtime.billing_notices")
+        reads = a.db.table('billing_notice_reads')
+        reads.put('read-fixture', 'tenant-a', {'notice_id': 'notice-fixture', 'user_id': 'reader', 'read_at': at})
+        with psycopg.connect(DSN) as conn:
+            with self.assertRaises(psycopg.errors.RaiseException):
+                conn.execute("DELETE FROM campaia_runtime.billing_notice_reads")
+        self.assertIsNone(b.db.table('billing_notice_reads').get_for_tenant('read-fixture', 'tenant-b'))
 
     def test_unpaid_renewal_withdrawal_fence_recovers_across_connections(self):
         import json
@@ -582,6 +621,7 @@ class PostgresRuntimeTests(unittest.TestCase):
                 "003_distributed_rate_limit",
                 "004_billing_persistence",
                 "005_credit_journal",
+                "006_billing_notices",
             },
         )
         self.assertTrue(RUNTIME_TABLES.issubset(self._runtime_tables()))
@@ -589,6 +629,7 @@ class PostgresRuntimeTests(unittest.TestCase):
         self.assertEqual(
             self.runner.rollback_all(),
             [
+                "006_billing_notices",
                 "005_credit_journal",
                 "004_billing_persistence",
                 "003_distributed_rate_limit",

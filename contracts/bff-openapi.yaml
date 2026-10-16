@@ -1412,6 +1412,63 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /billing/notices:
+    get:
+      tags: [Billing]
+      summary: Lista avisos internos de cobrança e leitura individual
+      operationId: listBillingNotices
+      security: [cookieAuth: []]
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Avisos disponíveis no aplicativo; não confirma envio externo
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingNotices' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Usuario sem BILLING_VIEW
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /billing/notices/{noticeId}/read:
+    post:
+      tags: [Billing]
+      summary: Marca aviso como lido pelo usuário autenticado
+      operationId: readBillingNotice
+      security: [cookieAuth: []]
+      parameters:
+        - name: noticeId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Leitura individual registrada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingNoticeRead' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Usuario sem BILLING_VIEW
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Contexto da chave alterado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
   /billing/renewal:
     get:
       tags: [Billing]
@@ -2160,6 +2217,40 @@ components:
         invoice: { type: [string, 'null'] }
         provider: { type: [string, 'null'] }
         mode: { type: [string, 'null'], enum: [SIMULATOR, SANDBOX, PRODUCTION, null] }
+
+    BillingNotices:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/BillingNotice' }
+        next_cursor: { type: [string, 'null'] }
+
+    BillingNotice:
+      type: object
+      required: [id, billing_id, gateway_charge_id, channel, offset_days, scheduled_at, created_at, due_at, amount, currency, mode, invoice_state, read_at]
+      properties:
+        id: { type: string }
+        billing_id: { type: string }
+        gateway_charge_id: { type: string }
+        channel: { type: string, enum: [IN_APP] }
+        offset_days: { type: integer }
+        scheduled_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        due_at: { type: string, format: date-time }
+        amount: { type: string }
+        currency: { type: string }
+        mode: { type: [string, 'null'] }
+        invoice_state: { type: string, enum: [PENDING_CONFIRMATION, PAYMENT_CONFIRMED, VOID, FINANCIALLY_ADJUSTED, REVIEW_REQUIRED, INVOICE_UNAVAILABLE] }
+        read_at: { type: [string, 'null'], format: date-time }
+
+    BillingNoticeRead:
+      type: object
+      required: [id, read_at]
+      properties:
+        id: { type: string }
+        read_at: { type: string, format: date-time }
 
     BillingRenewal:
       type: object

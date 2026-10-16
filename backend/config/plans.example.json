@@ -15,12 +15,7 @@
     "dunning_policy": {
       "grace_period_days": 3,
       "access_mode": "ALLOW_DURING_GRACE",
-      "reminder_offsets_days": [0, 2, 3]
-    },
-    "dunning_policy": {
-      "grace_period_days": 3,
-      "access_mode": "ALLOW_DURING_GRACE",
-      "reminder_offsets_days": [0, 2, 3]
+      "reminder_offsets_days": [0, 2, 3, 7]
     },
     "plan_changes": [
       {

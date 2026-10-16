@@ -22,6 +22,7 @@ from campaia_core.errors import CampaiaError
 from .errors import ApiError, from_domain_error
 from .routes_approvals import create_approval, decide_approval, list_approvals
 from .routes_audit import list_audit_events
+from .routes_billing_notices import list_billing_notices, read_billing_notice
 from .routes_auth import get_session, list_memberships, login, logout, switch_membership
 from .routes_autonomy import get_autonomy, put_autonomy
 from .routes_billing import (
@@ -202,6 +203,8 @@ routes = [
     Route("/billing/subscription/undo-plan", undo_billing_plan_change, methods=["POST"]),
     Route("/billing/subscription/cancel", cancel_billing_subscription, methods=["POST"]),
     Route("/billing/subscription/reactivate", reactivate_billing_subscription, methods=["POST"]),
+    Route("/billing/notices", list_billing_notices, methods=["GET"]),
+    Route("/billing/notices/{noticeId}/read", read_billing_notice, methods=["POST"]),
     Route("/billing/renewal", get_billing_renewal, methods=["GET"]),
     Route("/billing/renewal", set_billing_renewal, methods=["PUT"]),
     Route("/billing/guarantee", get_billing_guarantee, methods=["GET"]),
