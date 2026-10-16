@@ -454,6 +454,7 @@ class ApprovalResponse(BaseModel):
     # additional properties on responses; `reason` is what conformance actually checks.
     kind: str
     reason: str
+    decision_reason: str | None = None
     requested_by: str
     amount: str | None
     plan_version: int

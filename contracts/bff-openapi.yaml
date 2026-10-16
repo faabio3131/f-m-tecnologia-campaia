@@ -1462,7 +1462,10 @@ paths:
               schema: { $ref: '#/components/schemas/ApprovalRequest' }
         '403': { $ref: '#/components/responses/StepUpRequired' }
         '409':
-          description: Decisao ja registrada ou aprovador nao elegivel
+          description: Pedido encerrado, versao desatualizada ou chave de outro contexto
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /autonomy:
     get:
@@ -3508,6 +3511,7 @@ components:
         id: { type: string, format: uuid }
         campaign_id: { type: string, format: uuid }
         reason: { type: string, description: Gatilho que exigiu aprovacao humana. }
+        decision_reason: { type: [string, 'null'], maxLength: 1000 }
         # Campos reais sempre serializados pelo backend (api/models.py::ApprovalResponse)
         # que nunca tinham sido documentados aqui (achado, WP-05, 26/09/2026).
         kind: { type: string, enum: [PUBLISH, BUDGET_CHANGE, AUTONOMY_CHANGE] }

@@ -1054,6 +1054,56 @@ class PostgresRuntimeTests(unittest.TestCase):
         self.assertEqual(balance["reserved_credits"], 0)
         self.assertEqual(len(clients[1].get(base, headers=OWNER).json()["items"]), 2)
 
+
+    def test_approval_review_finality_prevents_rearming_applied_budget_across_workers(self):
+        from starlette.testclient import TestClient
+        from tests_api.test_helpers import OWNER, APPROVER, FINANCE, create_campaign, unique_idem, with_step_up
+        a = TestClient(create_app(database_url=DSN, env="test"))
+        b = TestClient(create_app(database_url=DSN, env="test"))
+        self.addCleanup(a.app.state.campaia.db.close)
+        self.addCleanup(b.app.state.campaia.db.close)
+        campaign = create_campaign(a)["id"]
+        identity = a.post("/approvals", headers={**OWNER, **unique_idem()},
+                         json={"campaign_id": campaign, "kind": "BUDGET_CHANGE"}).json()["id"]
+        headers = {**with_step_up(APPROVER), **unique_idem()}
+        endpoint = "/approvals/" + identity + "/decision"
+        voted = a.post(endpoint, headers=headers, json={"decision": "APPROVE"})
+        self.assertEqual(voted.status_code, 200, voted.text)
+        applied = b.patch("/campaigns/" + campaign + "/budget",
+            headers={**with_step_up(OWNER), **unique_idem()}, json={"approval_id": identity, "new_daily_cap": "550"})
+        self.assertEqual(applied.status_code, 202, applied.text)
+        denied = a.post(endpoint, headers={**with_step_up(FINANCE), **unique_idem()}, json={"decision": "APPROVE"})
+        self.assertEqual(denied.status_code, 409, denied.text)
+        self.assertEqual(denied.json()["code"], "APPROVAL_FINALIZED")
+        self.assertEqual(b.post(endpoint, headers=headers, json={"decision": "APPROVE"}).json(), voted.json())
+        self.assertEqual(b.app.state.campaia.approvals.get("demo-tenant", identity).status, "APPLIED")
+        rebind = b.post(endpoint, headers=headers, json={"decision": "REJECT"})
+        self.assertEqual(rebind.status_code, 409, rebind.text)
+
+    def test_concurrent_conflicting_approval_reviews_have_one_terminal_winner_in_postgres(self):
+        from starlette.testclient import TestClient
+        from tests_api.test_helpers import OWNER, APPROVER, FINANCE, create_campaign, unique_idem, with_step_up
+        clients = [TestClient(create_app(database_url=DSN, env="test")) for _ in range(2)]
+        for client in clients:
+            self.addCleanup(client.app.state.campaia.db.close)
+        campaign = create_campaign(clients[0])["id"]
+        identity = clients[0].post("/approvals", headers={**OWNER, **unique_idem()},
+            json={"campaign_id": campaign, "kind": "PUBLISH"}).json()["id"]
+        gate = threading.Barrier(2)
+        def vote(client, actor, decision):
+            gate.wait()
+            return client.post("/approvals/" + identity + "/decision",
+                headers={**with_step_up(actor), **unique_idem()}, json={"decision": decision})
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            a = pool.submit(vote, clients[0], APPROVER, "APPROVE")
+            b = pool.submit(vote, clients[1], FINANCE, "REJECT")
+            results = [a.result(timeout=10), b.result(timeout=10)]
+        self.assertEqual(sorted(result.status_code for result in results), [200, 409],
+                         [result.text for result in results])
+        events = [entry for entry in clients[1].app.state.campaia.audit.list_for_tenant("demo-tenant")
+                  if entry.action in ("APPROVAL_APPROVE", "APPROVAL_REJECT")]
+        self.assertEqual(len(events), 1)
+
     def test_00_migration_up_down_up_is_reversible_and_covers_current_stores(self) -> None:
         self.assertEqual(
             set(self.runner.applied_versions()),

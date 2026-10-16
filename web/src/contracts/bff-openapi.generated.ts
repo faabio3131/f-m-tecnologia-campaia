@@ -2053,6 +2053,7 @@ export interface components {
             campaign_id: string;
             /** @description Gatilho que exigiu aprovacao humana. */
             reason?: string;
+            decision_reason?: string | null;
             /** @enum {string} */
             kind: "PUBLISH" | "BUDGET_CHANGE" | "AUTONOMY_CHANGE";
             /** @description user_id de quem propos -- nunca pode decidir a propria proposta (segregacao de funcoes). */
@@ -4216,12 +4217,14 @@ export interface operations {
                 };
             };
             403: components["responses"]["StepUpRequired"];
-            /** @description Decisao ja registrada ou aprovador nao elegivel */
+            /** @description Pedido encerrado, versao desatualizada ou chave de outro contexto */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
             };
         };
     };

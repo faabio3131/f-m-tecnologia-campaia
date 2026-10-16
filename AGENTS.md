@@ -4,7 +4,7 @@
 
 **Data de reconciliação:** 15/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado:** `main@2992cb61099ab32398297b270836fd62acea1cca`
+**CURRENT confirmado:** `main@baba73a3e3c3965ff6ee4207eb4dd561ce834ad8`
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
 **Evidência desta reconciliação:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`
@@ -433,9 +433,13 @@ imagem, preview de plataforma nem publicação real. Ver
 `docs/WP_R04_01_PROPOSTAS_COPY_AUDIENCE_20261016.md`.
 
 ### Falta
-WP-R04-02 em validação: ajuste seletivo de uma variação por 1 crédito configurado,
+WP-R04-02 / PR #70 integrada, CI da PR e pós-merge verdes: ajuste seletivo de uma variação por 1 crédito configurado,
 lote anterior imutável e versão/validação/aprovação renovadas. Ver
 `docs/WP_R04_02_REVISAO_SELETIVA_COPY_20261016.md`.
+
+WP-R04-03 em validação: revisão humana dos materiais, solicitação de ajustes,
+reautenticação real existente e aprovações terminais sem rearmamento. Ver
+`docs/WP_R04_03_REVISAO_HUMANA_MATERIAIS_20261016.md`.
 
 - ligar policy/performance ao fluxo API/Web;
 - completar creative asset model;
