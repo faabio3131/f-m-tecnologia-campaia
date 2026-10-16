@@ -43,6 +43,8 @@ RUNTIME_TABLES = frozenset(
         "asaas_webhook_seen_events",
         "billing_subscriptions",
         "billing_charges",
+        "billing_notices",
+        "billing_notice_reads",
         "credit_journal",
     }
 )

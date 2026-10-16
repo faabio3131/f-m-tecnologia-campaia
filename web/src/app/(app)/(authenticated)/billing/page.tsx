@@ -6,6 +6,7 @@ import { BillingSubscriptionSetup } from "@/components/BillingSubscriptionSetup"
 import { CommercialLifecycleActions } from "@/components/CommercialLifecycleActions";
 import { BillingGuaranteePanel } from "@/components/BillingGuaranteePanel";
 import { BillingClosurePanel } from "@/components/BillingClosurePanel";
+import { BillingNoticesPanel } from "@/components/BillingNoticesPanel";
 import { BillingRenewalPanel } from "@/components/BillingRenewalPanel";
 import { BillingCheckoutPanel } from "@/components/BillingCheckoutPanel";
 import { BillingUsagePanel } from "@/components/BillingUsagePanel";
@@ -169,6 +170,7 @@ function BillingContent({ canManage }: { canManage: boolean }) {
       {success ? <p role="status">{success}</p> : null}
       {actionError ? <ErrorState title="Alteração não confirmada" description={actionError} /> : null}
       {stepUp.stepUpMessage ? <p role="alert">{stepUp.stepUpMessage}</p> : null}
+      {canManage ? <BillingNoticesPanel key={`notices:${historyVersion}:${observationVersion}`} /> : null}
       <BillingChargeHistoryPanel key={historyVersion} canManage={canManage} stepUp={stepUp} onReconciled={() => {
         setObservationVersion(value => value + 1);
         void api.get<BillingSubscription>("/billing/subscription").then(setSubscription).catch(() => undefined);

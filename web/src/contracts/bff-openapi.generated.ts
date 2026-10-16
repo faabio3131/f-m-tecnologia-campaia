@@ -906,6 +906,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/billing/notices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lista avisos internos de cobrança e leitura individual */
+        get: operations["listBillingNotices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/notices/{noticeId}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Marca aviso como lido pelo usuário autenticado */
+        post: operations["readBillingNotice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/billing/renewal": {
         parameters: {
             query?: never;
@@ -1304,6 +1338,36 @@ export interface components {
             provider: string | null;
             /** @enum {string|null} */
             mode: "SIMULATOR" | "SANDBOX" | "PRODUCTION" | null;
+        };
+        BillingNotices: {
+            items: components["schemas"]["BillingNotice"][];
+            next_cursor: string | null;
+        };
+        BillingNotice: {
+            id: string;
+            billing_id: string;
+            gateway_charge_id: string;
+            /** @enum {string} */
+            channel: "IN_APP";
+            offset_days: number;
+            /** Format: date-time */
+            scheduled_at: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            due_at: string;
+            amount: string;
+            currency: string;
+            mode: string | null;
+            /** @enum {string} */
+            invoice_state: "PENDING_CONFIRMATION" | "PAYMENT_CONFIRMED" | "VOID" | "FINANCIALLY_ADJUSTED" | "REVIEW_REQUIRED" | "INVOICE_UNAVAILABLE";
+            /** Format: date-time */
+            read_at: string | null;
+        };
+        BillingNoticeRead: {
+            id: string;
+            /** Format: date-time */
+            read_at: string;
         };
         BillingRenewal: {
             enabled: boolean;
@@ -3691,6 +3755,91 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    listBillingNotices: {
+        parameters: {
+            query?: {
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Avisos disponíveis no aplicativo; não confirma envio externo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingNotices"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Usuario sem BILLING_VIEW */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    readBillingNotice: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Double-submit CSRF (sessao cookieAuth apenas). Valor devolvido em csrf_token pelo
+                 *     login/GET de sessao; comparado em tempo constante contra o segredo do lado do
+                 *     servidor. Ausente/invalido -> 403.
+                 */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                noticeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Leitura individual registrada */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingNoticeRead"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Usuario sem BILLING_VIEW */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Contexto da chave alterado */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
         };
     };
     getBillingRenewal: {
