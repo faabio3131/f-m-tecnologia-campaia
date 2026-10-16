@@ -175,6 +175,7 @@ def serialize_approval(a: ApprovalRequest):
         campaign_id=a.campaign_id,
         kind=a.kind,
         reason=reason,
+        decision_reason=a.context.get("decision_reason"),
         requested_by=a.requested_by,
         amount=str(a.amount) if a.amount is not None else None,
         plan_version=a.plan_version,

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from copy import deepcopy
 from types import SimpleNamespace
-import asyncio
 import json
 from datetime import datetime, timezone
 
@@ -21,6 +20,7 @@ from .creative_proposals import (
 )
 from .deps import require_auth, require_idempotency_key, build_domain_principal
 from .errors import ApiError
+from .bounded_body import parse_bounded_body as _proposal_body
 from .metered_execution import commercial_subscription, execute_metered, quote_action
 from .models import CopyProposalInput, AudienceProposalInput, CopyRevisionInput, CopyProposalOutput, AudienceProposalOutput
 from .routes_campaigns import _authorize, _get_campaign_or_404
@@ -106,30 +106,6 @@ def _inputs(record, kind, body):
         raise ApiError("AI_CONTEXT_MISSING", "O contexto precisa de conferência antes de gerar.", status_code=422) from None
     return summary, context
 
-
-
-async def _proposal_body(request, model):
-    limit = 256 * 1024
-    if request.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
-        raise ApiError("VALIDATION_FAILED", "Envie os campos em JSON.", status_code=422)
-    length = request.headers.get("Content-Length")
-    if request.headers.get("Content-Encoding", "identity").lower() != "identity":
-        raise ApiError("VALIDATION_FAILED", "Envie os campos em JSON sem compactação HTTP.", status_code=422)
-    if length is not None and (not length.isascii() or not length.isdecimal() or int(length) > limit):
-        raise ApiError("REQUEST_TOO_LARGE", "O pedido excede o tamanho permitido.", status_code=413)
-    raw = bytearray()
-    try:
-        async with asyncio.timeout(15):
-            async for chunk in request.stream():
-                if len(raw) + len(chunk) > limit:
-                    raise ApiError("REQUEST_TOO_LARGE", "O pedido excede o tamanho permitido.", status_code=413)
-                raw.extend(chunk)
-    except TimeoutError:
-        raise ApiError("REQUEST_TIMEOUT", "O envio do pedido excedeu o tempo disponível.", status_code=408) from None
-    try:
-        return model.model_validate_json(bytes(raw))
-    except ValidationError:
-        raise ApiError("VALIDATION_FAILED", "Confira os campos do pedido de geração.", status_code=422) from None
 
 
 def _validated_output(kind, proposal, body, tenant):
