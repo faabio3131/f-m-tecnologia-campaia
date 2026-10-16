@@ -15,6 +15,7 @@ class ImageGenerationGuardTests(unittest.IsolatedAsyncioTestCase):
         state = SimpleNamespace(image_provider=SimpleNamespace(config=SimpleNamespace(enabled=False)),
                                 credit_ledger=Mock(), ai_gateway=Mock(), db=Mock())
         body = SimpleNamespace(expected_plan_version=2, prompt="Criativo seguro para anúncio",
+                               image_format="ORIGINAL",
                                credit_confirmation=SimpleNamespace(model_dump=lambda **_: {}))
         with patch("api.routes_generated_creatives._scope",
                    return_value=(fixture, state, campaign, Mock())), \
