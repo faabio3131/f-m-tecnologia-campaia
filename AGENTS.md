@@ -926,3 +926,11 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - HEAD posterior contém ajuste de UX para atualizar inventário após resposta incerta; repetir a CI e conferir o HEAD exato antes de chamar este incremento DONE_VERIFIED.
 - **WP-R04-04B PARTIAL**: ausência de prova externa por decisão do Diretor, e gates internos ainda pendentes: política/preview e versões por canal, gerenciamento completo de asset/deleção, recuperação governada de custo de provider desconhecido, limites/comportamento de alta carga e E2E adicionais. Não confundir os cenários SIMULATOR do CI com homologação real.
 - Merge/deploy/produção/migration real seguem sujeitos à autorização específica, não concedida nesta execução.
+
+
+## Fechamento da rodada técnica WP-R04-04B (16/10/2026)
+- PR #73 em `feat/wp-r04-04b-creative-private-foundation`, sem merge. HEAD de código+docs `75163485e32b301a3abc5596aade36772aa5c50f` com **Backend #413 SUCCESS**, **Frontend #352 SUCCESS**, **F4 #247 SUCCESS**.
+- Backend inicialmente apresentou falha intermitente em teste preexistente de concorrência Asaas/PostgreSQL: uma das duas operações recebeu `BILLING_DISPATCH_PENDING` em vez de 200; rerun isolado passou. Nenhum teste foi relaxado, nenhum comportamento de cobrança alterado. Investigar estabilidade desse cenário como débito de teste no F5, não apresentar como prova de homologação bancária.
+- Confirmados internamente na CI: POST de geração Gemini governada, contrato de preço por política F5 configurável, orçamento de IA F3, PNG privado, leitura autenticada, replay sem reenvio, cross-tenant, recuperação GCS incerta e liquidação F5 em simulador de storage/provedor.
+- `PARTIAL`: faltam gates internos F7/G7 posteriores (formatos por canal, política de imagem/preview, upload/revisão e lifecycle/delete completo, compensação de custos desconhecidos e outros negativos) e homologação externa final. Não executar merge/deploy/produção/migrations reais sem autorização expressa.
+- Nova edição documental exige verificação de CI no HEAD resultante antes de elevar qualquer status.
