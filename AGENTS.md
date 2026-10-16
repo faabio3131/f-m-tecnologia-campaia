@@ -1043,3 +1043,7 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 ## G7 — seleção de formato de imagem (16/10/2026)
 - CI anterior `4c43218`: F4 e Frontend PASS, Backend FAIL (contrato `_preview_policy` recebeu linhas de teste sem manifest; corrigido para preview sem dimensões não confiar em formato). Novo incremento da API gera `image_format` opt-in ORIGINAL/SQUARE/PORTRAIT_4_5/STORY_9_16, atrelado a request_identity comercial, propagado como instrução ao Gemini, valida proporção real do PNG antes da claim/storage/settlement; mismatch é fail-closed, não liquida créditos comerciais. Custo F3 de dispatch continua contabilizado mesmo em rejeição.
 - Teste negativo do story incompatível assegura ausência de upload e consumo de créditos comerciais. Geração de formato correto com Gemini real e previsualização por canal não homologadas: EXTERNAL_CREDENTIAL/PRODUCTION_GATE. Edição versionada continua TARGET. O WP permanece PARTIAL até CI do HEAD exato e demais gates. Sem merge/deploy.
+
+
+## G7 — correção do teste de guarda de provedor (16/10/2026)
+- CI Backend do HEAD `975c6e9` falhou exclusivamente no teste `test_disabled_provider_refuses_before_cost_reservation_or_gcs`, porque o fixture `SimpleNamespace` anterior não incluía o novo campo obrigatório no fluxo interno `image_format`. A correção atual adiciona `image_format="ORIGINAL"` ao fixture, sem alterar a rota ou afrouxar o bloqueio do provedor desativado. Requer reteste do novo HEAD; nunca inferir sucesso antes da CI.
