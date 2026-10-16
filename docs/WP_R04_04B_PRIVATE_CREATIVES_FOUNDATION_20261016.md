@@ -53,3 +53,8 @@ Run Backend, Frontend, F4 CI on exact PR head. Do not merge until evidence and d
 - Replays executam apenas observação; erro ou ausência de objeto permanece pendente, com quota reservada. Sem débito de crédito comercial e sem chamada a modelo.
 - Testes simulados isolam upload único, UNKNOWN→observe, ausência pós-UNKNOWN, integridade, contexto incompatível e ausência de I/O sob transação. São simuladores, não prova GCS real.
 - Limitações: armazenamento de bytes para reconciliação após reinício completo ainda precisa de fonte durável segura; API/Web de criativos, billing atômico e homologação GCS/ADC continuam TARGET.
+
+## Recuperação após reinício — delta
+- Manifesto normalizado inclui MD5 canônico além de SHA-256, persistido na mesma transação F3 de claim; habilita reconstruir o AssetManifest esperado sem bytes originais no novo processo.
+- `reconcile_after_restart(identity)` lê manifesto persistente, executa apenas GET metadata via storage.observe e finaliza com geração imutável. Se ausência, erro ou MD5 ausente: não repete POST, mantém STORAGE_PENDING e quota.
+- Testes adicionados para nova conexão SQLite após reinício, confirmação de geração sem bytes e ausência de objeto sem postagem duplicada. Validação CI no novo HEAD obrigatória. Nenhuma ativação real GCS.
