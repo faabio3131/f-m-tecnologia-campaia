@@ -462,3 +462,53 @@ async def delete_generated_creative(request):
                          "retention_note": "Metadados e trilha de auditoria preservados."},
                         status_code=200 if result["state"] == "DELETED" else 202,
                         headers={"Cache-Control": "private, no-store"})
+
+async def revoke_generated_creative_review(request):
+    """Governed terminal revocation; never resurrects an approval."""
+    from uuid import UUID
+    from pydantic import BaseModel, ConfigDict, Field
+    from .deps import require_idempotency_key, require_step_up, build_domain_principal
+    from .bounded_body import parse_bounded_body
+    from .creative_image_review import CreativeImageReviewStore
+    from campaia_core.creative_assets import CreativeIdentity
+    from campaia_core.permissions import can_approve
+    from campaia_core.asset_storage import AssetStorageError
+
+    class RevokeInput(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        expected_sha256: str
+        expected_generation: str
+        reason: str = Field(min_length=8, max_length=500)
+
+    fixture, state, campaign, repository = _scope(request, Permission.APPROVAL_DECIDE)
+    require_step_up(request, fixture)
+    require_idempotency_key(request)
+    body = await parse_bounded_body(request, RevokeInput, max_bytes=2048)
+    try:
+        creative_id = str(UUID(request.path_params["creativeId"]))
+    except (ValueError, TypeError):
+        raise ApiError("NOT_FOUND", "Criativo indisponível.", status_code=404) from None
+    row = repository.table.get_for_tenant(creative_id, fixture.tenant_id)
+    if (row is None or row["identity"]["campaign_id"] != campaign.campaign_id
+            or row["identity"]["business_unit_id"] != campaign.business_unit_id
+            or row["identity"]["campaign_version"] != campaign.plan_version):
+        raise ApiError("NOT_FOUND", "Criativo indisponível.", status_code=404)
+    author = row.get("requested_by")
+    if not author:
+        raise ApiError("REVIEW_ORIGIN_UNAVAILABLE", "Autoria não comprovada.", status_code=409)
+    principal = build_domain_principal(request, state, fixture)
+    resource = Resource(tenant_id=fixture.tenant_id, business_unit_id=campaign.business_unit_id,
+                        resource_id=creative_id, created_by=author)
+    verdict = can_approve(principal, resource, now=datetime.now(timezone.utc),
+                          requester_id=author, already_decided_by=frozenset(), amount=None)
+    if not verdict.allowed:
+        raise ApiError(verdict.code.value, verdict.reason)
+    try:
+        result, replay = CreativeImageReviewStore(state).revoke(
+            CreativeIdentity(**row["identity"]), actor_id=fixture.user_id,
+            expected_sha256=body.expected_sha256,
+            expected_generation=body.expected_generation, reason=body.reason)
+    except AssetStorageError:
+        raise ApiError("REVIEW_CONFLICT", "Revogação incompatível com a imagem.", status_code=409) from None
+    return JSONResponse({"creative_id": creative_id, "decision": result["decision"],
+                         "replayed": replay}, headers={"Cache-Control": "private, no-store"})
