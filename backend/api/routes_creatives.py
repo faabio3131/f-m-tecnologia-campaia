@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from types import SimpleNamespace
 import asyncio
 import json
 from datetime import datetime, timezone
@@ -220,7 +221,7 @@ async def generate_creative_proposal(request):
                 if source_id:
                     parent = state.creative_proposals.revision_source(fixture.tenant_id, current, source_id,
                                                                      channel=body.channel, index=body.variant_index)
-                    effective = CopyProposalInput(expected_plan_version=body.expected_plan_version,
+                    effective = SimpleNamespace(expected_plan_version=body.expected_plan_version,
                         channel=body.channel, offer=parent["request_summary"]["offer"],
                         tone=parent["request_summary"]["tone"], variants=1)
                 summary, context = _inputs(current, kind, effective)

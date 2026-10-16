@@ -5486,6 +5486,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description Repetir o mesmo valor NAO duplica o efeito; devolve o resultado original. */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path: {

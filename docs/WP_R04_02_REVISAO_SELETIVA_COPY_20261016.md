@@ -17,7 +17,9 @@ Replay incerto preserva reserva e não redispara. Revisão não autoriza publica
 ## Evidência exigida
 API/Web/PostgreSQL/E2E com um texto alterado e demais idênticos, cobrança única,
 rollback após escrever lote, restart/replay, concorrência, falha/timeout e isolamento.
-CI final no HEAD e pós-merge pendentes; registrar resultados na PR.
+Primeira CI confirmou API/PostgreSQL; corrigido comentário ausente nos tipos gerados.
+Revisão final preserva contexto já entregue sem reinterpretá-lo como nova entrada do usuário.
+CI final com Web/E2E no HEAD e pós-merge pendentes; registrar resultados na PR #70.
 
 ## Limites
 Sem novo modelo, ativação de catálogo/credencial, migração real, GCS real ou gasto externo.

@@ -72,6 +72,41 @@ class CopyRevisionTests(BillingCreditHarness, unittest.TestCase):
         self.addCleanup(client.app.state.campaia.db.close)
         return client
 
+
+    def _foreign_copy(self, product="Outra oferta"):
+        result = self.client.post("/briefs", headers={**OTHER_OWNER, **unique_idem()},
+                                  json={**BRIEF, "product": product})
+        self.assertEqual(result.status_code, 202, result.text)
+        campaign = result.json()["id"]
+        generated = self.client.post("/campaigns/" + campaign + "/plan/regenerate",
+                                     headers={**OTHER_OWNER, **unique_idem()}, json={})
+        self.assertEqual(generated.status_code, 202, generated.text)
+        base = "/campaigns/" + campaign + "/proposals/copy"
+        copied = self.client.post(base, headers={**OTHER_OWNER, **unique_idem()}, json={
+            "expected_plan_version": 1, "channel": "GOOGLE_ADS", "offer": "", "tone": "claro", "variants": 5})
+        self.assertEqual(copied.status_code, 201, copied.text)
+        return base, copied.json()
+
+    def test_foreign_source_is_not_usable_even_under_an_owned_campaign_url(self):
+        _foreign_base, source = self._foreign_copy()
+        before = self.provider.calls
+        body = self.body()
+        endpoint = self.base + "/" + source["id"] + "/revisions"
+        self.assertEqual(self.send(body, endpoint=endpoint).status_code, 404)
+        self.assertEqual(self.client.get(endpoint + "/quote", headers=OWNER).status_code, 404)
+        self.assertEqual(self.provider.calls, before)
+        self.assertEqual(self.included(), 27)
+
+    def test_revision_reuses_delivered_fallback_context_without_treating_it_as_new_input(self):
+        base, source = self._foreign_copy(product="x" * 2200)
+        self.assertEqual(len(source["request_summary"]["offer"]), 2200)
+        result = self.client.post(base + "/" + source["id"] + "/revisions",
+            headers={**OTHER_OWNER, **unique_idem()}, json={
+                "expected_plan_version": 2, "channel": "GOOGLE_ADS", "variant_index": 1,
+                "instructions": "Convite mais claro"})
+        self.assertEqual(result.status_code, 201, result.text)
+        self.assertEqual(result.json()["request_summary"]["offer"], source["request_summary"]["offer"])
+
     def test_one_credit_replaces_one_text_and_preserves_original_batch_and_review_history(self):
         policy = self.client.post("/campaigns/" + self.campaign + "/validate",
                                  headers={**OWNER, **unique_idem()})
