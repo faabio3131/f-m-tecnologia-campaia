@@ -38,6 +38,16 @@ class GeneratedCreativeReadContractTests(unittest.TestCase):
         self.assertNotIn("tenant_id", result)
         self.assertNotIn("object_name", result)
 
+    def test_publisher_has_fail_closed_channel_guard_after_image_review(self):
+        from pathlib import Path
+        route = Path(__file__).resolve().parents[1] / "api" / "routes_campaigns.py"
+        source = route.read_text()
+        publisher = source.split("async def publish_campaign(", 1)[1]
+        self.assertIn("evaluate_creative_channel(", publisher)
+        self.assertIn("CREATIVE_CHANNEL_POLICY_BLOCKED", publisher)
+        self.assertLess(publisher.index("CREATIVE_CHANNEL_POLICY_BLOCKED"),
+                        publisher.index("PublicationSaga("))
+
     def test_private_cursor_paginates_without_duplicates(self):
         def row(n):
             return {"identity": {"creative_id": str(UUID(int=n + 1))}}
