@@ -13,6 +13,7 @@ type ImageItem = {
   id: string; campaign_id: string; campaign_version: number;
   state: string; width: number; height: number; revision: number;
   content_type: string; available: boolean; content_url: string | null;
+  sha256?: string; storage_generation?: string | null; source_creative_id?: string | null;
 };
 type ImagePage = { items: ImageItem[]; has_more: boolean; generation_enabled: boolean };
 type ImageQuote = { mode: string; action: string; cycle_id: string | null; policy_version: string | null;
@@ -23,6 +24,7 @@ export function GeneratedImagesPanel({ campaignId, planVersion }: { campaignId: 
   const [page, setPage] = useState<ImagePage | null>(null);
   const [quote, setQuote] = useState<ImageQuote | null>(null);
   const [prompt, setPrompt] = useState("");
+  const [editOperation, setEditOperation] = useState<Record<string, string>>({});
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +96,30 @@ export function GeneratedImagesPanel({ campaignId, planVersion }: { campaignId: 
     }
   }
 
+  async function editPixels(item: ImageItem) {
+    const operation = editOperation[item.id] || "rotate_90";
+    if (busy || inflight.current || item.state !== "STORED" ||
+        item.campaign_version !== planVersion || !item.sha256 || !item.storage_generation) return;
+    inflight.current = true; setBusy(true); setError(null); setNotice(null);
+    try {
+      await api.post<ImageItem>(base + "/" + encodeURIComponent(item.id) + "/pixel-edit", {
+        operation, expected_sha256: item.sha256, expected_generation: item.storage_generation,
+      }, { idempotencyKey: "pixel-edit-" + crypto.randomUUID(), timeoutMs: 60_000 });
+      if (alive.current) {
+        setNotice("Nova versão editada armazenada; a imagem original foi preservada.");
+        await refresh();
+      }
+    } catch (cause) {
+      if (alive.current) {
+        const msg = cause instanceof ApiClientError ? cause.message : "Edição não confirmada.";
+        setError(msg + " Se o resultado for incerto, consulte o histórico antes de repetir.");
+      }
+    } finally {
+      inflight.current = false;
+      if (alive.current) setBusy(false);
+    }
+  }
+
   async function reconcile(item: ImageItem) {
     if (busy || inflight.current || item.state !== "STORAGE_PENDING") return;
     inflight.current = true; setBusy(true); setError(null);
@@ -143,6 +169,26 @@ export function GeneratedImagesPanel({ campaignId, planVersion }: { campaignId: 
       {item.available && item.content_url ? <Image unoptimized src={item.content_url}
         alt={"Criativo " + item.id} width={item.width} height={item.height}
         style={{ maxWidth: "min(100%, 320px)", height: "auto" }} /> : null}
+      {item.source_creative_id ? <p>Versão derivada de {item.source_creative_id}</p> : null}
+      {item.available && item.campaign_version === planVersion && item.sha256 && item.storage_generation
+        ? <div aria-label={"Editor de imagem " + item.id}>
+          <label htmlFor={"pixel-edit-" + item.id}>Transformação da imagem</label>
+          <select id={"pixel-edit-" + item.id} value={editOperation[item.id] || "rotate_90"}
+            disabled={busy} onChange={(event) => setEditOperation((values) =>
+              ({ ...values, [item.id]: event.target.value }))}>
+            <option value="rotate_90">Girar 90 graus</option>
+            <option value="rotate_180">Girar 180 graus</option>
+            <option value="flip_horizontal">Espelhar horizontalmente</option>
+          </select>
+          <Button variant="secondary" disabled={busy}
+            onClick={() => void editPixels(item)}>Criar versão editada</Button>
+          <p>A edição exige autenticação reforçada. Nenhuma imagem aprovada é alterada.</p>
+        </div> : null}
+      {item.available ? <p>
+        <a href={base + "/" + encodeURIComponent(item.id) + "/visual-preview/google"}>Rascunho Google Ads</a>
+        {" · "}<a href={base + "/" + encodeURIComponent(item.id) + "/visual-preview/meta"}>Rascunho Meta</a>
+        {" · "}<a href={base + "/" + encodeURIComponent(item.id) + "/visual-preview/whatsapp"}>Rascunho WhatsApp</a>
+      </p> : null}
       {!item.available ? <p>Entrega ainda não confirmada.</p> : null}
       {item.state === "STORAGE_PENDING" ? <Button disabled={busy}
         onClick={() => void reconcile(item)} variant="secondary">Conferir armazenamento</Button> : null}
