@@ -132,7 +132,13 @@ def _preview_policy(row, campaign, review=None):
     format_hints = ([name for name, target in
                      (("SQUARE", 1.0), ("PORTRAIT_4_5", 0.8), ("STORY_9_16", 9 / 16))
                      if abs(ratio - target) <= 0.02] if width > 0 else [])
+    from .creative_channel_policy import evaluate_creative_channel, POLICY_VERSION
+    channel_policy = {channel: evaluate_creative_channel(channel, "GENERAL",
+        reviewed=bool(approved), provider_verified=False).as_dict()
+        for channel in ("GOOGLE_ADS", "META_FACEBOOK_INSTAGRAM", "WHATSAPP")}
     return {
+        "creative_channel_policy_version": POLICY_VERSION,
+        "creative_channel_policy": channel_policy,
         "preview_available": stored and version_current,
         "campaign_version_current": version_current,
         "storage_verified": stored,
