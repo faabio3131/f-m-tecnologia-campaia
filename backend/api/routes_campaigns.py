@@ -466,6 +466,17 @@ async def publish_campaign(request: Request) -> JSONResponse:
                     raise ApiError("IMAGE_REVIEW_REQUIRED",
                         "A imagem selecionada exige aprovação humana válida.",
                         status_code=409)
+                # G7: internal human approval is NOT provider-media authorization.
+                # This publisher uses ProviderSimulator, without verified category
+                # or media acceptance evidence. Fail closed before Saga / side effects.
+                from .creative_channel_policy import evaluate_creative_channel
+                for channel in record.planned_channels:
+                    channel_decision = evaluate_creative_channel(
+                        channel, None, reviewed=True, provider_verified=False)
+                    if not channel_decision.publication_allowed:
+                        raise ApiError("CREATIVE_CHANNEL_POLICY_BLOCKED",
+                            "Criativo sem classificação e homologação de mídia do canal; "
+                            + ",".join(channel_decision.reasons), status_code=409)
         require_brand_assets(state, record)
         enforce_campaign_capacity(state, fixture.tenant_id, record)
         decision = record.last_policy_decision
