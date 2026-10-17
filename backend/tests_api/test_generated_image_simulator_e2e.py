@@ -124,6 +124,31 @@ class ImageApiSimulationTests(BillingCreditHarness, unittest.TestCase):
         self.assertEqual(self.storage.calls.count("POST"), 0)
         self.assertEqual(self.usage().json()["balance"]["consumed_credits"], before)
 
+    def test_manual_upload_is_private_idempotent_and_free_of_ai_dispatch(self):
+        from tests_api.test_helpers import with_step_up
+        version = self.state.campaigns.get("demo-tenant", self.campaign).plan_version
+        png = normalize_asset_image(encoded()).data
+        body = {"expected_plan_version": version,
+                "image_base64": base64.b64encode(png).decode()}
+        url = self.base + "/manual-upload"
+        headers = {**with_step_up(OWNER), **unique_idem()}
+        initial_provider_calls = self.fake.calls
+        created = self.client.post(url, headers=headers, json=body)
+        self.assertEqual(created.status_code, 201, created.text)
+        self.assertEqual(self.fake.calls, initial_provider_calls)
+        self.assertTrue(created.json()["available"])
+        original_id = created.json()["id"]
+        uploads = self.storage.calls.count("POST")
+        replay = self.client.post(url, headers=headers, json=body)
+        self.assertEqual(replay.status_code, 201, replay.text)
+        self.assertEqual(replay.json()["id"], original_id)
+        self.assertEqual(self.storage.calls.count("POST"), uploads)
+        denied = self.client.post(url, headers={**with_step_up(OTHER_OWNER), **unique_idem()}, json=body)
+        self.assertNotEqual(denied.status_code, 201)
+        invalid = self.client.post(url, headers={**with_step_up(OWNER), **unique_idem()},
+                                   json={**body, "image_base64": "!" * 32})
+        self.assertEqual(invalid.status_code, 422, invalid.text)
+
     def test_pixel_edit_creates_new_immutable_asset_and_replays_without_duplicate_upload(self):
         from tests_api.test_helpers import with_step_up
         quote = self.client.get(self.base + "/quote", headers=OWNER).json()
