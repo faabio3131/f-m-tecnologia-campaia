@@ -32,6 +32,7 @@ export function GeneratedImagesPanel({ campaignId, planVersion }: { campaignId: 
   const [loading, setLoading] = useState(true);
   const alive = useRef(false);
   const inflight = useRef(false);
+  const editReplayKeys = useRef<Record<string, string>>({});
   const base = "/campaigns/" + encodeURIComponent(campaignId) + "/images";
 
   async function refresh() {
@@ -101,10 +102,14 @@ export function GeneratedImagesPanel({ campaignId, planVersion }: { campaignId: 
     if (busy || inflight.current || item.state !== "STORED" ||
         item.campaign_version !== planVersion || !item.sha256 || !item.storage_generation) return;
     inflight.current = true; setBusy(true); setError(null); setNotice(null);
+    const replayScope = item.id + ":" + item.sha256 + ":" + item.storage_generation + ":" + operation;
+    const idemKey = editReplayKeys.current[replayScope] || ("pixel-edit-" + crypto.randomUUID());
+    editReplayKeys.current[replayScope] = idemKey;
     try {
       await api.post<ImageItem>(base + "/" + encodeURIComponent(item.id) + "/pixel-edit", {
         operation, expected_sha256: item.sha256, expected_generation: item.storage_generation,
-      }, { idempotencyKey: "pixel-edit-" + crypto.randomUUID(), timeoutMs: 60_000 });
+      }, { idempotencyKey: idemKey, timeoutMs: 60_000 });
+      delete editReplayKeys.current[replayScope];
       if (alive.current) {
         setNotice("Nova versão editada armazenada; a imagem original foi preservada.");
         await refresh();
