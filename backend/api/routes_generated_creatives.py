@@ -133,7 +133,7 @@ def _preview_policy(row, campaign, review=None):
                      (("SQUARE", 1.0), ("PORTRAIT_4_5", 0.8), ("STORY_9_16", 9 / 16))
                      if abs(ratio - target) <= 0.02] if width > 0 else [])
     from .creative_channel_policy import evaluate_creative_channel, POLICY_VERSION
-    channel_policy = {channel: evaluate_creative_channel(channel, "GENERAL",
+    channel_policy = {channel: evaluate_creative_channel(channel, None,
         reviewed=bool(approved), provider_verified=False).as_dict()
         for channel in ("GOOGLE_ADS", "META_FACEBOOK_INSTAGRAM", "WHATSAPP")}
     return {
