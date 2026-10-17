@@ -28,6 +28,24 @@ describe("GeneratedImagesPanel", () => {
     expect(screen.queryByText(/storage.googleapis.com/)).not.toBeInTheDocument();
     expect(calls).toHaveLength(2);
   });
+  it("renders pixel-edit controls and same-origin channel drafts only for stored items", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((url) =>
+      String(url).endsWith("/quote")
+        ? reply({ mode: "COMMERCIAL", action: "image", credits: 15,
+                  extra_amount: "0.00", generation_enabled: false })
+        : reply({ items: [{ id: "creative-1", campaign_id: "campaign", campaign_version: 2,
+                 state: "STORED", width: 512, height: 512, revision: 2,
+                 available: true, content_url: "/api/campaia/private.png",
+                 sha256: "a".repeat(64), storage_generation: "123" }],
+                 has_more: false, generation_enabled: false }));
+    render(<GeneratedImagesPanel campaignId="campaign" planVersion={2} />);
+    expect(await screen.findByLabelText("Transformação da imagem")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Criar versão editada" })).toBeEnabled();
+    expect(screen.getByRole("link", { name: "Rascunho Google Ads" }))
+      .toHaveAttribute("href", "/api/campaia/campaigns/campaign/images/creative-1/visual-preview/google");
+    expect(screen.getByRole("link", { name: "Rascunho Meta" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Rascunho WhatsApp" })).toBeInTheDocument();
+  });
   it("requires credit review and explicit confirmation before POST", async () => {
     const user = userEvent.setup();
     const posts: string[] = [];
