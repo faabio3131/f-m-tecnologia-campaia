@@ -218,3 +218,10 @@ acontecer, não fingir que o plano original ainda vale sem reconciliar.
 **Gates do último HEAD de implementação `c94e9e9`:** Backend Actions `38990447351` SUCCESS; Frontend `38990447359` SUCCESS; F4 Platform `38990447348` SUCCESS. **Não significam G7 DONE, merge ou deploy.**
 
 **Sequência aprovada de engenharia:** validar CURRENT novamente → fechar menor slice interno de política/categoria sensível preservando contratos existentes → testes backend/frontend/segurança e CI → registrar evidências no AGENTS.md e neste cronograma → obter decisões humanas e homologar dependências externas antes da promoção. Sem duplicar APIs ou persistência canônica.
+
+
+### Reconciliação G7 — barreira determinística de publicação de imagens (17/10/2026)
+- **CURRENT:** branch da PR #73 recebeu integração fail-closed no `publish_campaign`: imagem selecionada e aprovada por humano só é elegível após política versionada por canal/categoria e prova de mídia externa. `ProviderSimulator` não oferece classificação canônica nem comprovação de aceitação do provider; a publicação com imagem é bloqueada antes da `PublicationSaga`. O projeto mantém publicação sem imagem sob contratos anteriores, sem atestar homologação.
+- **TARGET (trabalho interno):** persistir categoria de criativo e classificação confiável, bloquear categorias sensíveis com revisão humana e requisitos específicos por jurisdição/canal, comprovar travas via testes HTTP de imagem aprovada/cross-tenant/replay e auditar versão/veredicto na transação, sem abrir caminho privilegiado por tenant.
+- **Gates externos:** GCS real, Gemini real, verificação da mídia e previews oficiais Meta/Google/WhatsApp. Categoria sensível não obtém aprovação implícita de simulador; LGPD/retenção = `HUMAN_DECISION`.
+- **Evidência:** commits da PR #73, `backend/api/creative_channel_policy.py`, `backend/api/routes_campaigns.py`, `backend/tests_api/test_creative_channel_policy.py`, `backend/tests_api/test_generated_creatives_read_contract.py`; CI do HEAD correspondente obrigatória para `DONE_VERIFIED`. Não houve merge/deploy.
