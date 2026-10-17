@@ -185,7 +185,7 @@ export function GeneratedImagesPanel({ campaignId, planVersion }: { campaignId: 
           <p>A edição exige autenticação reforçada. Nenhuma imagem aprovada é alterada.</p>
         </div> : null}
       {item.available ? <p>
-        <a href={base + "/" + encodeURIComponent(item.id) + "/visual-preview/google"}>Rascunho Google Ads</a>
+        <a href={"/api/campaia" + base + "/" + encodeURIComponent(item.id) + "/visual-preview/google"}>Rascunho Google Ads</a>
         {" · "}<a href={base + "/" + encodeURIComponent(item.id) + "/visual-preview/meta"}>Rascunho Meta</a>
         {" · "}<a href={base + "/" + encodeURIComponent(item.id) + "/visual-preview/whatsapp"}>Rascunho WhatsApp</a>
       </p> : null}
