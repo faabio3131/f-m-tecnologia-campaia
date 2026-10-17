@@ -24,6 +24,7 @@ export function GeneratedImagesPanel({ campaignId, planVersion }: { campaignId: 
   const [page, setPage] = useState<ImagePage | null>(null);
   const [quote, setQuote] = useState<ImageQuote | null>(null);
   const [prompt, setPrompt] = useState("");
+  const [manualFile, setManualFile] = useState<File | null>(null);
   const [editOperation, setEditOperation] = useState<Record<string, string>>({});
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
@@ -90,6 +91,40 @@ export function GeneratedImagesPanel({ campaignId, planVersion }: { campaignId: 
       } else {
         setNotice("Resultado incerto. A chave original foi preservada; consulte o inventário e reconcilie sem gerar novamente.");
         try { await refresh(); } catch { if (alive.current) setError("Histórico indisponível; mantenha a solicitação original."); }
+      }
+    } finally {
+      inflight.current = false;
+      if (alive.current) setBusy(false);
+    }
+  }
+
+  async function uploadManual() {
+    if (busy || inflight.current || !manualFile || planVersion < 1) return;
+    if (manualFile.size > 5 * 1024 * 1024 || manualFile.size === 0) {
+      setError("A imagem precisa ter até 5 MB."); return;
+    }
+    inflight.current = true; setBusy(true); setError(null); setNotice(null);
+    try {
+      const bytes = await manualFile.arrayBuffer();
+      const binary = new Uint8Array(bytes);
+      let text = "";
+      for (let offset = 0; offset < binary.length; offset += 16384) {
+        text += String.fromCharCode(...binary.subarray(offset, offset + 16384));
+      }
+      const encoded = btoa(text);
+      await api.post<ImageItem>(base + "/manual-upload",
+        { expected_plan_version: planVersion, image_base64: encoded },
+        { idempotencyKey: "manual-upload-" + crypto.randomUUID(), timeoutMs: 60_000 });
+      if (alive.current) {
+        setManualFile(null);
+        setNotice("Imagem manual armazenada. Requer revisão humana antes da publicação.");
+        await refresh();
+      }
+    } catch (cause) {
+      if (alive.current) {
+        setError((cause instanceof ApiClientError ? cause.message : "Upload não confirmado.") +
+          " Em caso de resultado incerto, consulte o inventário antes de reenviar.");
+        setManualFile(null);
       }
     } finally {
       inflight.current = false;
@@ -168,6 +203,15 @@ export function GeneratedImagesPanel({ campaignId, planVersion }: { campaignId: 
       </Button>
       {!pending.sent ? <Button disabled={busy} variant="secondary" onClick={() => setPending(null)}>Cancelar</Button> : null}
     </div> : null}
+    <div>
+      <h3>Enviar imagem manualmente</h3>
+      <p>Alternativa à geração por IA. Envio privado, com revisão humana obrigatória e autenticação reforçada.</p>
+      <label htmlFor="manual-creative-file">Arquivo PNG, JPEG ou WebP (até 5 MB)</label>
+      <input id="manual-creative-file" type="file" accept="image/png,image/jpeg,image/webp"
+        disabled={busy} onChange={(event) => setManualFile(event.target.files?.[0] ?? null)} />
+      <Button variant="secondary" disabled={busy || !manualFile}
+        onClick={() => void uploadManual()}>Enviar imagem privada</Button>
+    </div>
     {page && page.items.length === 0 ? <p>Nenhum criativo registrado nesta campanha.</p> : null}
     {page?.items.map((item) => <div key={item.id}>
       <p>Criativo {item.id} · versão {item.campaign_version} · {item.width} × {item.height} · {item.state}</p>
