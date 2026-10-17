@@ -4,10 +4,10 @@
 
 **Data de reconciliação:** 16/10/2026
 **Repositório canônico:** `faabio3131/f-m-tecnologia-campaia`  
-**CURRENT confirmado na leitura de 16/10/2026:** `main@957d99a7804f6a6d3e2b6379cbf58fbd280976fd` (revalidar no início de cada WP)
+**CURRENT confirmado em 16/10/2026:** `main@2458cb3da177537cc88b68b2cc156ce5e6bf3800`; WP-R04-04B na PR #73 Draft (revalidar antes de qualquer novo WP)
 **Produção:** não autorizada  
 **Fonte mestra:** Cronograma Mestre F0–F20/G0–G20  
-**Evidências:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`; PRs #64–#72 e documentos WP-R03/WP-R04 associados. A PR #72 ainda não certifica CI final/merge.
+**Evidências:** `docs/evidence/AUDITORIA_CURRENT_DELTA_REAL_RESTANTE_20261014.md`; PRs #64–#72 e documentos WP-R03/WP-R04 associados. PR #72 integrada em main@2458cb3; pós-merge Backend #328, Frontend #266 e F4 #162 verdes (evidência GitHub Actions em 16/10/2026).
 
 Este arquivo orienta futuros agentes/executores sobre **o que ainda falta**.  
 Ele existe para impedir retrabalho sobre funcionalidades, integrações de infraestrutura ou ativos externos que já existem.
@@ -439,7 +439,7 @@ reautenticação real existente e aprovações terminais sem rearmamento. Ver
 - completar creative asset model;
 - geração de imagem real: WP-R04-04A em validação do adaptador interno, default OFF;
   sem AppState/rotas/UI/catálogo ativado. Ver `docs/WP_R04_04A_TRANSPORTE_IMAGEM_GEMINI_20261016.md`;
-- armazenar criativos no storage do tenant;
+- armazenar criativos no storage do tenant: WP-R04-04B slice 1 em branch, contrato de identidade/manifests/prova e testes; ainda SEM persistência F3, GCS real, API/Web ou ativação; ver `docs/WP_R04_04B_PRIVATE_CREATIVES_FOUNDATION_20261016.md`;
 - edição/regeneração seletiva;
 - preview Google/Meta/WhatsApp;
 - solicitar ajustes/rejeição quando aplicável;
@@ -857,3 +857,273 @@ Antes de declarar comercial:
 - primeiro tenant externo controlado.
 
 Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMERCIALMENTE DISPONIVEL`.
+
+
+## Adendo operacional WP-R04-04B — 16/10/2026
+
+- PR #73, branch `feat/wp-r04-04b-creative-private-foundation`, sem merge, sem deploy e sem migration aplicada em ambiente real.
+- CI DONE_VERIFIED no HEAD `1dc5baaaa4fcf35d5802b504e04f4b77ef0478f6`: Backend #351, Frontend #289, F4 #185.
+- Adicionado posteriormente manifesto com MD5 canônico + recuperação `reconcile_after_restart` por observação GCS, sem segundo POST; testes SQLite de restart e objeto ausente. **Essas alterações exigem nova CI no HEAD exato.**
+- Continuam TARGET: contrato e2e API/Web de criativos, atomicidade do ledger 15 créditos, verificação externa GCS/ADC e recuperação/delete em todos os cenários de falha. G7 permanece PARTIAL; não ativar comercialmente.
+- Evidência técnica em `docs/WP_R04_04B_PRIVATE_CREATIVES_FOUNDATION_20261016.md`.
+
+
+## Diretriz do Diretor — construção completa antes da homologação externa (16/10/2026)
+
+- Priorizar completar TODOS os componentes funcionais internos, APIs, Web, persistência, controles, segurança, testes e visual conforme dependências e sequência do Cronograma Mestre.
+- Integrações externas devem ser implementadas como fluxos reais configuráveis de PLATFORM ou TENANT, nunca hardcoded para FM/Nova FM. Manter credenciais, conectividade, aprovação e homologação com serviço real documentadas como EXTERNAL_CREDENTIAL / EXTERNAL_INFRASTRUCTURE / EXTERNAL_APPROVAL até fase final de homologação externa.
+- Dependência externa não deve bloquear WP interno independente. Continuar implementando e verificando internamente com mocks/simuladores explicitamente rotulados; não declarar produção homologada com evidência simulada.
+- Não pular gates internos ou controles de segurança e não aplicar migrações reais, merge/deploy, produção ou ações irreversíveis sem autorização específica do Diretor.
+- Próximo escopo dentro de WP-R04-04B: API/Web de criativos e controles de créditos usando contratos F3/F5 existentes; não iniciar Fase Premium antecipadamente.
+
+
+## WP-R04-04B — API de leitura e cotação interna (16/10/2026)
+
+- Implementado na PR #73 inventário GET por campanha/unidade/tenant, GET de estado de criativo e GET de cotação usando F5 `quote_action("image")`. Todos fail-closed sem F3/billing; sem dados ou URLs GCS expostos.
+- Rotas de geração POST, billing de 15 créditos, liberação de mídia e UX Web de geração **ainda TARGET**; não ativar mutação de imagem antes de validar reserva, external dispatch, resultado, entrega e SETTLE/RELEASE atômicos.
+- Testes de contrato impedem mutação acidental e vazamento de identidade/manifesto do objeto. CI do HEAD novo ainda pendente; não confundir código com DONE_VERIFIED.
+- Homologação GCS externa: `EXTERNAL_INFRASTRUCTURE`, postergada conforme decisão do Diretor até fechamento funcional, sem bloquear WPs internos independentes.
+
+
+## WP-R04-04B — extensão de liquidação interna F3/F5 (16/10/2026)
+
+- `api.creative_image_settlement.settle_stored_creative`: subrotina interna, chamada somente após autorização e reserva comercial, exige manifesto STORED com generation persistida; SETTLE F5, idempotência e auditoria na mesma transação F3. Testes unitários de rejeição pendente e liquidação verificada.
+- **Não há ainda rota POST de geração nem componente Web operacional**: não apresentar este helper como entrega API/Web completa. Integração custo F3, provedor Gemini, commit storage, créditos, entrega e status assíncrono requerem fechamento e testes E2E; dependência da homologação GCS real permanece EXTERNAL_INFRASTRUCTURE.
+- Novo HEAD necessita CI. A PR #73 permanece PARTIAL; não fazer merge, deploy nem migrations reais sem aprovação específica.
+
+
+## WP-R04-04B — primeira integração Web real com API de leitura (16/10/2026)
+
+- Novo `GeneratedImagesPanel` no detalhe da campanha, utilizando `api.get` existente para inventário privado e cotação da franquia; sem token, URL de bucket, caminho de objeto nem segredo no navegador.
+- Teste Vitest verifica leitura de estados, cotação e botão de geração desabilitado enquanto falta a mutação segura.
+- O helper de SETTLE F3/F5 passou no Backend #364, Frontend #303 e F4 #198 no commit `9c5b9296eef06555d5efb66f330930d406045b06`.
+- **Geração POST/IA/F3 cost guard/SETTLE+storage E2E não estão concluídos.** Esta tela é inventário de criativos e NÃO é a UI de geração funcional. Não avançar status além de PARTIAL sem prova concreta.
+- PR #73 sem merge; após inclusão da Web, executar nova CI no HEAD exato. Homologação GCS externa permanece fora do fechamento funcional interno, como determinado pelo Diretor.
+
+
+## WP-R04-04B — geração de imagens API/Web com governança interna (16/10/2026)
+
+- POST `/campaigns/{campaignId}/images` adicionado com RBAC por tenant/unidade/campanha, Idempotency-Key, versão esperada da estratégia, confirmação da cotação de créditos F5, armazenamento GCS privado explicitamente habilitado e teto interno de custo `CAMPAIA_IMAGE_MAX_COST_UNITS` configurável.
+- Provider Gemini imagem registrado no gateway F3 existente apenas mediante `GEMINI_IMAGE_ENABLED=true`; sem permissões ocultas da FM/Nova FM, sem credenciais hardcoded, sem chamadas externas por default.
+- Fluxo implementado: RESERVE de créditos comercial antes do dispatch; GATE F3 de custo/credenciais; PNG normalizado; claim criativo/quota; F3 commit de fence; upload único; entrega somente com generation STORED; SETTLE de créditos+auditoria na transação F3 da entrega. Falhas incertas preservam reserva para reconciliação, não há segundo POST automático.
+- UI Web agora possui formulário de imagem com revisão de créditos e confirmação explícita, além do inventário; configuração externa ausente desativa a ação, sem simular integração real.
+- `PARTIAL`: homologação real GCS/Gemini continua EXTERNAL_INFRASTRUCTURE / EXTERNAL_CREDENTIAL; testes e CI do HEAD atual PENDENTES, especialmente E2E de sucesso, erro, replay, corrupção, recovery e cross-tenant.
+- **Atenção:** ponte de reconciliação operacional `STORAGE_PENDING -> STORED -> SETTLE` após crash com reserva comercial segue TARGET, assim como entrega privada binária/autorizada, policy preview e paginação. Não liberar deploy/merge/G7 com esses blockers internos.
+
+
+## WP-R04-04B — recuperação comercial, mídia privada e matriz E2E (16/10/2026)
+
+- GET autenticado de mídia PNG estável: `/campaigns/{campaignId}/images/{creativeId}/content`, streaming sem URL pública, validação de manifesto e GCS generation; UI Web exibe imagem somente após status STORED.
+- POST governado `/campaigns/{campaignId}/images/{creativeId}/reconcile` para observar objeto após crash e liquidar reserva F5 usando a referência canônica F3/F5 persistida, sem repetir POST Gemini/GCS; VERSION/CAMPAIGN/TENANT/UNIT/RBAC são verificados.
+- Criativo persiste `credit_operation_id` imutável na claim; recuperação de imagem STORED revalida metadata GCS antes de settlement. Default externo desabilitado; `SIMULATOR` apenas em `test/dev-local`; não confundir sucesso CI com homologação externa.
+- Novo teste de integração explícito `test_generated_image_simulator_e2e.py`: RESERVE -> simulação de modelo imagem com custo registrado F3 -> upload privado simulado -> F5 SETTLE -> replay sem segundo POST/débito -> GET de PNG autenticado -> bloqueio cross-tenant. Histórico real e documentação são atuais somente após CI verde.
+- Dependências internas remanescentes: testes de timeout/falha de GCS + replay de recuperação após restart com SETTLE, controle de versão de campanhas e Brand Kit, formatos/variações por canal, upload manual, policy/preview e paginação conforme G7. Externos: GCS/ADC, Gemini com credencial e custos reais (EXTERNAL_INFRASTRUCTURE/EXTERNAL_CREDENTIAL).
+- **O WP segue PARTIAL até evidências de todos os gates internos.** PR #73 não mergeada; nenhuma migration, produção ou homologação externa autorizadas.
+
+
+## Reconciliação CI do ciclo API/Web/imagem + recuperação (16/10/2026)
+- HEAD `20acfe93248e26a4be74cf3b63ecfb6e5f8f8758` na PR #73: Backend **#410 SUCCESS**, Frontend **#349 SUCCESS**, F4 **#244 SUCCESS**. Inclui PostgreSQL, simulador explícito com quota/custos F3/F5, replay sem segunda geração, cross-tenant, conteúdo PNG privado e recuperação de GCS incerto com liquidação comercial.
+- HEAD posterior contém ajuste de UX para atualizar inventário após resposta incerta; repetir a CI e conferir o HEAD exato antes de chamar este incremento DONE_VERIFIED.
+- **WP-R04-04B PARTIAL**: ausência de prova externa por decisão do Diretor, e gates internos ainda pendentes: política/preview e versões por canal, gerenciamento completo de asset/deleção, recuperação governada de custo de provider desconhecido, limites/comportamento de alta carga e E2E adicionais. Não confundir os cenários SIMULATOR do CI com homologação real.
+- Merge/deploy/produção/migration real seguem sujeitos à autorização específica, não concedida nesta execução.
+
+
+## Fechamento da rodada técnica WP-R04-04B (16/10/2026)
+- PR #73 em `feat/wp-r04-04b-creative-private-foundation`, sem merge. HEAD de código+docs `75163485e32b301a3abc5596aade36772aa5c50f` com **Backend #413 SUCCESS**, **Frontend #352 SUCCESS**, **F4 #247 SUCCESS**.
+- Backend inicialmente apresentou falha intermitente em teste preexistente de concorrência Asaas/PostgreSQL: uma das duas operações recebeu `BILLING_DISPATCH_PENDING` em vez de 200; rerun isolado passou. Nenhum teste foi relaxado, nenhum comportamento de cobrança alterado. Investigar estabilidade desse cenário como débito de teste no F5, não apresentar como prova de homologação bancária.
+- Confirmados internamente na CI: POST de geração Gemini governada, contrato de preço por política F5 configurável, orçamento de IA F3, PNG privado, leitura autenticada, replay sem reenvio, cross-tenant, recuperação GCS incerta e liquidação F5 em simulador de storage/provedor.
+- `PARTIAL`: faltam gates internos F7/G7 posteriores (formatos por canal, política de imagem/preview, upload/revisão e lifecycle/delete completo, compensação de custos desconhecidos e outros negativos) e homologação externa final. Não executar merge/deploy/produção/migrations reais sem autorização expressa.
+- Nova edição documental exige verificação de CI no HEAD resultante antes de elevar qualquer status.
+
+
+## WP-R04-04B — paginação privada do inventário (16/10/2026)
+- Incremento interno da PR #73: paginação determinística em lotes de 50 por UUID canônico, `next_cursor` e `has_more`, com cursor validado exclusivamente no conjunto já filtrado por tenant, unidade e campanha. Cursor estranho não acessa itens alheios e falha fechado.
+- Testes de três páginas sem duplicação e rejeição de cursor inválido/fora de escopo. Ainda requer CI verde no HEAD exato; não marcar DONE_VERIFIED antecipadamente.
+- Permanece PARTIAL: revisão/policy de imagem e formatos por canal, lifecycle/delete, F3 custos incertos e matriz adicional de negativos. Testes externos seguem EXTERNAL_INFRASTRUCTURE/EXTERNAL_CREDENTIAL; nenhum merge/deploy/migration aplicada.
+
+
+## WP-R04-04B — prévia de política fail-closed (16/10/2026)
+- Adicionado GET autenticado `/campaigns/{campaignId}/images/{creativeId}/preview`: retorna estado de armazenamento, compatibilidade com versão atual da campanha e bloqueios explícitos para revisão humana. O endpoint é exclusivamente de leitura, não aprova imagem nem autoriza publicação.
+- A prévia exige geração GCS confirmada e mesma versão da campanha; `publication_allowed=false` e `human_review=NOT_REVIEWED` até existir fluxo governado real de política/aprovação. Testes negativos cobrem imagens pendentes, falhas, mudança de versão e stored sem aprovação.
+- Novo HEAD exige CI. WP permanece PARTIAL; isto não fecha policy engine de criativos nem fluxo de aprovação de arte. Sem merge, deploy ou migrações reais. Externos mantidos pendentes para fase final.
+
+
+## WP-R04-04B — revisão humana imutável (16/10/2026)
+- Revisão CURRENT confirma rota de aprovação de campanha já existente, mas ela NÃO certifica a imagem por hash+generation; não reutilizar aprovação genérica como autorização de mídia.
+- Incluído contrato interno de decisão de arte `CreativeImageReviewStore`, com F3 idempotência, auditoria, separação solicitante/revisor, hash da imagem, geração GCS, versão da campanha e identidade do criativo; replay incompatível falha fechado.
+- Testes negativos para decisões antigas, geração substituída, versão alterada e REJECT. **API de aprovação ainda TARGET**: requer autoria da imagem persistida e vínculo com o principal autenticado/step-up/can_approve; não aceitar requester_id informado pelo navegador. Policy/preview atual continua sem permitir publicação, mesmo com este registro interno. Não alegar aprovação completa.
+- Lifecycle/delete completo também TARGET. Execução CI do novo HEAD pendente; homologação externa continua postergada. Sem merge/deploy/migration.
+
+
+## WP-R04-04B — API de revisão com RBAC e step-up (16/10/2026)
+- Adicionado POST /campaigns/{campaignId}/images/{creativeId}/review: autenticação server-side, escopo tenant/unidade/campanha, Permission.APPROVAL_DECIDE, step-up, Idempotency-Key, can_approve e revisão imutável ligada a SHA-256, generation GCS e versão da campanha.
+- O criador de cada imagem nova é agora registrado no claim F3 via sessão autenticada (requested_by); imagens históricas sem origem comprovada falham fechado. Revisão não autoriza publicação automaticamente; policy/preview continua conservador.
+- Teste do contrato de rotas atualizado. **Revisão API e lifecycle de delete ainda PARTIAL até nova CI e testes E2E negativos reais da rota.** Não declarar gate de publicação concluído; sem merge/deploy/migration.
+
+
+## WP-R04-04B — tombstone e exclusão privada com fence (16/10/2026)
+- Incremento de lifecycle: `CreativePrivateStorage.delete()` faz CAS STORED→DELETE_PENDING antes do DELETE externo (acesso binário já bloqueado), permite uma única tentativa de remoção da geração imutável GCS, e usa `reconcile_delete()` apenas com observação de metadata para confirmar DELETED. Em dúvida, mantém DELETE_PENDING e quota, sem repetir DELETE automaticamente.
+- Testes de simulador: exclusão idempotente, liberação de quota após observação e recuperação de resposta UNCERTAIN sem segundo DELETE. Não representa homologação GCS real nem expiração de retenção externa.
+- API Web de exclusão por usuário com RBAC/step-up ainda TARGET; revisar requisitos de retenção/auditoria e cobertura API e GCS negativas antes de fechar gate. HEAD atual requer nova CI, sem merge/deploy/migration.
+
+
+## WP-R04-04B — API privada de exclusão de criativos e retenção (16/10/2026)
+- Implementada rota DELETE autenticada por tenant/unidade/campanha/versão com Permission.CAMPAIGN_EDIT, step-up e Idempotency-Key; consulta F3 antes de qualquer ação externa. Criativo aprovado por revisão humana fica bloqueado para exclusão comum: exige futura revogação governada.
+- O storage existente faz tombstone STORED→DELETE_PENDING antes de um único DELETE, impede leitura no proxy em DELETE_PENDING e reconsulta GCS para confirmar DELETED. Resposta incerta não dispara segundo DELETE e quota não é liberada sem comprovação da ausência de geração.
+- Política de retenção **não confundir com apagamento físico definitivo**: metadados imutáveis e evidência de auditoria permanecem no banco. A remoção do objeto da API de GCS não certifica eliminação de backups, versões ou retenções de fornecedor. Configuração jurídica/operacional detalhada de prazos de retenção e remoção de dados pessoais continua HUMAN_DECISION/PRODUCTION_GATE antes do lançamento real.
+- Testes de contrato atualizados para DELETE explícito, além dos testes existentes de fence/delete, replay e falha. A matriz E2E específica da nova rota (CSRF, cross-tenant, step-up vencido, conflito de aprovação) ainda precisa ser ampliada: WP PARTIAL até evidências. CI do HEAD deste commit pendente; sem merge/deploy/migration.
+
+
+## Correção de teste de exclusão/step-up (16/10/2026)
+- Backend vermelho em `b0808f5`: teste `test_delete_route_rejects_missing_step_up_and_cross_tenant` assumia erroneamente que a ausência do header significava sessão sem elevação. `BillingCreditHarness.setup_subscription()` havia concedido step-up válido persistido por sessão; a rota retornou 200 de acordo com a política vigente.
+- Corrigido o **arranjo do teste**, invalidando explicitamente a elevação existente no estado canônico antes de testar ausência de step-up. Não foi removida nem flexibilizada a proteção RBAC/step-up da rota. Repetir CI exata antes de certificar.
+
+
+## WP-R04-04B — matriz ampliada de exclusão governada (16/10/2026)
+- Incluídos testes de API para: cross-tenant negado, step-up revogado negado, step-up fresco autorizando DELETE, mídia privada inacessível após tombstone e segundo DELETE sem repetição da operação externa.
+- Incluídos testes F3/storage para resposta incerta com objeto ainda visível (mantém DELETE_PENDING/quota) e replay do DELETE entre dois handles com somente um dispatch; a exclusão confirmada só libera quota após observação.
+- CURRENT permanece PR #73 sem merge, WP PARTIAL; próximos gates: revalidação completa de aprovação/retention, concorrência multiworker PostgreSQL e custo incerto do provedor. Sem declarar homologação real Gemini/GCS por simulação. Exige CI do HEAD exato e revisão de eventuais falhas.
+
+
+## WP-R04-04B — auditoria final de gates internos (16/10/2026)
+- Adicionado teste PostgreSQL real de corrida entre duas instâncias independentes de CreativeRepository sobre o mesmo claim: somente um writer deve criar o manifesto, outro deve receber replay; quota usada uma vez e leitura cross-tenant negada. Evidência final requer CI PostgreSQL no novo HEAD.
+- Auditoria CURRENT de custo F3: `PersistentAICostLedger._stats` já mantém `held` quando não há OUTCOME ou custo observado é UNKNOWN, e `report` sinaliza `INCOMPLETE`. **Ainda não há reconciliação operacional governada com fonte externa verificada para liberar reservas incertas**: PRODUCTION_GATE / EXTERNAL_CREDENTIAL; proibido converter UNKNOWN em custo zero.
+- Aprovação: `CreativeImageReviewStore` já exige revisor diferente da autoria e vincula hash, versão e generation. **A rota de preview não consulta a decisão persistida**, logo continua fail-closed para publicação, sem certificar material como aprovado. Integração efetiva no fluxo publication/policy permanece TARGET.
+- Retenção: DELETE confirmado pelo transporte GCS não equivale a eliminação de versões retidas/backups; prazo LGPD e revogação de aprovação são HUMAN_DECISION/PRODUCTION_GATE. Nunca tratar a PR como pronta para GO/NO-GO enquanto pendências permanecerem.
+- Escopo desta rodada: verificação CURRENT e novo teste PG. Sem merge/deploy/migration. CI HEAD pendente.
+
+
+## WP-R04-04B — política de publicação e reconciliação conservadora F3 (16/10/2026)
+- A rota existente de publicação agora impede publicação se existir qualquer imagem gerada pendente/não revisada da campanha e versão corrente. Imagem STORED exige revisão humana imutável correspondente ao hash+generation; caso contrário retorna IMAGE_REVIEW_REQUIRED, sem chamar provedor. Geração de imagem é opcional; campanhas sem imagens geradas preservam o fluxo anterior. Teste E2E simulado adicionado para falha fechada.
+- Adicionado `PersistentAICostLedger.reconciliation_queue(tenant)` somente leitura, listando tentativas START sem OUTCOME ou com UNKNOWN_COST, preservando budget hold F3 e segregação por tenant. Teste cobre durabilidade/restart e ausência de liberação automática. Não é reconciliação com fatura real nem permissão para fixar custo zero.
+- **PARTIAL:** uso efetivo da imagem selecionada no payload publicado, validação da arte pela policy e lifecycle de aprovação/revogação ainda requerem revisão/integração; reconciliação de custos com evidência assinada do provedor é EXTERNAL_CREDENTIAL/PRODUCTION_GATE. Nova CI precisa ser verificada no HEAD exato. Não solicitar merge ainda.
+
+
+## WP-R04-04B — vínculo de seleção, revogação e varredura de pendências (16/10/2026)
+- Publicação via simulador exige `selected_creative_id` explícito quando houver criativos ativos na versão da campanha; escopo tenant/unidade/versão, estado STORED e revisão humana hash+generation válidos. Registra prova de seleção no evento de auditoria. **Não equivale a entrega de mídia aos conectores reais**: transporte de binário, formatos por canal, criativo aprovado em payload externo e provas de publicação seguem TARGET/PRODUCTION_GATE.
+- Revisão de arte passou a ter revogação terminal em F3 com auditoria e idempotência, via POST autenticado com Permission.APPROVAL_DECIDE, can_approve e step-up. Revogação invalida aprovação futura, inclusive tentativas de replay; não promove aprovação nova ou publicação. Pausar/remover publicação já aplicada após revogação ainda TARGET e exige projeto da saga de compensação.
+- F3 conserva custos desconhecidos sob reserva; sem credencial e resposta oficial verificada, **reconciliação financeira externa real permanece EXTERNAL_CREDENTIAL/EXTERNAL_INFRASTRUCTURE/PRODUCTION_GATE**, não foi executada e não pode ser simulada como homologada.
+- Inspeção read-only de PRs abertas: somente #73; `main` em `2458cb3da177537cc88b68b2cc156ce5e6bf3800`. #73 continua sem merge; título histórico está defasado frente ao conteúdo implementado. Não há autorização específica para merge/deploy/migration/GO. Esta inspeção não prova inexistência de pendências em PRs fechadas, cronograma mestre ou infraestrutura externa.
+- Novo código e testes requerem CI exata; WP-R04-04B permanece PARTIAL até cobertura total e gates pendentes. G0-G20 NÃO declarados homologados.
+
+
+## Reconciliação histórica de PRs e gates — 16/10/2026
+- Consulta individual ao GitHub: PRs #48 a #72 (25 PRs) possuem `merged=true`, logo não se confundem com simplesmente closed. PR #73 está `open`, `draft=true`, `merged=false`. `main` permanece no merge da #72 (`2458cb3`). Essa faixa foi certificada; PRs #1–#47 exigem inventário separado e não foram declaradas integradas por inferência.
+- HEAD auditado antes deste registro: `97ecdd97070863eebe6d10ed3330a59bb03e5585`. Os três workflows de CI estavam `queued`, inclusive jobs de Backend, PostgreSQL, F4 e Frontend. **Não há sucesso certificado desse HEAD**; tratar ausência de runner como bloqueio de infraestrutura/CI se persistir, jamais como testes verdes.
+- Cronograma Mestre (27/09/2026) define G7: campanha completa chega a aprovação com estratégia/copy/assets/policy/preview reais; G9–G12 exigem publicação Google/Meta/WhatsApp e reconciliação real; G16–G20 exigem segurança, UAT, GO/NO-GO e disponibilização. Estes gates **não podem ser declarados DONE_VERIFIED** apenas por simulação ou merge.
+- Pendências internas conhecidas do WP-R04-04B: vincular entrega real de mídia por conector (TARGET/EXTERNAL_APPROVAL), revogar publicação já aplicada por compensação governada (TARGET), ampliar testes de revogação/anti-replay (TARGET), evidência externa para encerrar custo incerto (EXTERNAL_CREDENTIAL), retenção jurídica (HUMAN_DECISION), e certificar CI do HEAD após qualquer alteração.
+- Proibidos merge, deploy, aplicação de migrations e GO/NO-GO até autorização expressa do Diretor.
+
+
+## WP-R04-04B — correção de preview e regressão de revogação (16/10/2026)
+- O preview de criativo deixa de anunciar `NOT_REVIEWED` invariavelmente: consulta o registro de revisão persistido, sinaliza APPROVE/REVOKED e mantém `publication_allowed=false` (somente policy/publication governada pode autorizar). Aprovação expirada ou revogada gera bloqueio.
+- Testes: preview com aprovação amarrada à evidência, preview revogado, aprovação com autor distinto, revogação auditada, replay idempotente e bloqueio de reaproveitar aprovação após revogação. Evidência pendente no novo HEAD da CI.
+- Não há comprovação de implantação de mídia em Google/Meta nem revogação de campanha já publicada nos canais; permanece TARGET/EXTERNAL_APPROVAL, não pode ser substituída por simulação. Reconciliação financeira externa e retenção ainda permanecem seus gates específicos.
+
+
+## Reteste WP-R04-04B — 16/10/2026, correção CI e revogação protegida
+- CI em `300958a` teve PostgreSQL runtime integration SUCCESS, mas API tests FAILURE por `NameError: state is not defined` em `preview_generated_creative`, originado na nova consulta persistida. Corrigida causa direta: _scope agora vincula `state` na rota de preview. Repetir CI do HEAD atual antes de declarar DONE_VERIFIED.
+- Nova regra fail-closed: revogação de imagem aprovada não é permitida via rota comum enquanto a campanha possuir `external_resources` registrados; exige compensação governada e reconciliação antes de alterar aprovação já aplicada. Sem inventar pausa/remoção externa.
+- Continua vedado merge/deploy; externos Gemini/GCS/canais e custo real mantidos em EXTERNAL_CREDENTIAL/PRODUCTION_GATE. Histórico de PRs #48–#72 merged confirmado, #73 Draft.
+
+
+## Retomada do Cronograma Mestre — Fase 7 / G7, WP-R04-04B (16/10/2026)
+- CURRENT confirmado: PR #73 Draft contra main, HEAD anterior d25e5c2 certificado com três workflows verdes. G7 exige estratégia, copy, assets, policy e previews reais, com formatos quadrado/vertical/story, edição anterior à aprovação e proveniência; estes itens não ficam DONE_VERIFIED pelo mero sucesso de um simulador.
+- Novo teste negativo: seleção de creative_id inexistente na publicação retorna IMAGE_SELECTION_INVALID antes de atingir a saga de publicação. Testa binding explícito da arte à versão da campanha; também já há cenário de seleção sem revisão.
+- Sequência correta: concluir testes/controles do WP-R04-04B; depois revisão de evidências e autorização específica para eventual merge. G8 Google Ads multi-tenant real permanece posterior a G7, EXTERNAL_CREDENTIAL / EXTERNAL_APPROVAL / EXTERNAL_INFRASTRUCTURE.
+- Nenhum merge/deploy/migration, nem alteração de segredo externo. Certificação do HEAD novo depende de nova CI.
+
+
+## G7 — análise de formatos sem falsa homologação (16/10/2026)
+- CURRENT verificado após HEAD `cd79eea`: Backend, Frontend e F4 CI SUCCESS. Gerador aceita prompt e persiste PNG normalizado/identidade, mas não oferece seleção fechada de proporções para Gemini, edição versionada da arte ou prévia real por canal. Nenhum desses itens deve ser marcado DONE_VERIFIED.
+- Incremento atual: preview privado informa `format_hints` por geometria (SQUARE, PORTRAIT_4_5, STORY_9_16), sem confiar no cliente, e mantém `channel_media_validated=false` e `publication_allowed=false`. Testes de proporções verificam que dicas não viram aprovação de canal.
+- Ainda TARGET: geração específica por proporção e canal, múltiplos derivados versionados e cobrados corretamente, edição antes da aprovação, preview real Google/Meta/WhatsApp e entrega de mídia nos conectores. G7 segue PARTIAL e não pode avançar para G8. Novo HEAD exige CI; sem merge, deploy ou segredos.
+
+
+## G7 — seleção de formato de imagem (16/10/2026)
+- CI anterior `4c43218`: F4 e Frontend PASS, Backend FAIL (contrato `_preview_policy` recebeu linhas de teste sem manifest; corrigido para preview sem dimensões não confiar em formato). Novo incremento da API gera `image_format` opt-in ORIGINAL/SQUARE/PORTRAIT_4_5/STORY_9_16, atrelado a request_identity comercial, propagado como instrução ao Gemini, valida proporção real do PNG antes da claim/storage/settlement; mismatch é fail-closed, não liquida créditos comerciais. Custo F3 de dispatch continua contabilizado mesmo em rejeição.
+- Teste negativo do story incompatível assegura ausência de upload e consumo de créditos comerciais. Geração de formato correto com Gemini real e previsualização por canal não homologadas: EXTERNAL_CREDENTIAL/PRODUCTION_GATE. Edição versionada continua TARGET. O WP permanece PARTIAL até CI do HEAD exato e demais gates. Sem merge/deploy.
+
+
+## G7 — correção do teste de guarda de provedor (16/10/2026)
+- CI Backend do HEAD `975c6e9` falhou exclusivamente no teste `test_disabled_provider_refuses_before_cost_reservation_or_gcs`, porque o fixture `SimpleNamespace` anterior não incluía o novo campo obrigatório no fluxo interno `image_format`. A correção atual adiciona `image_format="ORIGINAL"` ao fixture, sem alterar a rota ou afrouxar o bloqueio do provedor desativado. Requer reteste do novo HEAD; nunca inferir sucesso antes da CI.
+
+
+## WP-R04-04B — revisões imutáveis e previews por canal (16/10/2026)
+- Implementado contrato de revisão opcional `source_creative_id` na geração paga: nova identidade criativa/idempotente e nova imagem, original preservada; só aceita origem STORED com tenant/unidade/campanha/versão correspondentes. Aprovação ou revogação existente bloqueia edição direta da origem. Linhagem gravada no manifesto de registro F3 e exposta na API de detalhe. Não altera modelo de cobrança: nova geração = nova operação de crédito; custo F3 permanece distinto.
+- Prévia de imagem retorna metadados para Google Ads, Meta/Facebook/Instagram e WhatsApp explicitamente `DRAFT_ONLY` e `media_ready=false`; dica de geometria não é aceitação de criativo por canal, não autoriza publicação. Prévia visual renderizada e certificação de upload real continuam TARGET/PRODUCTION_GATE.
+- Testes adicionados: origem preservada/linhagem, origem indevida negada e previews por canal sem elevação de autorização. Todos dependem do resultado de CI deste HEAD; não certificar antes da execução.
+- Pendências reais: edição binária/transformação de pixels não implementada (a revisão atual é nova geração baseada em prompt), policy específica de cada canal, custos oficiais, credenciais e homologação de publicação, política de retenção HUMAN_DECISION; PR #73 ainda Draft sem merge. Não confundir estes previews informativos com visualização real da peça publicada.
+
+
+## G7 — prévias visuais privadas e controle de PRs (16/10/2026)
+- Criada rota GET `/campaigns/{campaignId}/images/{creativeId}/visual-preview/{channel}` (google/meta/whatsapp), exigindo permissão CAMPAIGN_VIEW, escopo tenant/unidade/campanha/versão e imagem STORED, servindo HTML same-origin com imagem privada e CSP restritiva. Layout é apenas **rascunho interno**, sem usar SDK ou dados oficiais dos canais, sem assumir preview de anúncio publicado.
+- Teste E2E simulado adicional verifica rotas para três canais, declaração inequívoca de rascunho, no-store, frame-ancestors none, acesso cross-tenant negado e canal inválido negado. A aprovação da revisão não concede por si só autorização de publicação.
+- PRs abertas conferidas: só #73, em Draft; não existe stack de PRs abertas a encerrar. A #73 permanece necessária para preservar trabalho em avaliação; **não fechar nem integrar com requisitos G7 ainda em PARTIAL**. A conclusão exige CI do HEAD novo, edição real de pixels com tratamento seguro e demais gates. Não executar merge/deploy sem decisão expressa.
+
+
+## G7 CI visual preview — 16/10/2026
+- Primeiro HEAD de prévias visuais `f21e525`: PostgreSQL integration PASS; Backend API FAIL porque teste de inventário estático esperava 10 rotas e 5 GETs, enquanto nova rota GET legítima elevou para 11 e 6. Ajustado o contrato explícito da rota, preservando contagem de 4 POST e 1 DELETE. Exige CI do HEAD exato antes de certificação.
+
+
+## G7 — edição real de pixels, primeira camada segura (16/10/2026)
+- CURRENT PR #73, HEAD anterior `c025642` com Backend/Frontend/F4 verdes. Implementados no `asset_image_worker` isolado com seccomp os comandos determinísticos rotate_90/rotate_180/flip_horizontal (Image.Transpose). Nova função `edit_normalized_png` valida PNG normalizado antes e depois, usa subprocesso com limite e ambiente restrito, não altera original nem permite operação arbitrária.
+- Testes unitários exercitam três transformações, dimensões, integridade e operação inválida. **Ainda TARGET**: endpoint transacional para origin->edited asset com autorização/step-up, nova identidade imutável, quota e GCS CAS, reconciliação, crédito/billing se aplicável e auditoria. Este incremento de baixo nível não é editor utilizável comercialmente. Não declarar G7 encerrado.
+- PR #73 continua única aberta e Draft, sem merge/deploy. CI do novo HEAD obrigatória.
+
+
+## G7 — endpoint real de edição de pixels (16/10/2026)
+- Implementado `POST /campaigns/{campaignId}/images/{creativeId}/pixel-edit`: IAM CAMPAIGN_EDIT + step-up + chave idempotente, identidade scope tenant/unidade/campanha/versão, hash e generation da origem, operação allowlisted rotate_90/rotate_180/flip_horizontal em worker isolado, nova identidade UUID, quota privada F3, CAS upload/observe e trilha de auditoria. Origem permanece intacta; saída expõe `source_creative_id`.
+- O endpoint bloqueia origem com revisão humana e campanha com recursos externos, além de requests cross-tenant, conflito de hash, operações arbitrárias. Tentativa replay reutiliza objeto anterior, sem segundo upload quando STORED. Falha de observação mantém erro de estado pendente.
+- Testes incluídos para transformação real de pixels, replay, hash inválido e tenant cruzado. CI do HEAD novo ainda necessária; não presumir êxito. UI de edição e policy oficial dos canais permanecem TARGET; sem merge/deploy.
+
+
+## Reteste CI G7 pixel-edit — 16/10/2026
+- HEAD anterior `d94cf26` teve Backend API FAILURE em `test_pixel_edit_creates_new_immutable_asset_and_replays_without_duplicate_upload`: fixture TestOnlyAssetStorage registra POST, GET e MEDIA; replay legitimamente relê a origem (`MEDIA`) e portanto contagem total cresce sem segundo upload. Ajustado o contrato de teste para comparar exclusivamente número de `POST` e exigir nenhuma `DELETE`; o objeto editado e ID idempotente permanecem os mesmos. PostgreSQL integration, Frontend, F4 haviam passado no HEAD anterior. Novo HEAD depende de CI para DONE_VERIFIED.
+
+
+## G7 — interface de edição e revisão de pendências (16/10/2026)
+- CURRENT inicial `1e173ec`: Backend, Frontend e F4 CI SUCCESS, PR #73 única aberta Draft, não integrada.
+- Interface `GeneratedImagesPanel`: controles de rotate_90, rotate_180 e flip_horizontal sobre imagem STORED da versão vigente, submissão à rota protegida de pixel-edit com hash/generation, refresh do histórico e aviso de step-up; novas versões imutáveis vinculadas à origem. Links de rascunho visual para Google/Meta/WhatsApp usam proxy autenticado same-origin. Inventário privado disponibiliza hash e geração de objeto somente sob permissão de campanha, não tokens/URLs GCS públicas.
+- Teste frontend verifica ações renderizadas e URLs same-origin, sem inferir integração externa.
+- TARGET/PRODUCTION_GATE externos: políticas e previews oficiais por canal, entrega real de imagem aos conectores, custos reais Gemini, GCS/provider + migração produção, tratamento de erro de rede com recuperação idempotente integrada ao UI. HUMAN_DECISION: retenção LGPD. Gate G7 e PR #73 continuam PARTIAL até fechamento dos requisitos e CI do HEAD.
+- Nada mergeado/deployado.
+
+
+## Auditoria G7 / PR #73 — 16/10/2026, CI do editor e gates residuais
+- CI `f937a4c`: Frontend e F4 SUCCESS; Backend FAILURE no contrato `test_inventory_is_private_and_does_not_leak_storage_paths` (imagem STORAGE_PENDING expunha sha256 e campo storage_generation como null). Ajuste: _public só expõe CAS/hash de edição para imagem STORED com generation real. Teste adicional cobre imagem confirmada; imagem pendente permanece sem CAS para UI.
+- Cronograma Mestre Fase 7 exige expressamente: estratégia estruturada com provider/fallback, copies CTA/variações, governança e ledger IA; imagens por formato/regeração/**upload manual alternativo**/proveniência; policy determinística + assistida, regras por canal/categoria sensível, motivos/trilha/versões; **previews reais** Google, Facebook/Instagram, WhatsApp e edição antes da aprovação. G7 exige campanha integral até aprovação.
+- CURRENT confirmado nesta PR: edição de pixels no worker isolado, versão derivada persistente via endpoint, UI com operações e rascunhos visuais internos Google/Meta/WhatsApp; imagens geradas privadas, revisão humana independente, bloqueio de publicação sem revisão e custos F3. Rascunhos locais não são previews reais dos providers. Upload manual alternativo e homologação real de templates/canais não foram comprovados; manter TARGET. Condições reais Gemini/GCS, migração/billing, credenciais e publicação/cancelamento externo não são DONE_VERIFIED. Policy LGPD ainda HUMAN_DECISION.
+- Auditoria não equivale a autorização para merge/deploy nem GO de G7. PR #73 (CURRENT último consultado: OPEN, draft=false, não merged) deve ser revisada com CI do novo HEAD e escopo reconciliado antes de autorização específica do Diretor.
+
+
+## G7 — upload manual alternativo, bloco interno (16/10/2026)
+- Requisitos reais do mestre verificados em Fase 7: upload manual alternativo, formatos, proveniência, política por canal e categoria, previews Google/Meta/WhatsApp, edição e IA governada.
+- Implementado endpoint POST /campaigns/{campaignId}/images/manual-upload com CAMPAIGN_EDIT + step-up, validação de plan_version, conteúdo base64 limitado, normalização de imagem via worker Linux seccomp, escopo tenant/unidade/campanha/versão, identificador determinístico por Idempotency-Key, quota privada, claim transacional, GCS upload fence, log auditado e nenhuma geração/custo IA. Nova imagem só é STORED quando persistida com generation verificada; estado incerto continua bloqueado. Sem credenciais de tenant em código.
+- Teste API incluído para upload, replay sem segundo POST, escopo e imagem inválida. Revisão de CI do novo HEAD pendente; sem homologação externa. A UI de upload manual ainda TARGET.
+- Ainda PARTIAL para G7: a prévia visual local não é preview oficial Google/Meta/WhatsApp; validar regras de canal e categoria sensível, upload real com GCS/credenciais, custo real Gemini e policy LGPD HUMAN_DECISION. Nada mergeado/deployado.
+
+- UI de upload manual adicionada em GeneratedImagesPanel: input PNG/JPEG/WebP, limite 5 MiB, envio privado para rota governada e aviso de resultado incerto. Continua exigido teste automático do HEAD e validação da jornada de autenticação/step-up.
+
+
+## G7 — reconciliação CURRENT e próximo gate (16/10/2026)
+- Fonte técnica CURRENT da PR #73: `c94e9e9c4187a0e5dd492822b101054a0f4c1c1a` (validar novamente antes de merge). Três workflows desse HEAD SUCCESS: Backend `38990447351`, Frontend `38990447359`, F4 Platform `38990447348`.
+- Incrementos da branch: upload manual privado com CAS/estado STORED somente após confirmação, replay idempotente sem segundo upload, IAM CAMPAIGN_EDIT + step-up, escopo tenant/unidade/campanha/versão e validação de mídia; painel Web de upload manual com PNG/JPEG/WebP e limite 5 MiB. Integração do editor pixel-edit e versões imutáveis já existe na branch. Sucesso em CI certifica código/contratos internos, não serviços externos.
+- PR #73 OPEN, READY FOR REVIEW, MERGEABLE; NÃO MERGED nem DEPLOYED segundo a última verificação. Evidências anteriores que descrevem Draft ou UI ausente são históricas e não devem sobrepor CURRENT.
+- G7 continua PARTIAL: validar upload real GCS e custo real Gemini/ledger; políticas oficiais por canal e categorias sensíveis; previews reais Google/Meta/WhatsApp; homologação externa; decisão humana sobre retenção LGPD. Não transformar rascunho visual interno em preview homologado nem liberar publicação real.
+- Próxima execução: auditar os gates residuais G7 contra a arquitetura/cronograma, isolar o menor próximo slice implementável (política determinística por canal/categoria e seus testes) sem inventar aprovações ou conectores; CI, revisão e checkpoint obrigatório. Merge/deploy somente com autorização e gates aplicáveis.
+- Sincronização com `docs/19_CRONOGRAMA_MESTRE_FINALIZACAO.md`: apêndice de CURRENT/Target e dependências sem alterar status de etapas previamente certificadas.
+
+
+## G7 — política determinística de canal e categoria, incremento interno (17/10/2026)
+- CURRENT de partida `3470ee68460ff5f16f84cf2a8b9462885fc95f46`, PR #73 OPEN e não integrada, três pipelines daquele HEAD SUCCESS.
+- Criada a política versionada `backend/api/creative_channel_policy.py` (`G7_CREATIVE_CHANNEL_V1`) com categoria explícita; `GENERAL` requer revisão humana e confirmação independente da mídia pelo provider; categorias desconhecidas e sensíveis (HEALTH, FINANCIAL, POLITICAL, GAMBLING, ADULT, MINORS, HOUSING_EMPLOYMENT_CREDIT) falham fechadas por razões codificadas e auditáveis. Canais conhecidos GOOGLE_ADS, META_FACEBOOK_INSTAGRAM e WHATSAPP, demais bloqueados. Preview privado expõe diagnóstico determinístico, sem assumir categoria geral ou certificação de provedor.
+- Testes de matriz policy por canal/categoria/review/provider adicionados. **Escopo limitado**: ainda não conectado ao comando de publicação; a rota pré-existente de publicação usa `ProviderSimulator`, e não é evidência de homologação real. Nunca promover `publication_allowed` de uma prévia em autorização do publisher. Integração governada publisher, classificação canônica de categoria, trilha persistida por política e gates externos continuam TARGET, não DONE_VERIFIED.
+- CI do novo HEAD deve ser verificada. Merge/deploy dependem de aprovação expressa.
+
+
+## G7 — publisher fail-closed conectado à política de criativos (17/10/2026)
+- Reconciliado CURRENT: PR #73 HEAD anterior `96e9efa`, Backend/Frontend/F4 SUCCESS, não merged. Próximo WP permanece G7 política determinística, não reconstruir edição/upload.
+- `publish_campaign`: após seleção explícita da imagem e `decision_applies` da revisão humana, invoca política `G7_CREATIVE_CHANNEL_V1` por canal **antes** de `PublicationSaga`. Falta fonte canônica de categoria validada e prova de aceitação do media provider no publisher atual (ProviderSimulator); categoria permanece não classificada e `provider_verified=False`. Portanto publicação com imagem é bloqueada `CREATIVE_CHANNEL_POLICY_BLOCKED` (409) mesmo se aprovada internamente, nunca elevada a publicação por mock. Fluxos sem imagem mantêm as regras existentes; nenhum canal real ganhou permissão.
+- Teste de contrato cobre posicionamento do guard antes da saga; testes puros de matriz cobrem categorias sensíveis/unknown/ausência de provider. **Ainda TARGET**: teste de integração HTTP com imagem aprovada e aprovação de campanha completa, persistência de categoria/veredicto versionado, provider media-proof real e respectivos gates externos.
+- Esta barreira conservadora altera comportamento de publicação simulada com imagem intencionalmente para fail-closed. Testar CI do HEAD novo. Sem merge/deploy.

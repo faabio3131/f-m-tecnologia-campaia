@@ -149,6 +149,28 @@ class PersistentAICostLedger:
         if result['fingerprint'] != fingerprint:
             raise ValueError('Conflicting observation for an immutable AI attempt.')
 
+    def reconciliation_queue(self, tenant):
+        """Read-only F3 evidence for external cost reconciliation, never a zero-cost release.
+
+        Reconcile only with provider-verified cost evidence in a separately approved
+        workflow. This method intentionally has no mutation or retry side effects.
+        """
+        rows = self._rows(tenant)
+        starts = {row['attempt_id']: row for row in rows if row['kind'] == 'START'}
+        outcomes = {row['attempt_id']: row for row in rows if row['kind'] == 'OUTCOME'}
+        unresolved = []
+        for attempt_id, start in starts.items():
+            outcome = outcomes.get(attempt_id)
+            if outcome is None or outcome['observation']['cost_units'] is None:
+                unresolved.append({
+                    'attempt_id': attempt_id,
+                    'run_id': start['run_id'],
+                    'reserved_budget_units': str(start['reserved']),
+                    'status': 'UNOBSERVED' if outcome is None else 'UNKNOWN_COST',
+                    'reconciliation_required': True,
+                })
+        return sorted(unresolved, key=lambda item: item['attempt_id'])
+
     def report(self, tenant):
         rows = self._rows(tenant)
         known, held = self._stats(tenant)

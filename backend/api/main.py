@@ -49,6 +49,7 @@ from .routes_billing import (
     reactivate_billing_subscription,
 )
 from .routes_creatives import list_creative_proposals, quote_creative_proposal, generate_creative_proposal
+from .routes_generated_creatives import list_generated_creatives, get_generated_creative, quote_generated_creative, preview_generated_creative, visual_preview_generated_creative, edit_generated_creative_pixels, upload_manual_creative, decide_generated_creative_review, revoke_generated_creative_review, delete_generated_creative, generate_campaign_image, reconcile_campaign_image, read_generated_creative_content
 from .routes_brand_assets import (
     list_brand_assets, upload_brand_asset, read_brand_asset,
     reconcile_brand_asset, delete_brand_asset,
@@ -192,6 +193,19 @@ routes = [
     Route("/campaigns/{campaignId}/proposals/copy/{proposalId}/revisions", generate_creative_proposal, methods=["POST"]),
     Route("/campaigns/{campaignId}/proposals/{proposalKind}", list_creative_proposals, methods=["GET"]),
     Route("/campaigns/{campaignId}/proposals/{proposalKind}", generate_creative_proposal, methods=["POST"]),
+    Route("/campaigns/{campaignId}/images", list_generated_creatives, methods=["GET"]),
+    Route("/campaigns/{campaignId}/images", generate_campaign_image, methods=["POST"]),
+    Route("/campaigns/{campaignId}/images/quote", quote_generated_creative, methods=["GET"]),
+    Route("/campaigns/{campaignId}/images/manual-upload", upload_manual_creative, methods=["POST"]),
+    Route("/campaigns/{campaignId}/images/{creativeId}", get_generated_creative, methods=["GET"]),
+    Route("/campaigns/{campaignId}/images/{creativeId}", delete_generated_creative, methods=["DELETE"]),
+    Route("/campaigns/{campaignId}/images/{creativeId}/review", decide_generated_creative_review, methods=["POST"]),
+    Route("/campaigns/{campaignId}/images/{creativeId}/review/revoke", revoke_generated_creative_review, methods=["POST"]),
+    Route("/campaigns/{campaignId}/images/{creativeId}/preview", preview_generated_creative, methods=["GET"]),
+    Route("/campaigns/{campaignId}/images/{creativeId}/visual-preview/{channel}", visual_preview_generated_creative, methods=["GET"]),
+    Route("/campaigns/{campaignId}/images/{creativeId}/pixel-edit", edit_generated_creative_pixels, methods=["POST"]),
+    Route("/campaigns/{campaignId}/images/{creativeId}/content", read_generated_creative_content, methods=["GET"]),
+    Route("/campaigns/{campaignId}/images/{creativeId}/reconcile", reconcile_campaign_image, methods=["POST"]),
     Route("/campaigns/{campaignId}/validate", validate_campaign, methods=["POST"]),
     Route("/campaigns/{campaignId}/publish", publish_campaign, methods=["POST"]),
     Route("/campaigns/{campaignId}/pause", pause_campaign, methods=["POST"]),

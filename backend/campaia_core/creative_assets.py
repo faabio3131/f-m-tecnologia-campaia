@@ -1,0 +1,234 @@
+"""Private generated-creative identity and immutable delivery manifest.
+
+WP-R04-04B foundation: no network, no credential resolution, no enabled storage,
+no commercial credit deduction. Durable claim/dispatch/settlement belongs to F3.
+Do not reuse brand asset paths: creative scope includes campaign and version.
+"""
+from __future__ import annotations
+
+import base64
+import hashlib
+import re
+from dataclasses import dataclass, field
+from enum import StrEnum
+from uuid import UUID
+
+from .asset_images import AssetImageError, verify_normalized_png
+from .asset_storage import MAX_ASSET_BYTES, AssetStorageError, AssetStorageErrorCode, AssetIdentity, AssetManifest
+
+
+class CreativeState(StrEnum):
+    RESERVED = "RESERVED"
+    GENERATING = "GENERATING"
+    STORAGE_PENDING = "STORAGE_PENDING"
+    STORED = "STORED"
+    FAILED = "FAILED"
+    DELETE_PENDING = "DELETE_PENDING"
+    DELETED = "DELETED"
+
+
+def _invalid() -> None:
+    raise AssetStorageError(AssetStorageErrorCode.INVALID)
+
+
+def _hash_scope(value: str) -> str:
+    if not isinstance(value, str) or not 1 <= len(value) <= 256 or not value.strip():
+        _invalid()
+    try:
+        raw = value.encode("utf-8", errors="strict")
+    except UnicodeError:
+        _invalid()
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _uuid(value: str) -> str:
+    try:
+        if not isinstance(value, str) or str(UUID(value)) != value:
+            _invalid()
+    except (ValueError, AttributeError, TypeError):
+        _invalid()
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class CreativeIdentity:
+    """All scopes are server-authoritative, never inferred from request object keys."""
+    tenant_id: str = field(repr=False)
+    business_unit_id: str = field(repr=False)
+    campaign_id: str = field(repr=False)
+    campaign_version: int
+    creative_id: str
+
+    def __post_init__(self) -> None:
+        for value in (self.tenant_id, self.business_unit_id, self.campaign_id):
+            _hash_scope(value)
+        if type(self.campaign_version) is not int or not 1 <= self.campaign_version <= 2**31 - 1:
+            _invalid()
+        _uuid(self.creative_id)
+
+    @property
+    def object_name(self) -> str:
+        return (f"creative/v1/{_hash_scope(self.tenant_id)}/"
+                f"{_hash_scope(self.business_unit_id)}/{_hash_scope(self.campaign_id)}/"
+                f"{self.campaign_version}/{self.creative_id}.png")
+
+
+@dataclass(frozen=True, slots=True)
+class CreativeManifest:
+    identity: CreativeIdentity
+    sha256: str
+    size: int
+    width: int
+    height: int
+    provider: str
+    model: str
+    generation_request_id: str = field(repr=False)
+    md5_base64: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.identity, CreativeIdentity):
+            _invalid()
+        if not isinstance(self.sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", self.sha256):
+            _invalid()
+        if type(self.size) is not int or not 8 < self.size <= MAX_ASSET_BYTES:
+            _invalid()
+        if any(type(n) is not int or not 1 <= n <= 8192 for n in (self.width, self.height)):
+            _invalid()
+        if self.width * self.height > 4194304:
+            _invalid()
+        for name in (self.provider, self.model):
+            if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", name):
+                _invalid()
+        _hash_scope(self.generation_request_id)
+        if self.md5_base64 is not None:
+            try:
+                raw = base64.b64decode(self.md5_base64, validate=True)
+                if len(raw) != 16 or base64.b64encode(raw).decode("ascii") != self.md5_base64:
+                    _invalid()
+            except (ValueError, TypeError):
+                _invalid()
+
+    @classmethod
+    def from_normalized_png(cls, identity: CreativeIdentity, png: bytes, *,
+                            provider: str, model: str, generation_request_id: str) -> CreativeManifest:
+        checked = verify_normalized_png(png)
+        return cls(identity=identity, sha256=hashlib.sha256(png).hexdigest(),
+                   size=len(png), width=checked.width, height=checked.height,
+                   provider=provider, model=model, generation_request_id=generation_request_id,
+                   md5_base64=base64.b64encode(hashlib.md5(png, usedforsecurity=False).digest()).decode("ascii"))
+
+    def verify(self, png: bytes) -> None:
+        try:
+            checked = verify_normalized_png(png)
+        except AssetImageError:
+            raise AssetStorageError(AssetStorageErrorCode.INTEGRITY) from None
+        if (len(png) != self.size or hashlib.sha256(png).hexdigest() != self.sha256
+                or (checked.width, checked.height) != (self.width, self.height)):
+            raise AssetStorageError(AssetStorageErrorCode.INTEGRITY)
+
+    def storage_metadata(self) -> dict[str, str]:
+        return {
+            "campaia_schema": "generated_creative_v1",
+            "tenant_sha256": _hash_scope(self.identity.tenant_id),
+            "unit_sha256": _hash_scope(self.identity.business_unit_id),
+            "campaign_sha256": _hash_scope(self.identity.campaign_id),
+            "campaign_version": str(self.identity.campaign_version),
+            "creative_id": self.identity.creative_id,
+            "sha256": self.sha256,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class CreativeStoredProof:
+    """Only provider-confirmed immutable object generations count as stored."""
+    manifest: CreativeManifest
+    storage_generation: str
+    def __post_init__(self) -> None:
+        if not isinstance(self.manifest, CreativeManifest):
+            _invalid()
+        if not isinstance(self.storage_generation, str) or not re.fullmatch(
+                r"[1-9][0-9]{0,24}", self.storage_generation):
+            _invalid()
+
+
+@dataclass(frozen=True, slots=True)
+class CreativeStorageIdentity(AssetIdentity):
+    """Narrow adapter for the *existing* private GCS transport, not a new GCS client."""
+    unit_id: str = field(repr=False)
+    campaign_id: str = field(repr=False)
+    campaign_version: int = 1
+
+    @classmethod
+    def from_creative(cls, creative: CreativeIdentity) -> CreativeStorageIdentity:
+        return cls(tenant_id=creative.tenant_id, brand_profile_id=creative.campaign_id,
+                   asset_id=creative.creative_id, unit_id=creative.business_unit_id,
+                   campaign_id=creative.campaign_id, campaign_version=creative.campaign_version)
+
+    @property
+    def object_name(self) -> str:
+        return (f"creative/v1/{_hash_scope(self.tenant_id)}/"
+                f"{_hash_scope(self.unit_id)}/{_hash_scope(self.campaign_id)}/"
+                f"{self.campaign_version}/{self.asset_id}.png")
+
+    def tags(self, sha256: str) -> dict[str, str]:
+        return {
+            "campaia_schema": "generated_creative_v1",
+            "tenant_sha256": _hash_scope(self.tenant_id),
+            "unit_sha256": _hash_scope(self.unit_id),
+            "campaign_sha256": _hash_scope(self.campaign_id),
+            "campaign_version": str(self.campaign_version),
+            "creative_id": self.asset_id,
+            "sha256": sha256,
+        }
+
+
+def storage_manifest(manifest: CreativeManifest, png: bytes) -> AssetManifest:
+    """Build a GCS-compatible digest manifest only from verified normalized PNG."""
+    manifest.verify(png)
+    return recovery_storage_manifest(manifest)
+
+
+def recovery_storage_manifest(manifest: CreativeManifest) -> AssetManifest:
+    """Observe only when the persisted manifest contains a verified MD5 checksum."""
+    if manifest.md5_base64 is None:
+        raise AssetStorageError(AssetStorageErrorCode.INVALID)
+    return AssetManifest(CreativeStorageIdentity.from_creative(manifest.identity),
+                         manifest.size, manifest.sha256, manifest.md5_base64)
+
+
+
+# This state machine is a pure validation contract. A durable F3 transaction MUST
+# persist the expected revision and enforce compare-and-swap under row lock.
+# It must never be used as an in-memory replacement for atomic persistence.
+_ALLOWED_NEXT: dict[CreativeState, frozenset[CreativeState]] = {
+    CreativeState.RESERVED: frozenset({CreativeState.GENERATING, CreativeState.FAILED}),
+    CreativeState.GENERATING: frozenset({CreativeState.STORAGE_PENDING, CreativeState.FAILED}),
+    CreativeState.STORAGE_PENDING: frozenset({CreativeState.STORED}),
+    CreativeState.STORED: frozenset({CreativeState.DELETE_PENDING}),
+    CreativeState.DELETE_PENDING: frozenset({CreativeState.DELETED}),
+    CreativeState.FAILED: frozenset(),
+    CreativeState.DELETED: frozenset(),
+}
+
+
+@dataclass(frozen=True, slots=True)
+class CreativeStateTransition:
+    """Command validated before the repository applies CAS in one DB transaction."""
+    expected: CreativeState
+    target: CreativeState
+    expected_revision: int
+
+    def __post_init__(self) -> None:
+        if (not isinstance(self.expected, CreativeState)
+                or not isinstance(self.target, CreativeState)
+                or type(self.expected_revision) is not int
+                or not 0 <= self.expected_revision < 2**63 - 1
+                or self.target not in _ALLOWED_NEXT[self.expected]):
+            raise AssetStorageError(AssetStorageErrorCode.CONFLICT)
+
+    @property
+    def next_revision(self) -> int:
+        return self.expected_revision + 1
+
+
+__all__ = ["CreativeIdentity", "CreativeManifest", "CreativeStoredProof", "CreativeState", "CreativeStateTransition", "CreativeStorageIdentity", "storage_manifest", "recovery_storage_manifest"]

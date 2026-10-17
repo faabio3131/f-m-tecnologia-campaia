@@ -149,3 +149,28 @@ def normalize_asset_image(data: bytes) -> NormalizedAssetImage:
     except Exception:
         raise AssetImageError("IMAGE_PROCESSING_UNAVAILABLE") from None
     return verify_normalized_png(raw)
+
+
+def edit_normalized_png(data: bytes, operation: str) -> NormalizedAssetImage:
+    """Deterministic pixel transformation in the existing isolated decoder worker.
+
+    Caller owns tenant authorization, revision persistence and billing. No edits
+    to objects in place; output must be claimed as a distinct creative.
+    """
+    if operation not in ("rotate_90", "rotate_180", "flip_horizontal"):
+        raise AssetImageError()
+    verify_normalized_png(data)
+    if sys.platform != "linux":
+        raise AssetImageError("IMAGE_PROCESSING_UNAVAILABLE")
+    try:
+        process = subprocess.Popen(
+            [sys.executable, "-I", "-B", str(_WORKER), operation],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            close_fds=True, start_new_session=True, env={"LC_ALL": "C.UTF-8"},
+        )
+        output = _bounded_exchange(process, data)
+    except AssetImageError:
+        raise
+    except Exception:
+        raise AssetImageError("IMAGE_PROCESSING_UNAVAILABLE") from None
+    return verify_normalized_png(output)

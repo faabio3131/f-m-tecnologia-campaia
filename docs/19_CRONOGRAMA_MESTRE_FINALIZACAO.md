@@ -198,3 +198,30 @@ Este cronograma cobre o que já se sabe hoje que falta. Coisas que ainda não fo
 (um novo achado de segurança, uma mudança de política de uma plataforma, uma decisão sua que
 muda escopo) vão aparecer no caminho — a disciplina deste projeto é registrar isso quando
 acontecer, não fingir que o plano original ainda vale sem reconciliar.
+
+
+---
+
+## Checkpoint de execução G7 — 16/10/2026 (CURRENT vs TARGET)
+
+**Referência técnica:** PR #73 `feat/wp-r04-04b-creative-private-foundation`, HEAD-base da auditoria `c94e9e9c4187a0e5dd492822b101054a0f4c1c1a`; após mudanças documentais, revalidar HEAD e CI antes de qualquer promoção. Este registro operacional **não substitui** o cronograma por fases nem reclassifica as etapas já encerradas.
+
+| Bloco | CURRENT comprovado na branch PR #73 | TARGET / gate aberto |
+| --- | --- | --- |
+| Upload manual de imagens | API privada `manual-upload`, validação de formato e tamanho, autorização/step-up, escopo por tenant/unidade/campanha/versão, CAS e replay idempotente; interface Web de upload PNG/JPEG/WebP até 5 MiB | Homologar storage GCS real e falhas de rede/retentativas sob condições operacionais |
+| Edição de pixels | Rota governada pixel-edit e painel Web com transformações allowlisted, versões imutáveis e vínculo com origem; leitura CAS somente em imagem STORED | Validar UX real completa, consistência e recuperação sob falhas, com credenciais e dados de staging autorizados |
+| Preview de canais | Rascunhos internos locais de Google/Meta/WhatsApp, sem publicação | Previews e regras oficiais dos providers; não anunciar homologação inexistente |
+| Compliance e política | Bloqueio de publicação sem revisão humana; barreiras de tenant/RBAC | Política determinística por canal e categoria sensível, motivos/versionamento/auditoria, aprovação humana e testes de não bypass |
+| IA e custos | Controles de custo F3 e contratos internos | Custo real Gemini, ledger/reconciliação e integração GCS/provider certificada |
+| LGPD e comercial | Recursos internos em CI; PR não integrada ao default branch na auditoria | Decisão humana sobre retenção, homologação externa, implantação governada e gate comercial |
+
+**Gates do último HEAD de implementação `c94e9e9`:** Backend Actions `38990447351` SUCCESS; Frontend `38990447359` SUCCESS; F4 Platform `38990447348` SUCCESS. **Não significam G7 DONE, merge ou deploy.**
+
+**Sequência aprovada de engenharia:** validar CURRENT novamente → fechar menor slice interno de política/categoria sensível preservando contratos existentes → testes backend/frontend/segurança e CI → registrar evidências no AGENTS.md e neste cronograma → obter decisões humanas e homologar dependências externas antes da promoção. Sem duplicar APIs ou persistência canônica.
+
+
+### Reconciliação G7 — barreira determinística de publicação de imagens (17/10/2026)
+- **CURRENT:** branch da PR #73 recebeu integração fail-closed no `publish_campaign`: imagem selecionada e aprovada por humano só é elegível após política versionada por canal/categoria e prova de mídia externa. `ProviderSimulator` não oferece classificação canônica nem comprovação de aceitação do provider; a publicação com imagem é bloqueada antes da `PublicationSaga`. O projeto mantém publicação sem imagem sob contratos anteriores, sem atestar homologação.
+- **TARGET (trabalho interno):** persistir categoria de criativo e classificação confiável, bloquear categorias sensíveis com revisão humana e requisitos específicos por jurisdição/canal, comprovar travas via testes HTTP de imagem aprovada/cross-tenant/replay e auditar versão/veredicto na transação, sem abrir caminho privilegiado por tenant.
+- **Gates externos:** GCS real, Gemini real, verificação da mídia e previews oficiais Meta/Google/WhatsApp. Categoria sensível não obtém aprovação implícita de simulador; LGPD/retenção = `HUMAN_DECISION`.
+- **Evidência:** commits da PR #73, `backend/api/creative_channel_policy.py`, `backend/api/routes_campaigns.py`, `backend/tests_api/test_creative_channel_policy.py`, `backend/tests_api/test_generated_creatives_read_contract.py`; CI do HEAD correspondente obrigatória para `DONE_VERIFIED`. Não houve merge/deploy.

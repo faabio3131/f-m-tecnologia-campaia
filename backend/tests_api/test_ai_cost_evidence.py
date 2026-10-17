@@ -121,6 +121,18 @@ class AICostEvidenceTests(BillingCreditHarness, unittest.TestCase):
         self.assertEqual(report['cost_completeness'], 'INCOMPLETE')
         self.assertFalse(report['current_prices_verified'])
 
+    def test_uncertain_cost_reconciliation_queue_is_read_only_and_tenant_scoped(self):
+        ledger = self.state.ai_gateway.ledger
+        ledger.set_cap('demo-tenant', Decimal('2'))
+        self.assertTrue(ledger.begin_attempt(request(), 'manual-recovery-run', 0, 'fixture-provider'))
+        queue = ledger.reconciliation_queue('demo-tenant')
+        self.assertEqual(len(queue), 1)
+        self.assertEqual(queue[0]['status'], 'UNOBSERVED')
+        self.assertEqual(queue[0]['reserved_budget_units'], '2')
+        self.assertEqual(ledger.remaining('demo-tenant'), Decimal('0'))
+        self.assertEqual(ledger.reconciliation_queue('other-tenant'), [])
+        self.assertEqual(queue, self.peer().app.state.campaia.ai_gateway.ledger.reconciliation_queue('demo-tenant'))
+
     def test_crash_with_only_a_start_record_never_expires_the_budget_hold(self):
         ledger = self.state.ai_gateway.ledger
         ledger.set_cap('demo-tenant', Decimal('2'))

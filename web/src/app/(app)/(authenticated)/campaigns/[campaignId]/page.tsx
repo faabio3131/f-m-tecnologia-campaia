@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { CreativeProposalsPanel } from "@/components/CreativeProposalsPanel";
+import { GeneratedImagesPanel } from "@/components/GeneratedImagesPanel";
 import { CampaignBrandSnapshot } from "@/components/CampaignBrandSnapshot";
 import { useAuth } from "@/providers/AuthProvider";
 import { StrategyGenerateButton } from "@/components/StrategyGenerateButton";
@@ -189,6 +190,8 @@ function CampaignDetailContent({ campaignId }: { campaignId: string }) {
         <StrategyGenerateButton key={campaignId} campaignId={campaignId} hasPlan={Boolean(plan?.plan)}
           busy={busy} onBusy={setBusy} onError={setActionError} onGenerated={contentDelivered} />
       </Card>
+
+      <GeneratedImagesPanel campaignId={campaignId} planVersion={plan?.plan_version ?? 0} />
 
       <Button variant="secondary" disabled={busy} onClick={() => setShowProposals(true)}>Abrir textos e públicos</Button>
       {showProposals ? <CreativeProposalsPanel campaignId={campaignId} planVersion={plan?.plan_version ?? 0}

@@ -431,6 +431,52 @@ async def publish_campaign(request: Request) -> JSONResponse:
         record = _get_campaign_or_404(
             state, fixture.tenant_id, campaign_id, principal=principal
         )
+        selected_image = None
+        # Image choice must be explicit and pinned to immutable delivery evidence.
+        # The publisher remains a simulator; this is NOT proof of a channel media upload.
+        if state.db is not None:
+            from .creative_image_review import CreativeImageReviewStore, decision_applies
+            from campaia_core.creative_assets import CreativeIdentity
+            images = []
+            for _id, _tenant, image in state.db.table("creative_assets").rows_for_tenant(fixture.tenant_id):
+                scope = image["identity"]
+                if (scope["campaign_id"] == record.campaign_id
+                        and scope["business_unit_id"] == record.business_unit_id
+                        and scope["campaign_version"] == record.plan_version
+                        and image["state"] not in ("DELETED", "FAILED")):
+                    images.append(image)
+            if images and not body.selected_creative_id:
+                raise ApiError("IMAGE_SELECTION_REQUIRED",
+                    "Selecione explicitamente a imagem revisada para publicar.", status_code=409)
+            if body.selected_creative_id:
+                matching = [image for image in images
+                            if image["identity"]["creative_id"] == body.selected_creative_id]
+                if len(matching) != 1:
+                    raise ApiError("IMAGE_SELECTION_INVALID",
+                        "Imagem não pertence à versão e unidade da campanha.", status_code=409)
+                selected_image = matching[0]
+            for image in images:
+                if image["state"] != "STORED":
+                    raise ApiError("IMAGE_REVIEW_REQUIRED",
+                        "Existe imagem gerada pendente nesta campanha.", status_code=409)
+            if selected_image is not None:
+                scope = selected_image["identity"]
+                review = CreativeImageReviewStore(state).get(CreativeIdentity(**scope))
+                if not decision_applies(selected_image, review):
+                    raise ApiError("IMAGE_REVIEW_REQUIRED",
+                        "A imagem selecionada exige aprovação humana válida.",
+                        status_code=409)
+                # G7: internal human approval is NOT provider-media authorization.
+                # This publisher uses ProviderSimulator, without verified category
+                # or media acceptance evidence. Fail closed before Saga / side effects.
+                from .creative_channel_policy import evaluate_creative_channel
+                for channel in record.planned_channels:
+                    channel_decision = evaluate_creative_channel(
+                        channel, None, reviewed=True, provider_verified=False)
+                    if not channel_decision.publication_allowed:
+                        raise ApiError("CREATIVE_CHANNEL_POLICY_BLOCKED",
+                            "Criativo sem classificação e homologação de mídia do canal; "
+                            + ",".join(channel_decision.reasons), status_code=409)
         require_brand_assets(state, record)
         enforce_campaign_capacity(state, fixture.tenant_id, record)
         decision = record.last_policy_decision
@@ -540,6 +586,12 @@ async def publish_campaign(request: Request) -> JSONResponse:
                 "saga_id": outcome.saga_id,
                 "confirmed": outcome.confirmed_channels,
                 "failed": outcome.failed_channels,
+                "selected_creative": ({
+                    "creative_id": selected_image["identity"]["creative_id"],
+                    "sha256": selected_image["manifest"]["sha256"],
+                    "storage_generation": selected_image["storage_generation"],
+                    "campaign_version": record.plan_version,
+                } if selected_image is not None else None),
             },
         )
         return serialize_campaign(record).model_dump(mode="json")

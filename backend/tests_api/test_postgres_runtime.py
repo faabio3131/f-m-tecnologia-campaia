@@ -191,6 +191,74 @@ class PostgresRuntimeTests(unittest.TestCase):
                 ).fetchall()
             }
 
+    def test_creative_claim_replay_multiworker_and_crash_recovery(self) -> None:
+        from uuid import uuid4
+        from api.creative_repository import CreativeRepository
+        from campaia_core.creative_assets import (
+            CreativeIdentity, CreativeManifest, CreativeState, CreativeStateTransition,
+        )
+        from campaia_core.asset_storage import AssetStorageError
+
+        def make(tenant="creative-tenant", creative_id=None):
+            ident = CreativeIdentity(tenant, "unit", "campaign", 1, creative_id or str(uuid4()))
+            return CreativeManifest(ident, "a" * 64, 64, 1, 1, "GEMINI_IMAGE",
+                                    "gemini-nano-banana-2.1", "request")
+        a = CreativeRepository(PostgresDatabase(DSN))
+        b = CreativeRepository(PostgresDatabase(DSN))
+        one, two = make(), make()
+        start = threading.Barrier(2)
+        def claim(repo, item):
+            start.wait(timeout=10)
+            try:
+                repo.claim(item, item.identity.creative_id, 64)
+                return "ok"
+            except AssetStorageError:
+                return "quota-rejected"
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            f1 = pool.submit(claim, a, one)
+            f2 = pool.submit(claim, b, two)
+            outcomes = sorted([f1.result(timeout=10), f2.result(timeout=10)])
+        self.assertEqual(outcomes, ["ok", "quota-rejected"])
+        winner = one if a.table.get_for_tenant(one.identity.creative_id, one.identity.tenant_id) else two
+        self.assertEqual(a.usage("creative-tenant"), 64)
+        same, replay = b.claim(winner, winner.identity.creative_id, 64)
+        self.assertTrue(replay)
+        self.assertEqual(same["revision"], 0)
+        other = make("other-tenant", winner.identity.creative_id)
+        with self.assertRaises(AssetStorageError):
+            b.claim(other, "distinct", 64)
+        with self.assertRaises(AssetStorageError):
+            b.get(other.identity)
+
+        a.transition(winner.identity, CreativeStateTransition(
+            CreativeState.RESERVED, CreativeState.GENERATING, 0))
+        a.transition(winner.identity, CreativeStateTransition(
+            CreativeState.GENERATING, CreativeState.STORAGE_PENDING, 1))
+        with self.assertRaises(AssetStorageError):
+            b.transition(winner.identity, CreativeStateTransition(
+                CreativeState.GENERATING, CreativeState.STORAGE_PENDING, 1))
+        self.assertEqual(b.get(winner.identity)["state"], "STORAGE_PENDING")
+        with self.assertRaises(AssetStorageError):
+            b.transition(winner.identity, CreativeStateTransition(
+                CreativeState.STORAGE_PENDING, CreativeState.STORED, 2))
+        self.assertEqual(a.get(winner.identity)["revision"], 2)
+        finished = b.transition(winner.identity, CreativeStateTransition(
+            CreativeState.STORAGE_PENDING, CreativeState.STORED, 2), storage_generation="42")
+        self.assertEqual(finished["storage_generation"], "42")
+        self.assertEqual(a.get(winner.identity)["revision"], 3)
+
+        # PostgreSQL trigger prevents a forged direct replay/state jump even when
+        # an internal caller bypasses the domain repository.
+        with self.assertRaises(psycopg.Error):
+            with psycopg.connect(DSN) as conn:
+                conn.execute(
+                    "UPDATE campaia_runtime.creative_assets "
+                    "SET data = jsonb_set(data, '{state}', '\"RESERVED\"'::jsonb) "
+                    "WHERE id = %s AND tenant_id = %s",
+                    (winner.identity.creative_id, winner.identity.tenant_id),
+                )
+        self.assertEqual(a.get(winner.identity)["state"], "STORED")
+
     def test_commercial_payment_webhook_is_atomic_across_workers(self) -> None:
         import json
         from pathlib import Path
@@ -1104,6 +1172,30 @@ class PostgresRuntimeTests(unittest.TestCase):
                   if entry.action in ("APPROVAL_APPROVE", "APPROVAL_REJECT")]
         self.assertEqual(len(events), 1)
 
+    def test_generated_creative_claim_concurrent_postgres_workers_is_exactly_once(self):
+        from uuid import uuid4
+        from api.creative_repository import CreativeRepository
+        from campaia_core.creative_assets import CreativeIdentity, CreativeManifest
+        from campaia_core.asset_images import normalize_asset_image
+        from tests.test_asset_images import encoded
+        png = normalize_asset_image(encoded()).data
+        identity = CreativeIdentity("pg-creative-" + str(uuid4()), "unit", "campaign", 1, str(uuid4()))
+        manifest = CreativeManifest.from_normalized_png(identity, png, provider="GEMINI_IMAGE",
+            model="gemini-nano-banana-2.1", generation_request_id="pg-claim")
+        gate = threading.Barrier(2)
+        def claim():
+            db = PostgresDatabase(DSN)
+            repo = CreativeRepository(db)
+            gate.wait(timeout=15)
+            _row, replay = repo.claim(manifest, "same-claim", len(png) * 2)
+            return replay
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: claim(), range(2)))
+        self.assertEqual(sorted(results), [False, True])
+        reader = CreativeRepository(PostgresDatabase(DSN))
+        self.assertEqual(reader.usage(identity.tenant_id), len(png))
+        self.assertIsNone(reader.table.get_for_tenant(identity.creative_id, "foreign-tenant"))
+
     def test_00_migration_up_down_up_is_reversible_and_covers_current_stores(self) -> None:
         self.assertEqual(
             set(self.runner.applied_versions()),
@@ -1117,6 +1209,7 @@ class PostgresRuntimeTests(unittest.TestCase):
                 "007_ai_cost_evidence",
                 "008_brand_assets",
                 "009_creative_proposals",
+                "010_creative_assets",
             },
         )
         self.assertTrue(RUNTIME_TABLES.issubset(self._runtime_tables()))
@@ -1124,6 +1217,7 @@ class PostgresRuntimeTests(unittest.TestCase):
         self.assertEqual(
             self.runner.rollback_all(),
             [
+                "010_creative_assets",
                 "009_creative_proposals",
                 "008_brand_assets",
                 "007_ai_cost_evidence",

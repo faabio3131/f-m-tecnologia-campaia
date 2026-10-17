@@ -608,7 +608,9 @@ class AppState:
         if self.db is not None:
             from .ai_cost_store import PersistentAICostLedger
             previous_caps = dict(getattr(self.ai_gateway.ledger, 'caps', {}))
-            mode = 'SIMULATED' if isinstance(self.ai_provider, SimulatedAIProvider) else 'PROVIDER'
+            mode = ('SIMULATED' if isinstance(self.ai_provider, SimulatedAIProvider)
+                    and os.environ.get('GEMINI_IMAGE_ENABLED', 'false').strip().lower() != 'true'
+                    else 'PROVIDER')
             cost_ledger = PersistentAICostLedger(self, namespace=self.env + ':' + mode)
             self.ai_gateway.ledger = cost_ledger
             self.ai_gateway.cost_journal = cost_ledger
@@ -616,6 +618,15 @@ class AppState:
                 if cost_ledger.cap(tenant) is None:
                     cost_ledger.set_cap(tenant, cap)
         self.ai_gateway.providers.append(self.ai_provider)
+        # Image transport is opt-in and shares the exact same F3 cost journal.
+        # Disabled by default: no token, network client or credential is resolved.
+        from campaia_core.gemini_image_provider import (
+            GeminiImageConfig, GeminiImageProvider, IMAGE_SCHEMA,
+        )
+        self.image_provider = GeminiImageProvider(GeminiImageConfig.from_env())
+        self.ai_gateway.schemas[IMAGE_SCHEMA.schema_id] = IMAGE_SCHEMA
+        if self.image_provider.config.enabled:
+            self.ai_gateway.providers.append(self.image_provider)
         self.agent_runner = AgentRunner(gateway=self.ai_gateway)
         self.agent_runner.register_schemas()
 
