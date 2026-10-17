@@ -1104,3 +1104,12 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 - Ainda PARTIAL para G7: a prévia visual local não é preview oficial Google/Meta/WhatsApp; validar regras de canal e categoria sensível, upload real com GCS/credenciais, custo real Gemini e policy LGPD HUMAN_DECISION. Nada mergeado/deployado.
 
 - UI de upload manual adicionada em GeneratedImagesPanel: input PNG/JPEG/WebP, limite 5 MiB, envio privado para rota governada e aviso de resultado incerto. Continua exigido teste automático do HEAD e validação da jornada de autenticação/step-up.
+
+
+## G7 — reconciliação CURRENT e próximo gate (16/10/2026)
+- Fonte técnica CURRENT da PR #73: `c94e9e9c4187a0e5dd492822b101054a0f4c1c1a` (validar novamente antes de merge). Três workflows desse HEAD SUCCESS: Backend `38990447351`, Frontend `38990447359`, F4 Platform `38990447348`.
+- Incrementos da branch: upload manual privado com CAS/estado STORED somente após confirmação, replay idempotente sem segundo upload, IAM CAMPAIGN_EDIT + step-up, escopo tenant/unidade/campanha/versão e validação de mídia; painel Web de upload manual com PNG/JPEG/WebP e limite 5 MiB. Integração do editor pixel-edit e versões imutáveis já existe na branch. Sucesso em CI certifica código/contratos internos, não serviços externos.
+- PR #73 OPEN, READY FOR REVIEW, MERGEABLE; NÃO MERGED nem DEPLOYED segundo a última verificação. Evidências anteriores que descrevem Draft ou UI ausente são históricas e não devem sobrepor CURRENT.
+- G7 continua PARTIAL: validar upload real GCS e custo real Gemini/ledger; políticas oficiais por canal e categorias sensíveis; previews reais Google/Meta/WhatsApp; homologação externa; decisão humana sobre retenção LGPD. Não transformar rascunho visual interno em preview homologado nem liberar publicação real.
+- Próxima execução: auditar os gates residuais G7 contra a arquitetura/cronograma, isolar o menor próximo slice implementável (política determinística por canal/categoria e seus testes) sem inventar aprovações ou conectores; CI, revisão e checkpoint obrigatório. Merge/deploy somente com autorização e gates aplicáveis.
+- Sincronização com `docs/19_CRONOGRAMA_MESTRE_FINALIZACAO.md`: apêndice de CURRENT/Target e dependências sem alterar status de etapas previamente certificadas.
