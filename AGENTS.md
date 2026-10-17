@@ -1080,3 +1080,11 @@ Se qualquer requisito crítico estiver aberto, CampaIA não recebe status `COMER
 
 ## Reteste CI G7 pixel-edit — 16/10/2026
 - HEAD anterior `d94cf26` teve Backend API FAILURE em `test_pixel_edit_creates_new_immutable_asset_and_replays_without_duplicate_upload`: fixture TestOnlyAssetStorage registra POST, GET e MEDIA; replay legitimamente relê a origem (`MEDIA`) e portanto contagem total cresce sem segundo upload. Ajustado o contrato de teste para comparar exclusivamente número de `POST` e exigir nenhuma `DELETE`; o objeto editado e ID idempotente permanecem os mesmos. PostgreSQL integration, Frontend, F4 haviam passado no HEAD anterior. Novo HEAD depende de CI para DONE_VERIFIED.
+
+
+## G7 — interface de edição e revisão de pendências (16/10/2026)
+- CURRENT inicial `1e173ec`: Backend, Frontend e F4 CI SUCCESS, PR #73 única aberta Draft, não integrada.
+- Interface `GeneratedImagesPanel`: controles de rotate_90, rotate_180 e flip_horizontal sobre imagem STORED da versão vigente, submissão à rota protegida de pixel-edit com hash/generation, refresh do histórico e aviso de step-up; novas versões imutáveis vinculadas à origem. Links de rascunho visual para Google/Meta/WhatsApp usam proxy autenticado same-origin. Inventário privado disponibiliza hash e geração de objeto somente sob permissão de campanha, não tokens/URLs GCS públicas.
+- Teste frontend verifica ações renderizadas e URLs same-origin, sem inferir integração externa.
+- TARGET/PRODUCTION_GATE externos: políticas e previews oficiais por canal, entrega real de imagem aos conectores, custos reais Gemini, GCS/provider + migração produção, tratamento de erro de rede com recuperação idempotente integrada ao UI. HUMAN_DECISION: retenção LGPD. Gate G7 e PR #73 continuam PARTIAL até fechamento dos requisitos e CI do HEAD.
+- Nada mergeado/deployado.
