@@ -185,6 +185,81 @@ async def preview_generated_creative(request):
                         headers={"Cache-Control": "private, no-store"})
 
 
+async def upload_manual_creative(request):
+    """Bounded manual-image alternative. No AI invocation or commercial image debit."""
+    import base64
+    import binascii
+    from hashlib import sha256
+    from uuid import uuid5, NAMESPACE_URL
+    from pydantic import BaseModel, ConfigDict, Field
+    from starlette.concurrency import run_in_threadpool
+    from campaia_core.asset_images import normalize_asset_image, AssetImageError
+    from campaia_core.asset_storage import AssetStorageError, MAX_ASSET_BYTES
+    from campaia_core.creative_assets import (
+        CreativeIdentity, CreativeManifest, CreativeState, CreativeStateTransition,
+    )
+    from campaia_core.gcs_asset_storage import configured_asset_storage
+    from .creative_private_storage import CreativePrivateStorage
+    from .deps import require_idempotency_key, require_step_up
+    from .bounded_body import parse_bounded_body
+
+    class ManualImageInput(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        expected_plan_version: int = Field(ge=1, strict=True)
+        image_base64: str = Field(min_length=20, max_length=7_100_000)
+
+    fixture, state, campaign, repository = _scope(request, Permission.CAMPAIGN_EDIT)
+    require_step_up(request, fixture)
+    idem_key = require_idempotency_key(request)
+    body = await parse_bounded_body(request, ManualImageInput, max_bytes=7_200_000)
+    if campaign.plan is None or body.expected_plan_version != campaign.plan_version:
+        raise ApiError("AI_INPUT_CHANGED", "Versão de campanha alterada.", status_code=409)
+    if campaign.external_resources:
+        raise ApiError("IMAGE_UPLOAD_LOCKED", "Campanha publicada exige compensação.", status_code=409)
+    if len(body.image_base64) > ((MAX_ASSET_BYTES + 2) // 3) * 4 + 4:
+        raise ApiError("IMAGE_UPLOAD_INVALID", "Imagem excede o limite permitido.", status_code=422)
+    try:
+        raw = base64.b64decode(body.image_base64, validate=True)
+    except (ValueError, binascii.Error):
+        raise ApiError("IMAGE_UPLOAD_INVALID", "Imagem codificada inválida.", status_code=422) from None
+    if not 0 < len(raw) <= MAX_ASSET_BYTES:
+        raise ApiError("IMAGE_UPLOAD_INVALID", "Imagem fora do limite.", status_code=422)
+    storage = configured_asset_storage()
+    if not _storage_usable(state, storage):
+        raise ApiError("ASSET_STORAGE_DISABLED", "Armazenamento privado indisponível.", status_code=503)
+    identity = CreativeIdentity(fixture.tenant_id, campaign.business_unit_id,
+        campaign.campaign_id, campaign.plan_version,
+        str(uuid5(NAMESPACE_URL, fixture.tenant_id + ":manual-image:" + campaign.campaign_id + ":" + idem_key)))
+    input_hash = sha256(raw).hexdigest()
+
+    def perform():
+        try:
+            normalized = normalize_asset_image(raw)
+        except AssetImageError:
+            raise ApiError("IMAGE_UPLOAD_INVALID", "Imagem inválida ou processamento indisponível.", status_code=422) from None
+        manifest = CreativeManifest.from_normalized_png(
+            identity, normalized.data, provider="MANUAL_UPLOAD",
+            model="normalized", generation_request_id=identity.creative_id)
+        try:
+            row, replay = repository.claim(manifest, "manual:" + idem_key + ":" + input_hash,
+                storage.max_active_bytes, requested_by=fixture.user_id)
+            if not replay:
+                repository.transition(identity, CreativeStateTransition(
+                    CreativeState.RESERVED, CreativeState.GENERATING, row["revision"]))
+            stored = CreativePrivateStorage(repository, storage).upload(manifest, normalized.data)
+        except AssetStorageError:
+            raise ApiError("IMAGE_UPLOAD_CONFLICT", "Conflito de idempotência ou quota.", status_code=409) from None
+        if stored["state"] != "STORED":
+            raise ApiError("IMAGE_UPLOAD_PENDING", "Armazenamento incerto; reconciliar sem reenviar.", status_code=503)
+        if not replay:
+            state.audit.append(tenant_id=fixture.tenant_id, actor=fixture.user_id,
+                action="CREATIVE_MANUAL_UPLOAD", target=identity.creative_id,
+                details={"input_sha256": input_hash, "normalized_sha256": manifest.sha256})
+        return _public(stored)
+    result = await run_in_threadpool(perform)
+    return JSONResponse(result, status_code=201, headers={"Cache-Control": "private, no-store"})
+
+
 async def edit_generated_creative_pixels(request):
     """Create a new private immutable rendition from normalized stored PNG pixels."""
     from uuid import UUID, uuid5, NAMESPACE_URL
