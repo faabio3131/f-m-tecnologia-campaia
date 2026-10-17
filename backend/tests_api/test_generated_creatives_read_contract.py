@@ -25,6 +25,19 @@ class GeneratedCreativeReadContractTests(unittest.TestCase):
                           "storage.googleapis.com", "storage_generation", "secret"):
             self.assertNotIn(forbidden, str(result))
 
+    def test_confirmed_private_image_exposes_only_cas_edit_preconditions(self):
+        row = {
+            "identity": {"creative_id": "id", "campaign_id": "campaign",
+                         "campaign_version": 1, "business_unit_id": "unit", "tenant_id": "tenant"},
+            "manifest": {"width": 512, "height": 512, "sha256": "a" * 64},
+            "state": "STORED", "storage_generation": "101", "revision": 3,
+        }
+        result = _public(row)
+        self.assertEqual(result["sha256"], "a" * 64)
+        self.assertEqual(result["storage_generation"], "101")
+        self.assertNotIn("tenant_id", result)
+        self.assertNotIn("object_name", result)
+
     def test_private_cursor_paginates_without_duplicates(self):
         def row(n):
             return {"identity": {"creative_id": str(UUID(int=n + 1))}}
