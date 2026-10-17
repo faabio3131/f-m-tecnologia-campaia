@@ -44,8 +44,9 @@ def _public(row):
         "content_type": "image/png",
         "revision": row["revision"],
         "source_creative_id": row.get("source_creative_id"),
-        "sha256": row["manifest"]["sha256"],
-        "storage_generation": row.get("storage_generation"),
+        **({"sha256": row["manifest"]["sha256"],
+            "storage_generation": row["storage_generation"]}
+           if row["state"] == "STORED" and row.get("storage_generation") else {}),
         "available": row["state"] == "STORED",
         "content_url": ("/api/campaia/campaigns/" + identity["campaign_id"] +
                         "/images/" + identity["creative_id"] + "/content")
